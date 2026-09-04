@@ -1,10 +1,11 @@
 pub mod commands;
+pub mod downloads;
 pub mod state;
 
 use commands::{ScanProgress, Shared};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 fn progress_emitter(handle: AppHandle, phase: &'static str) -> impl Fn(usize, usize) + Sync {
     let last = AtomicU64::new(0);
@@ -81,6 +82,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(shared.clone())
         .setup(move |app| {
+            // The download manager needs the app handle for events; created here.
+            let dl = downloads::Downloads::start(app.handle().clone(), shared.clone());
+            app.manage(dl);
             // First scan in the background so the window appears immediately.
             let handle = app.handle().clone();
             let st = shared.clone();
@@ -110,6 +114,18 @@ pub fn run() {
             commands::set_user_rules,
             commands::edit_user_rule,
             commands::app_data_dir,
+            commands::downloads_state,
+            commands::downloads_add,
+            commands::downloads_add_text,
+            commands::downloads_remove,
+            commands::downloads_retry_failed,
+            commands::downloads_clear_finished,
+            commands::downloads_pause,
+            commands::downloads_add_missing,
+            commands::steamcmd_install,
+            commands::import_collection,
+            commands::import_rentry,
+            commands::check_updates,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Circinus");

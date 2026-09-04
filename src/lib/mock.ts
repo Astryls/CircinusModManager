@@ -186,7 +186,9 @@ function snapshot(): Snapshot {
     dbLoaded: ["communityRules.json (7,412 rules)", "steamDB.json (31,988 items)"],
     scannedAt: 1_757_000_000,
     inspecting: 0,
-    issuesTruncated: 0
+    issuesTruncated: 0,
+    updates: [{ uid: uidOf("krkr.rocketman"), publishedFileId: 2479389928, name: "RocketMan", localModified: 1_750_000_000, remoteUpdated: 1_756_500_000, source: "workshop" }],
+    updatesCheckedAt: 1_757_000_000
   };
 }
 
@@ -201,6 +203,19 @@ function haloSort(): SortResult {
   const moves: [string, number, number][] = order.map((uid, to) => [uid, active.indexOf(uid), to] as [string, number, number]).filter(([, from, to]) => from !== to);
   return { order, placements: placements(order), moves, issues: issues(order) };
 }
+
+const queue = {
+  items: [
+    { id: 2009463077, name: "Harmony", status: "done", attempts: 1, bytes: 935611, path: "C:\\RimWorld\\Mods\\2009463077", addedAt: 1, finishedAt: 2 },
+    { id: 818773962, name: "HugsLib", status: "downloading", attempts: 0, addedAt: 1 },
+    { id: 2023507013, name: "Vanilla Expanded Framework", status: "queued", attempts: 1, error: "Failure", addedAt: 1 },
+    { id: 3014915404, name: "Vehicle Framework", status: "queued", attempts: 0, addedAt: 1 },
+    { id: 1541460369, name: "Better Pawn Control", status: "failed", attempts: 4, error: "Timeout", addedAt: 1, finishedAt: 3 }
+  ],
+  throttle: { batchSize: 12, cleanStreak: 0, level: 1, cooldownUntil: null, last: { requested: 25, succeeded: 20, failed: 5, timedOut: 0, authFailed: false, stalled: false, seconds: 84 } },
+  paused: false, currentBatch: [818773962, 2023507013, 3014915404], currentItem: 818773962, running: true, steamcmdInstalled: true, installing: false,
+  log: ["Batch of 3 (batch size 12)", "Loading Steam API...OK", "Connecting anonymously to Steam Public...OK", "Waiting for client config...OK", "Downloading item 818773962 ..."]
+} as const;
 
 export async function invoke<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
   await new Promise((r) => setTimeout(r, 30));
@@ -272,6 +287,26 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
       return snapshot() as T;
     case "get_description":
       return (mods.find((m) => m.uid === A.uid)?.description ?? "") as T;
+    case "downloads_state":
+    case "downloads_remove":
+    case "downloads_clear_finished":
+    case "downloads_pause":
+      return structuredClone(queue) as unknown as T;
+    case "downloads_add":
+    case "downloads_add_text":
+      return { added: 2, skipped: [[1, "not a RimWorld workshop item"]] } as T;
+    case "downloads_add_missing":
+      return [{ added: 1, skipped: [] }, ["some.missing.mod"]] as T;
+    case "downloads_retry_failed":
+      return 1 as T;
+    case "steamcmd_install":
+      return undefined as T;
+    case "import_collection":
+      return { ids: [2009463077, 818773962, 999], installed: [[2009463077, uidOf("brrainz.harmony")], [818773962, uidOf("unlimitedhugs.hugslib")]], missing: [999], names: { "2009463077": "Harmony", "818773962": "HugsLib", "999": "Some Missing Mod" } } as T;
+    case "import_rentry":
+      return { preview: { list: { packageIds: ["brrainz.harmony", "no.such"], format: "Rentry list" }, uids: [uidOf("brrainz.harmony")], missing: ["no.such"] }, missingWorkshopIds: [999] } as T;
+    case "check_updates":
+      return 1 as T;
     case "app_data_dir":
       return "C:\\Users\\Astryl\\AppData\\Local\\Circinus" as T;
     default:

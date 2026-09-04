@@ -173,6 +173,80 @@ export interface Snapshot {
   inspecting: number;
   /** Texture collisions left out of `issues` to keep the payload small. */
   issuesTruncated: number;
+  /** Installed workshop mods with a newer version on the Workshop (from the last check). */
+  updates: UpdateInfo[];
+  updatesCheckedAt: number;
+}
+
+export interface UpdateInfo {
+  uid: string;
+  publishedFileId: number;
+  name: string;
+  localModified: number;
+  remoteUpdated: number;
+  source: Source;
+}
+
+// ---- downloads ----
+export type ItemStatus = "queued" | "downloading" | "done" | "failed" | "cancelled";
+
+export interface QueueItem {
+  id: number;
+  name?: string;
+  status: ItemStatus;
+  attempts: number;
+  error?: string;
+  bytes?: number;
+  path?: string;
+  addedAt: number;
+  finishedAt?: number;
+}
+
+export interface BatchStats {
+  requested: number;
+  succeeded: number;
+  failed: number;
+  timedOut: number;
+  authFailed: boolean;
+  stalled: boolean;
+  seconds: number;
+}
+
+export interface Throttle {
+  batchSize: number;
+  cleanStreak: number;
+  level: number;
+  cooldownUntil: number | null;
+  last: BatchStats | null;
+}
+
+export interface QueueState {
+  items: QueueItem[];
+  throttle: Throttle;
+  paused: boolean;
+  currentBatch: number[];
+  currentItem: number | null;
+  running: boolean;
+  steamcmdInstalled: boolean;
+  installing: boolean;
+  log: string[];
+}
+
+export interface AddResult {
+  added: number;
+  skipped: [number, string][];
+}
+
+export interface CollectionPreview {
+  ids: number[];
+  installed: [number, string][];
+  missing: number[];
+  names: Record<string, string>;
+}
+
+export interface RentryPreview {
+  preview: ImportPreview;
+  missingWorkshopIds: number[];
 }
 
 export interface ImportedList {

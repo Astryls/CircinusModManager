@@ -52,11 +52,19 @@ Single self-contained binaries; SteamCMD and todds are downloaded on first use r
 - Validation: missing dependencies, incompatibilities, order violations, version mismatches, duplicates, misplaced optimization mods, and texture collisions (which mod wins each file).
 - Circinus weight column and tile, fed by the public circinus.sh API and your local `Circinus/Runs`.
 
+## Milestone 2 (downloads)
+
+- Virtualized mod list: only visible rows exist in the DOM, so 1,000+ active mods render instantly.
+- SteamCMD is installed on first use into Circinus's data folder (never bundled). Downloads run as batched runscripts with an anonymous login and land in `Mods/<workshop id>` with a `PublishedFileId.txt`.
+- Smart throttle: batches start at 25 and halve when Steam refuses (login refused, half the batch failing, or a stall), with an exponential cooldown (30 s → 10 min) that decays after clean batches; stalls are killed after 150 s of silence; each item gets four tries, with `validate` after the first failure; the queue is persisted and resumes after a restart. Before every batch the items are purged from SteamCMD's workshop ACF and depot cache so re-downloads really download.
+- Steam Web API (no key): names for queued items, collection expansion (one level of sub-collections), and Workshop update checks against on-disk timestamps.
+- Import dialog accepts Steam collection links and Rentry links; missing items can be queued in one click, as can everything in ModsConfig.xml that is not installed.
+- `tools/loadtest` renders the UI at ~2,000 mods in headless Chromium; `cargo run -p circinus --example dump_snapshot` produces a real backend snapshot for it.
+
 ## Next milestones
 
-2. SteamCMD downloads with a smart throttle (persistent queue, adaptive batches, timeouts, backoff), Steam collection and Rentry import, Workshop update checks.
 3. Def/patch flattening (who wins each XML value) and a .NET NativeAOT sidecar that lists Harmony patch targets per assembly.
-4. Instances/profiles, todds integration, auto-update.
+4. Instances/profiles, todds integration, auto-update, Steam-client subscribe/unsubscribe.
 
 ## Data locations
 

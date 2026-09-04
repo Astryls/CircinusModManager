@@ -1,0 +1,306 @@
+//! The download manager: one background task that feeds SteamCMD batches from the queue,
+//! honours the throttle, moves finished mods into the Mods folder and publishes progress.
+
+use crate::commands::Shared;
+use circinus_core::steam::steamcmd::{ItemStatus, QueueState, SteamCmd, BATCH_PAUSE, STALL_TIMEOUT};
+use circinus_core::steam::webapi;
+use serde::Serialize;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use tauri::{AppHandle, Emitter};
+use tokio::sync::Notify;
+
+const QUEUE_KEY: &str = "download_queue";
+
+pub struct Downloads {
+    pub state: Mutex<QueueState>,
+    notify: Notify,
+    handle: AppHandle,
+    app: Shared,
+    client: reqwest::Client,
+}
+
+fn now() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AddResult {
+    pub added: usize,
+    pub skipped: Vec<(u64, String)>,
+}
+
+impl Downloads {
+    pub fn start(handle: AppHandle, app: Shared) -> Arc<Downloads> {
+        let mut state: QueueState = app.lock().ok().and_then(|a| a.cache.get::<QueueState>(QUEUE_KEY).ok().flatten()).unwrap_or_default();
+        for item in state.items.iter_mut().filter(|i| i.status == ItemStatus::Downloading) {
+            item.status = ItemStatus::Queued;
+        }
+        state.running = false;
+        state.installing = false;
+        state.current_batch.clear();
+        state.current_item = None;
+        let client = reqwest::Client::builder().user_agent(circinus_core::weight::USER_AGENT).build().unwrap_or_default();
+        let dl = Arc::new(Downloads { state: Mutex::new(state), notify: Notify::new(), handle, app, client });
+        dl.refresh_installed();
+        let runner = dl.clone();
+        tauri::async_runtime::spawn(async move { runner.run().await });
+        dl
+    }
+
+    pub fn steamcmd(&self) -> SteamCmd {
+        let root = self.app.lock().map(|a| a.data_dir.join("steamcmd")).unwrap_or_else(|_| std::path::PathBuf::from("steamcmd"));
+        SteamCmd::new(root)
+    }
+
+    fn refresh_installed(&self) {
+        let installed = self.steamcmd().is_installed();
+        if let Ok(mut s) = self.state.lock() {
+            s.steamcmd_installed = installed;
+        }
+    }
+
+    pub fn snapshot(&self) -> QueueState {
+        self.state.lock().map(|s| s.clone()).unwrap_or_default()
+    }
+
+    fn persist(&self) {
+        let snap = self.snapshot();
+        if let Ok(app) = self.app.lock() {
+            let _ = app.cache.set(QUEUE_KEY, &snap);
+        }
+    }
+
+    pub fn emit(&self) {
+        let _ = self.handle.emit("download-progress", self.snapshot());
+    }
+
+    fn wake(&self) {
+        self.notify.notify_one();
+    }
+
+    /// Names for ids we know from the Steam database, so the queue is readable before the
+    /// Web API answers.
+    fn known_names(&self, ids: &[u64]) -> HashMap<u64, String> {
+        let mut names = HashMap::new();
+        if let Ok(app) = self.app.lock() {
+            for id in ids {
+                if let Some(e) = app.db.steam.by_pfid.get(id) {
+                    let n = e.steam_name.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| e.name.clone());
+                    if !n.is_empty() {
+                        names.insert(*id, n);
+                    }
+                }
+            }
+        }
+        names
+    }
+
+    /// Queue ids. Looks the ids up on Steam to name them and to skip things that are not
+    /// RimWorld mods; if Steam does not answer, they are queued by number.
+    pub async fn add(&self, ids: Vec<u64>) -> AddResult {
+        let mut names = self.known_names(&ids);
+        let mut skipped = Vec::new();
+        let mut accepted: Vec<u64> = Vec::new();
+        match webapi::published_file_details(&self.client, &ids).await {
+            Ok(items) => {
+                let by_id: HashMap<u64, _> = items.into_iter().map(|i| (i.published_file_id, i)).collect();
+                for id in &ids {
+                    match by_id.get(id) {
+                        Some(item) if item.is_rimworld_mod() => {
+                            names.insert(*id, item.title.clone());
+                            accepted.push(*id);
+                        }
+                        Some(item) if item.file_type == 2 => skipped.push((*id, "that is a collection — import it from the Import dialog".into())),
+                        Some(item) if item.result != 1 => skipped.push((*id, "Steam says this item is hidden or removed".into())),
+                        Some(_) => skipped.push((*id, "not a RimWorld workshop item".into())),
+                        None => accepted.push(*id),
+                    }
+                }
+            }
+            Err(_) => accepted = ids.clone(),
+        }
+        let added = {
+            let mut s = self.state.lock().unwrap();
+            s.add(&accepted, &names, now())
+        };
+        self.persist();
+        self.emit();
+        self.wake();
+        AddResult { added, skipped }
+    }
+
+    pub fn remove(&self, ids: &[u64]) {
+        self.state.lock().unwrap().remove(ids);
+        self.persist();
+        self.emit();
+    }
+
+    pub fn retry_failed(&self) -> usize {
+        let n = self.state.lock().unwrap().retry_failed();
+        self.persist();
+        self.emit();
+        self.wake();
+        n
+    }
+
+    pub fn clear_finished(&self) {
+        self.state.lock().unwrap().clear_finished();
+        self.persist();
+        self.emit();
+    }
+
+    pub fn set_paused(&self, paused: bool) {
+        self.state.lock().unwrap().paused = paused;
+        self.persist();
+        self.emit();
+        self.wake();
+    }
+
+    pub async fn install_steamcmd(self: &Arc<Self>) -> Result<(), String> {
+        {
+            let mut s = self.state.lock().unwrap();
+            if s.installing {
+                return Err("SteamCMD is already being installed".into());
+            }
+            s.installing = true;
+            s.push_log("Installing SteamCMD…");
+        }
+        self.emit();
+        let cmd = self.steamcmd();
+        let me = self.clone();
+        let log = move |line: String| {
+            if let Ok(mut s) = me.state.lock() {
+                s.push_log(&line);
+            }
+            me.emit();
+        };
+        let result = cmd.install(&self.client, &log).await.map_err(|e| e.to_string());
+        {
+            let mut s = self.state.lock().unwrap();
+            s.installing = false;
+            s.steamcmd_installed = cmd.is_installed();
+            match &result {
+                Ok(()) => s.push_log("SteamCMD is ready."),
+                Err(e) => s.push_log(&format!("SteamCMD install failed: {e}")),
+            }
+        }
+        self.emit();
+        self.wake();
+        result
+    }
+
+    async fn run(self: Arc<Self>) {
+        loop {
+            // Wait for work.
+            let (ready, wait_ms) = {
+                let s = self.state.lock().unwrap();
+                let remaining = s.throttle.remaining_cooldown(now());
+                let ready = !s.paused && !s.installing && s.steamcmd_installed && s.queued() > 0 && remaining == 0;
+                (ready, if remaining > 0 { 1000 } else { 30_000 })
+            };
+            if !ready {
+                tokio::select! {
+                    _ = self.notify.notified() => {}
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(wait_ms)) => {}
+                }
+                if wait_ms == 1000 {
+                    self.emit(); // cooldown countdown
+                }
+                continue;
+            }
+            let batch = {
+                let mut s = self.state.lock().unwrap();
+                let batch = s.next_batch();
+                for item in s.items.iter_mut() {
+                    if batch.iter().any(|(id, _)| *id == item.id) {
+                        item.status = ItemStatus::Downloading;
+                    }
+                }
+                s.current_batch = batch.iter().map(|(id, _)| *id).collect();
+                s.running = true;
+                let size = s.throttle.batch_size;
+                s.push_log(&format!("Batch of {} (batch size {})", batch.len(), size));
+                batch
+            };
+            self.persist();
+            self.emit();
+            let cmd = self.steamcmd();
+            let ids: Vec<u64> = batch.iter().map(|(id, _)| *id).collect();
+            let _ = cmd.forget(&ids);
+            let me = self.clone();
+            let mut last_emit = std::time::Instant::now();
+            let mut on_line = move |line: &str| {
+                if let Ok(mut s) = me.state.lock() {
+                    s.push_log(line);
+                    if let circinus_core::steam::steamcmd::LineEvent::Downloading(id) = circinus_core::steam::steamcmd::parse_line(line) {
+                        s.current_item = Some(id);
+                    }
+                }
+                if last_emit.elapsed() > std::time::Duration::from_millis(300) {
+                    me.emit();
+                    last_emit = std::time::Instant::now();
+                }
+            };
+            let outcome = cmd.run_batch(&batch, STALL_TIMEOUT, &mut on_line).await;
+            let mods_dir = self.app.lock().ok().and_then(|a| a.locations.local_mods_dir.clone());
+            let mut any_done = false;
+            match outcome {
+                Ok(outcome) => {
+                    let done = {
+                        let mut s = self.state.lock().unwrap();
+                        s.apply(&outcome, now())
+                    };
+                    for id in done {
+                        let placed = match &mods_dir {
+                            Some(dir) => cmd.collect(id, dir).map(|p| p.display().to_string()),
+                            None => Err(circinus_core::Error::Other("no local Mods folder is configured".into())),
+                        };
+                        let mut s = self.state.lock().unwrap();
+                        if let Some(item) = s.items.iter_mut().find(|i| i.id == id) {
+                            match placed {
+                                Ok(p) => {
+                                    item.path = Some(p);
+                                    any_done = true;
+                                }
+                                Err(e) => {
+                                    item.status = ItemStatus::Failed;
+                                    item.error = Some(format!("Downloaded but could not be moved into Mods: {e}"));
+                                }
+                            }
+                        }
+                    }
+                    let mut s = self.state.lock().unwrap();
+                    let (cool, size) = (s.throttle.remaining_cooldown(now()), s.throttle.batch_size);
+                    let msg = match cool {
+                        0 => format!("Batch done in {} s; next batch size {}", outcome.seconds, size),
+                        c => format!("Steam is refusing downloads — cooling down for {c} s, batch size now {size}"),
+                    };
+                    s.push_log(&msg);
+                }
+                Err(e) => {
+                    let mut s = self.state.lock().unwrap();
+                    s.push_log(&format!("SteamCMD could not run: {e}"));
+                    for item in s.items.iter_mut().filter(|i| i.status == ItemStatus::Downloading) {
+                        item.status = ItemStatus::Queued;
+                    }
+                    s.current_batch.clear();
+                    s.paused = true;
+                }
+            }
+            {
+                let mut s = self.state.lock().unwrap();
+                s.running = false;
+            }
+            self.persist();
+            self.emit();
+            if any_done {
+                let handle = self.handle.clone();
+                let app = self.app.clone();
+                tauri::async_runtime::spawn_blocking(move || crate::run_scan(handle, app, false));
+            }
+            tokio::time::sleep(BATCH_PAUSE).await;
+        }
+    }
+}

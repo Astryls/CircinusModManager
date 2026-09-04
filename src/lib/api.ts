@@ -1,6 +1,6 @@
 // Thin wrapper over Tauri's invoke, with a browser mock so the UI can run outside Tauri.
 
-import type { ImportPreview, Issue, Locations, ModFiles, Rule, RulesFile, Settings, Snapshot, SortResult, UserData } from "./types";
+import type { AddResult, CollectionPreview, ImportPreview, Issue, Locations, ModFiles, QueueState, RentryPreview, Rule, RulesFile, Settings, Snapshot, SortResult, UserData } from "./types";
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -42,7 +42,20 @@ export const api = {
   files: (uid: string) => invoke<ModFiles>("get_files", { uid }),
   userRules: () => invoke<RulesFile>("get_user_rules"),
   editUserRule: (rule: Rule, remove: boolean) => invoke<Snapshot>("edit_user_rule", { edit: { rule, remove } }),
-  appDataDir: () => invoke<string>("app_data_dir")
+  appDataDir: () => invoke<string>("app_data_dir"),
+  // downloads
+  downloadsState: () => invoke<QueueState>("downloads_state"),
+  downloadsAdd: (ids: number[]) => invoke<AddResult>("downloads_add", { ids }),
+  downloadsAddText: (text: string) => invoke<AddResult>("downloads_add_text", { text }),
+  downloadsRemove: (ids: number[]) => invoke<QueueState>("downloads_remove", { ids }),
+  downloadsRetryFailed: () => invoke<number>("downloads_retry_failed"),
+  downloadsClearFinished: () => invoke<QueueState>("downloads_clear_finished"),
+  downloadsPause: (paused: boolean) => invoke<QueueState>("downloads_pause", { paused }),
+  downloadsAddMissing: () => invoke<[AddResult, string[]]>("downloads_add_missing"),
+  steamcmdInstall: () => invoke<void>("steamcmd_install"),
+  importCollection: (text: string) => invoke<CollectionPreview>("import_collection", { text }),
+  importRentry: (url: string) => invoke<RentryPreview>("import_rentry", { url }),
+  checkUpdates: () => invoke<number>("check_updates")
 };
 
 export async function listen<T>(event: string, handler: (payload: T) => void): Promise<() => void> {

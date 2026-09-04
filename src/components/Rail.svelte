@@ -13,7 +13,7 @@
   const nav: { id: View; label: string; icon: string; count?: () => string | number; att?: boolean }[] = [
     { id: "order", label: "Load order", icon: I.list, count: () => store.active.length },
     { id: "library", label: "Library", icon: I.library, count: () => store.mods.length },
-    { id: "downloads", label: "Downloads", icon: I.download },
+    { id: "downloads", label: "Downloads", icon: I.download, count: () => store.queueCounts.queued || "", att: true },
     { id: "analyzer", label: "Analyzer", icon: I.layers, count: () => store.stats.errors + store.stats.warnings, att: true },
     { id: "settings", label: "Settings", icon: I.sliders }
   ];

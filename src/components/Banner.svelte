@@ -8,10 +8,7 @@
   function review() {
     const target = store.issues.find((i) => i.kind === (head?.kind === "error" ? "incompatible" : "misplacedOptimization")) ?? store.issues[0];
     const uid = target && primaryUid(target);
-    if (uid) {
-      store.select(uid);
-      document.querySelector(`[data-uid="${CSS.escape(uid)}"]`)?.scrollIntoView({ block: "center" });
-    }
+    if (uid) store.scrollTo(uid);
   }
 </script>
 

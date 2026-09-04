@@ -35,7 +35,7 @@
   });
   function go(i: Issue) {
     const uid = primaryUid(i);
-    if (uid) { store.select(uid); store.view = "order"; }
+    if (uid) { store.view = "order"; store.scrollTo(uid); }
   }
 </script>
 

@@ -2,7 +2,7 @@
 // indexes for fast lookups, and the actions the components call.
 
 import { api, listen } from "./api";
-import type { Group, ImportPreview, Issue, ModInfo, Phase, Placement, Rule, Settings, Snapshot, SortResult, Source, UserData, Weight } from "./types";
+import type { CollectionPreview, Group, ImportPreview, Issue, ModInfo, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, UserData, Weight } from "./types";
 import { PHASES, primaryUid, severityOf } from "./types";
 
 export type View = "order" | "library" | "downloads" | "analyzer" | "settings";
@@ -31,7 +31,12 @@ class Store {
   selected = $state<string[]>([]);
   preview = $state<SortResult | null>(null);
   importPreview = $state<ImportPreview | null>(null);
+  collectionPreview = $state<CollectionPreview | null>(null);
+  rentryPreview = $state<RentryPreview | null>(null);
   showImport = $state(false);
+  downloads = $state<QueueState | null>(null);
+  /** uid → the list should scroll to it on the next render. */
+  scrollRequest = $state<string | null>(null);
 
   // ---- derived indexes ----
   mods = $derived.by(() => {
@@ -65,6 +70,11 @@ class Store {
   weightOf = (m: ModInfo): Weight | undefined => this.snap?.weights[m.packageId];
   pinned = $derived(new Set(this.snap?.user.pinned ?? []));
   showWeight = $derived(this.snap?.settings.showWeight ?? false);
+  updateByUid = $derived(new Map((this.snap?.updates ?? []).map((u) => [u.uid, u])));
+  queueCounts = $derived.by(() => {
+    const items = this.downloads?.items ?? [];
+    return { queued: items.filter((i) => i.status === "queued" || i.status === "downloading").length, failed: items.filter((i) => i.status === "failed").length, done: items.filter((i) => i.status === "done").length };
+  });
   rulesBySubject = $derived.by(() => {
     const map = new Map<string, Rule[]>();
     for (const r of this.snap?.rules ?? []) {
@@ -136,6 +146,7 @@ class Store {
       await listen<{ phase: "read" | "inspect"; done: number; total: number }>("scan-progress", (p) => (this.progress = p.done >= p.total ? null : p));
       await listen("state-changed", () => this.refresh());
       await listen<string>("scan-error", (e) => this.say(e, "err"));
+      await listen<QueueState>("download-progress", (q) => (this.downloads = q));
       log("event listeners ready");
     } catch (e) {
       log(`event listeners failed: ${e}`);
@@ -158,6 +169,7 @@ class Store {
       this.snap = snap;
       queueMicrotask(() => log("first render scheduled"));
     }
+    api.downloadsState().then((q) => (this.downloads = q)).catch(() => {});
   }
 
   async refresh() {
@@ -270,6 +282,87 @@ class Store {
   async importFrom(path?: string, text?: string) {
     return this.run("Reading list…", async () => {
       this.importPreview = await api.importList(path, text);
+    });
+  }
+  scrollTo(uid: string) {
+    this.select(uid);
+    this.scrollRequest = uid;
+  }
+  // ---- downloads ----
+  async queueText(text: string) {
+    return this.run("Looking up on Steam…", async () => {
+      const r = await api.downloadsAddText(text);
+      this.downloads = await api.downloadsState();
+      this.say(`${r.added} queued${r.skipped.length ? ` · ${r.skipped.length} skipped: ${r.skipped.map(([id, why]) => `${id} (${why})`).join(", ")}` : ""}`, r.skipped.length ? "warn" : "ok");
+      return r;
+    });
+  }
+  async queueIds(ids: number[]) {
+    if (!ids.length) return;
+    return this.run("Looking up on Steam…", async () => {
+      const r = await api.downloadsAdd(ids);
+      this.downloads = await api.downloadsState();
+      this.say(`${r.added} queued${r.skipped.length ? ` · ${r.skipped.length} skipped` : ""}`);
+      return r;
+    });
+  }
+  async queueMissing() {
+    return this.run("Resolving missing mods…", async () => {
+      const [r, unresolved] = await api.downloadsAddMissing();
+      this.downloads = await api.downloadsState();
+      this.say(`${r.added} queued${unresolved.length ? ` · ${unresolved.length} not in the Steam database: ${unresolved.slice(0, 5).join(", ")}${unresolved.length > 5 ? "…" : ""}` : ""}`, unresolved.length ? "warn" : "ok");
+    });
+  }
+  async removeDownloads(ids: number[]) {
+    this.downloads = await api.downloadsRemove(ids);
+  }
+  async retryFailed() {
+    const n = await api.downloadsRetryFailed();
+    this.downloads = await api.downloadsState();
+    this.say(`${n} retried`);
+  }
+  async clearFinished() {
+    this.downloads = await api.downloadsClearFinished();
+  }
+  async pauseDownloads(paused: boolean) {
+    this.downloads = await api.downloadsPause(paused);
+  }
+  installSteamCmd() {
+    return this.run("Installing SteamCMD…", async () => {
+      await api.steamcmdInstall();
+      this.downloads = await api.downloadsState();
+      this.say("SteamCMD is ready");
+    });
+  }
+  checkUpdates() {
+    return this.run("Asking the Workshop…", async () => {
+      const n = await api.checkUpdates();
+      await this.refresh();
+      this.say(n ? `${n} mod${n === 1 ? " has" : "s have"} a newer Workshop version` : "Everything is current");
+    });
+  }
+  importCollection(text: string) {
+    return this.run("Expanding collection…", async () => {
+      this.collectionPreview = await api.importCollection(text);
+      this.rentryPreview = null;
+      this.importPreview = null;
+    });
+  }
+  importRentry(url: string) {
+    return this.run("Fetching Rentry…", async () => {
+      const r = await api.importRentry(url);
+      this.rentryPreview = r;
+      this.importPreview = r.preview;
+      this.collectionPreview = null;
+    });
+  }
+  applyCollection(append: boolean) {
+    const p = this.collectionPreview;
+    if (!p) return;
+    return this.run("Applying collection…", async () => {
+      const uids = p.installed.map(([, uid]) => uid);
+      this.apply(await api.applyImport(uids, append));
+      this.say(`${append ? "Appended" : "Activated"} ${uids.length} installed mods${p.missing.length ? `, ${p.missing.length} not installed` : ""}`);
     });
   }
   applyImport(append: boolean) {

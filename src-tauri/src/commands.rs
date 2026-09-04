@@ -1,6 +1,9 @@
 //! The command surface the Svelte UI calls with `invoke`.
 
+use crate::downloads::{AddResult, Downloads};
 use crate::state::{App, Settings, Snapshot, UserData};
+use circinus_core::steam::steamcmd::QueueState;
+use circinus_core::steam::webapi;
 use circinus_core::import::{self, ImportedList};
 use circinus_core::model::*;
 use circinus_core::paths::Locations;
@@ -268,4 +271,164 @@ pub async fn edit_user_rule(state: State<'_, Shared>, edit: RuleEdit) -> CmdResu
 pub fn app_data_dir(state: State<'_, Shared>) -> CmdResult<String> {
     let app = state.inner().lock().map_err(|_| "state lock poisoned".to_string())?;
     Ok(app.data_dir.display().to_string())
+}
+
+
+// ---------------------------------------------------------------- downloads
+
+type Dl<'a> = State<'a, Arc<Downloads>>;
+
+#[tauri::command]
+pub fn downloads_state(dl: Dl<'_>) -> QueueState {
+    dl.snapshot()
+}
+
+#[tauri::command]
+pub async fn downloads_add(dl: Dl<'_>, ids: Vec<u64>) -> CmdResult<AddResult> {
+    Ok(dl.add(ids).await)
+}
+
+/// Workshop URLs, ids or pasted text; single collection links are expanded.
+#[tauri::command]
+pub async fn downloads_add_text(dl: Dl<'_>, text: String) -> CmdResult<AddResult> {
+    let mut ids = webapi::extract_workshop_ids(&text);
+    if ids.is_empty() {
+        return Err("No workshop ids or links found in that text".into());
+    }
+    if ids.len() <= 5 {
+        let client = reqwest::Client::builder().user_agent(circinus_core::weight::USER_AGENT).build().map_err(err)?;
+        let mut expanded = Vec::new();
+        for id in &ids {
+            match webapi::collection_items(&client, *id).await {
+                Ok(children) => expanded.extend(children),
+                Err(_) => expanded.push(*id),
+            }
+        }
+        ids = expanded;
+    }
+    Ok(dl.add(ids).await)
+}
+
+#[tauri::command]
+pub fn downloads_remove(dl: Dl<'_>, ids: Vec<u64>) -> QueueState {
+    dl.remove(&ids);
+    dl.snapshot()
+}
+
+#[tauri::command]
+pub fn downloads_retry_failed(dl: Dl<'_>) -> usize {
+    dl.retry_failed()
+}
+
+#[tauri::command]
+pub fn downloads_clear_finished(dl: Dl<'_>) -> QueueState {
+    dl.clear_finished();
+    dl.snapshot()
+}
+
+#[tauri::command]
+pub fn downloads_pause(dl: Dl<'_>, paused: bool) -> QueueState {
+    dl.set_paused(paused);
+    dl.snapshot()
+}
+
+#[tauri::command]
+pub async fn steamcmd_install(dl: Dl<'_>) -> CmdResult<()> {
+    let d = dl.inner().clone();
+    d.install_steamcmd().await
+}
+
+/// Queue everything listed in ModsConfig.xml that is not installed (resolved via the Steam DB).
+#[tauri::command]
+pub async fn downloads_add_missing(dl: Dl<'_>, state: State<'_, Shared>) -> CmdResult<(AddResult, Vec<String>)> {
+    let (ids, unresolved) = with_app(&state, |app| Ok(app.workshop_ids_for_missing())).await?;
+    if ids.is_empty() {
+        return Ok((AddResult { added: 0, skipped: vec![] }, unresolved));
+    }
+    Ok((dl.add(ids).await, unresolved))
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CollectionPreview {
+    pub ids: Vec<u64>,
+    /// (workshop id, uid) for items already installed.
+    pub installed: Vec<(u64, String)>,
+    pub missing: Vec<u64>,
+    pub names: HashMap<u64, String>,
+}
+
+use std::collections::HashMap;
+
+/// Expand a Steam collection (or a pasted list of workshop links) and match it against the install.
+#[tauri::command]
+pub async fn import_collection(state: State<'_, Shared>, text: String) -> CmdResult<CollectionPreview> {
+    let ids = webapi::extract_workshop_ids(&text);
+    if ids.is_empty() {
+        return Err("No workshop link or id found".into());
+    }
+    let client = reqwest::Client::builder().user_agent(circinus_core::weight::USER_AGENT).build().map_err(err)?;
+    let mut all: Vec<u64> = Vec::new();
+    for id in ids.iter().take(10) {
+        match webapi::collection_items(&client, *id).await {
+            Ok(children) => all.extend(children),
+            Err(_) => all.push(*id),
+        }
+    }
+    let mut names: HashMap<u64, String> = HashMap::new();
+    if let Ok(items) = webapi::published_file_details(&client, &all).await {
+        for i in items {
+            names.insert(i.published_file_id, i.title);
+        }
+    }
+    let all2 = all.clone();
+    let (installed, missing) = with_app(&state, move |app| {
+        let by_pfid: HashMap<u64, String> = app.mods.iter().filter(|m| m.invalid.is_none()).filter_map(|m| m.published_file_id.map(|id| (id, m.uid.clone()))).collect();
+        let mut installed = Vec::new();
+        let mut missing = Vec::new();
+        for id in &all2 {
+            match by_pfid.get(id) {
+                Some(uid) => installed.push((*id, uid.clone())),
+                None => missing.push(*id),
+            }
+        }
+        Ok((installed, missing))
+    })
+    .await?;
+    Ok(CollectionPreview { ids: all, installed, missing, names })
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RentryPreview {
+    pub preview: ImportPreview,
+    /// Workshop ids mentioned in the paste that are not installed.
+    pub missing_workshop_ids: Vec<u64>,
+}
+
+#[tauri::command]
+pub async fn import_rentry(state: State<'_, Shared>, url: String) -> CmdResult<RentryPreview> {
+    let id = circinus_core::rentry::parse_rentry_id(&url).ok_or_else(|| "That does not look like a Rentry link".to_string())?;
+    let client = reqwest::Client::builder().user_agent(circinus_core::weight::USER_AGENT).build().map_err(err)?;
+    let text = circinus_core::rentry::fetch_rentry(&client, &id, None).await.map_err(err)?;
+    let (list, workshop_ids) = circinus_core::rentry::parse_rentry_text(&text);
+    with_app(&state, move |app| {
+        let (uids, missing) = app.resolve_import(&list);
+        let installed: std::collections::HashSet<u64> = app.mods.iter().filter_map(|m| m.published_file_id).collect();
+        let missing_workshop_ids = workshop_ids.into_iter().filter(|id| !installed.contains(id)).collect();
+        Ok(RentryPreview { preview: ImportPreview { list, uids, missing }, missing_workshop_ids })
+    })
+    .await
+}
+
+/// Ask the Workshop for the current update time of every installed workshop mod.
+#[tauri::command]
+pub async fn check_updates(state: State<'_, Shared>) -> CmdResult<usize> {
+    let ids: Vec<u64> = with_app(&state, |app| Ok(app.workshop_ids().into_iter().map(|(_, id)| id).collect())).await?;
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let client = reqwest::Client::builder().user_agent(circinus_core::weight::USER_AGENT).build().map_err(err)?;
+    let items = webapi::published_file_details(&client, &ids).await.map_err(err)?;
+    with_app(&state, move |app| Ok(app.apply_update_check(&items))).await
 }

@@ -10,6 +10,7 @@ use circinus_core::order::{self, Context, UserOverrides};
 use circinus_core::paths::{app_data_dir, Locations};
 use circinus_core::rules::{self, Databases, DbSource, RulesFile};
 use circinus_core::scan::{self, Inspection, ModFiles, ScanOptions};
+use circinus_core::steam::webapi::WorkshopItem;
 use circinus_core::weight::{self, Weight};
 use circinus_core::Result;
 use serde::{Deserialize, Serialize};
@@ -89,6 +90,20 @@ pub struct Snapshot {
     pub inspecting: usize,
     /// Texture-collision issues left out of `issues` to keep the payload small (0 = none).
     pub issues_truncated: usize,
+    /// Installed workshop mods with a newer version on the Workshop (from the last check).
+    pub updates: Vec<UpdateInfo>,
+    pub updates_checked_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInfo {
+    pub uid: String,
+    pub published_file_id: u64,
+    pub name: String,
+    pub local_modified: u64,
+    pub remote_updated: u64,
+    pub source: Source,
 }
 
 /// Texture collisions kept in a snapshot; the rest are available through the analyzer commands.
@@ -115,6 +130,8 @@ pub struct App {
     /// uids not yet inspected, and the cache stamps to write once they are.
     pub shallow: Vec<String>,
     pub pending_stamps: HashMap<String, String>,
+    pub updates: Vec<UpdateInfo>,
+    pub updates_checked_at: i64,
 }
 
 fn now() -> i64 {
@@ -158,6 +175,8 @@ impl App {
             scanned_at: 0,
             shallow: Vec::new(),
             pending_stamps: HashMap::new(),
+            updates: Vec::new(),
+            updates_checked_at: 0,
         };
         app.resolve_locations();
         app.load_databases();
@@ -313,7 +332,45 @@ impl App {
             scanned_at: self.scanned_at,
             inspecting: self.shallow.len(),
             issues_truncated,
+            updates: self.updates.clone(),
+            updates_checked_at: self.updates_checked_at,
         }
+    }
+
+    /// Workshop ids of every installed mod that came from the Workshop or SteamCMD.
+    pub fn workshop_ids(&self) -> Vec<(String, u64)> {
+        self.mods.iter().filter(|m| m.invalid.is_none()).filter_map(|m| m.published_file_id.map(|id| (m.uid.clone(), id))).collect()
+    }
+
+    /// Compare Workshop `time_updated` with what is on disk.
+    pub fn apply_update_check(&mut self, items: &[WorkshopItem]) -> usize {
+        let by_id: HashMap<u64, &WorkshopItem> = items.iter().map(|i| (i.published_file_id, i)).collect();
+        let mut out = Vec::new();
+        for m in self.mods.iter().filter(|m| m.invalid.is_none()) {
+            let Some(id) = m.published_file_id else { continue };
+            let Some(item) = by_id.get(&id) else { continue };
+            if item.time_updated > m.modified + 60 {
+                out.push(UpdateInfo { uid: m.uid.clone(), published_file_id: id, name: m.name.clone(), local_modified: m.modified, remote_updated: item.time_updated, source: m.source });
+            }
+        }
+        out.sort_by(|a, b| b.remote_updated.cmp(&a.remote_updated));
+        self.updates = out;
+        self.updates_checked_at = now();
+        self.updates.len()
+    }
+
+    /// Resolve package ids that are missing from the install to workshop ids via the Steam DB.
+    pub fn workshop_ids_for_missing(&self) -> (Vec<u64>, Vec<String>) {
+        let mut ids = Vec::new();
+        let mut unresolved = Vec::new();
+        for pkg in &self.missing {
+            let base = pkg.trim_end_matches("_steam");
+            match self.db.steam.workshop_ids_for(base).first() {
+                Some(id) => ids.push(*id),
+                None => unresolved.push(pkg.clone()),
+            }
+        }
+        (ids, unresolved)
     }
 
     pub fn description(&self, uid: &str) -> String {
