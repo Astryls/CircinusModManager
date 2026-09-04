@@ -37,6 +37,11 @@ pub struct ScanOptions {
     pub locations: Locations,
     pub game_version: GameVersion,
     pub use_cache: bool,
+    /// Workshop id → Steam's `timeupdated` from `appworkshop_294100.acf`. Steam can replace
+    /// files deep inside an item without touching the folder's mtime, so this is part of the
+    /// cache stamp and of `ModInfo::modified` for Workshop items.
+    #[serde(default)]
+    pub workshop_updated: HashMap<u64, u64>,
 }
 
 #[derive(Debug, Default)]
@@ -85,9 +90,11 @@ struct Candidate {
     source: Source,
     about_xml: Option<PathBuf>,
     stamp: String,
+    /// Newest of the cheap signals: folder mtime, About.xml mtime, Steam's timeupdated.
+    modified: u64,
 }
 
-fn candidates_in(root: &Path, source_for: impl Fn(&Path) -> Source, game_version: &str) -> Vec<Candidate> {
+fn candidates_in(root: &Path, source: Source, game_version: &str, workshop_updated: &HashMap<u64, u64>) -> Vec<Candidate> {
     let Ok(rd) = std::fs::read_dir(root) else { return Vec::new() };
     let mut out = Vec::new();
     for entry in rd.filter_map(|e| e.ok()) {
@@ -103,8 +110,11 @@ fn candidates_in(root: &Path, source_for: impl Fn(&Path) -> Source, game_version
         let about_xml = about_dir.as_ref().and_then(|d| find_entry(d, "About.xml"));
         let dir_mtime = std::fs::metadata(&path).map(|m| mtime_secs(&m)).unwrap_or(0);
         let about_mtime = about_xml.as_ref().and_then(|p| std::fs::metadata(p).ok()).map(|m| mtime_secs(&m)).unwrap_or(0);
-        let stamp = format!("{PARSER_VERSION}:{game_version}:{dir_mtime}:{about_mtime}");
-        out.push(Candidate { source: source_for(&path), path, about_xml, stamp });
+        // Workshop folders are named after the item id; Steam's own record of when it last
+        // updated the item is the only reliable sign of an in-place update.
+        let ws_updated = if source == Source::Workshop { name.parse::<u64>().ok().and_then(|id| workshop_updated.get(&id).copied()).unwrap_or(0) } else { 0 };
+        let stamp = if ws_updated > 0 { format!("{PARSER_VERSION}:{game_version}:{dir_mtime}:{about_mtime}:{ws_updated}") } else { format!("{PARSER_VERSION}:{game_version}:{dir_mtime}:{about_mtime}") };
+        out.push(Candidate { source, path, about_xml, stamp, modified: dir_mtime.max(about_mtime).max(ws_updated) });
     }
     out
 }
@@ -213,7 +223,7 @@ fn parse_quick(c: &Candidate, gv: &GameVersion) -> ModInfo {
     let uid = c.path.to_string_lossy().to_string();
     let about_dir = c.about_xml.as_ref().and_then(|p| p.parent().map(|p| p.to_path_buf()));
     let mut info = ModInfo { uid: uid.clone(), path: c.path.clone(), source: c.source, ..Default::default() };
-    info.modified = c.stamp.rsplit(':').take(2).filter_map(|x| x.parse::<u64>().ok()).max().unwrap_or(0);
+    info.modified = c.modified;
 
     match &c.about_xml {
         Some(about_path) => match read_text(about_path).and_then(|t| parse_about(&t, about_path, &gv.major_minor)) {
@@ -342,13 +352,13 @@ pub fn scan(opts: &ScanOptions, cache: Option<&Cache>, deep: bool, progress: &(d
     let gv = &opts.game_version;
     let mut cands: Vec<Candidate> = Vec::new();
     if let Some(data) = loc.data_dir() {
-        cands.extend(candidates_in(&data, |_| Source::Ludeon, &gv.major_minor));
+        cands.extend(candidates_in(&data, Source::Ludeon, &gv.major_minor, &opts.workshop_updated));
     }
     if let Some(local) = &loc.local_mods_dir {
-        cands.extend(candidates_in(local, |_| Source::Local, &gv.major_minor));
+        cands.extend(candidates_in(local, Source::Local, &gv.major_minor, &opts.workshop_updated));
     }
     if let Some(ws) = &loc.workshop_dir {
-        cands.extend(candidates_in(ws, |_| Source::Workshop, &gv.major_minor));
+        cands.extend(candidates_in(ws, Source::Workshop, &gv.major_minor, &opts.workshop_updated));
     }
     let total = cands.len();
     let cached: HashMap<String, (String, String)> = match (opts.use_cache, cache) {
@@ -454,7 +464,7 @@ mod tests {
     fn scans_and_classifies() {
         let tmp = tempfile::tempdir().unwrap();
         let loc = fixture_game(tmp.path());
-        let opts = ScanOptions { locations: loc, game_version: GameVersion::parse("1.6.4530 rev1235").unwrap(), use_cache: false };
+        let opts = ScanOptions { locations: loc, game_version: GameVersion::parse("1.6.4530 rev1235").unwrap(), use_cache: false, workshop_updated: HashMap::new() };
         let out = scan(&opts, None, true, &|_, _| {}).unwrap();
         let by_id = |id: &str| out.mods.iter().find(|m| m.package_id == id).unwrap();
         let core = by_id("ludeon.rimworld");
@@ -484,7 +494,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let loc = fixture_game(tmp.path());
         let cache = Cache::open(&tmp.path().join("cache.sqlite")).unwrap();
-        let opts = ScanOptions { locations: loc, game_version: GameVersion::parse("1.6.4530 rev1235").unwrap(), use_cache: true };
+        let opts = ScanOptions { locations: loc, game_version: GameVersion::parse("1.6.4530 rev1235").unwrap(), use_cache: true, workshop_updated: HashMap::new() };
         let mut quick = scan(&opts, Some(&cache), false, &|_, _| {}).unwrap();
         assert_eq!(quick.shallow.len(), quick.mods.len());
         assert!(quick.mods.iter().all(|m| m.contents.assemblies == 0 && matches!(m.kind, ModKind::Unknown | ModKind::Official | ModKind::Scenario)));
@@ -502,11 +512,35 @@ mod tests {
     }
 
     #[test]
+    fn steam_timeupdated_invalidates_workshop_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut loc = fixture_game(tmp.path());
+        let ws = tmp.path().join("workshop/content/294100");
+        write(&ws.join("2009463077/About/About.xml"), "<ModMetaData><packageId>ws.mod</packageId><name>WS</name></ModMetaData>");
+        loc.workshop_dir = Some(ws);
+        let cache = Cache::open(&tmp.path().join("cache.sqlite")).unwrap();
+        let gv = GameVersion::parse("1.6.4530 rev1235").unwrap();
+        let mut opts = ScanOptions { locations: loc, game_version: gv, use_cache: true, workshop_updated: HashMap::from([(2009463077u64, 4_000_000_000u64)]) };
+        let first = scan(&opts, Some(&cache), true, &|_, _| {}).unwrap();
+        let m = first.mods.iter().find(|m| m.package_id == "ws.mod").unwrap();
+        assert_eq!(m.source, Source::Workshop);
+        assert_eq!(m.published_file_id, Some(2009463077));
+        assert_eq!(m.modified, 4_000_000_000, "Steam's timeupdated is newer than the folder");
+        let second = scan(&opts, Some(&cache), true, &|_, _| {}).unwrap();
+        assert_eq!(second.from_cache, second.mods.len());
+        // Steam updated the item in place: nothing on disk changed except the ACF.
+        opts.workshop_updated.insert(2009463077, 4_100_000_000);
+        let third = scan(&opts, Some(&cache), true, &|_, _| {}).unwrap();
+        assert_eq!(third.parsed, 1, "only the updated item is re-read");
+        assert_eq!(third.mods.iter().find(|m| m.package_id == "ws.mod").unwrap().modified, 4_100_000_000);
+    }
+
+    #[test]
     fn cache_round_trip() {
         let tmp = tempfile::tempdir().unwrap();
         let loc = fixture_game(tmp.path());
         let cache = Cache::open(&tmp.path().join("cache.sqlite")).unwrap();
-        let opts = ScanOptions { locations: loc, game_version: GameVersion::parse("1.6.4530 rev1235").unwrap(), use_cache: true };
+        let opts = ScanOptions { locations: loc, game_version: GameVersion::parse("1.6.4530 rev1235").unwrap(), use_cache: true, workshop_updated: HashMap::new() };
         let first = scan(&opts, Some(&cache), true, &|_, _| {}).unwrap();
         assert_eq!(first.from_cache, 0);
         let second = scan(&opts, Some(&cache), true, &|_, _| {}).unwrap();

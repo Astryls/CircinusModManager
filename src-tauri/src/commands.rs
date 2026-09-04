@@ -1,6 +1,6 @@
 //! The command surface the Svelte UI calls with `invoke`.
 
-use crate::downloads::{AddResult, Downloads};
+use crate::downloads::{AddResult, Downloads, SteamCmdStatus};
 use crate::state::{App, Settings, Snapshot, UserData};
 use circinus_core::steam::steamcmd::QueueState;
 use circinus_core::steam::webapi;
@@ -336,6 +336,28 @@ pub fn downloads_pause(dl: Dl<'_>, paused: bool) -> QueueState {
 pub async fn steamcmd_install(dl: Dl<'_>) -> CmdResult<()> {
     let d = dl.inner().clone();
     d.install_steamcmd().await
+}
+
+#[tauri::command]
+pub fn steamcmd_status(dl: Dl<'_>) -> SteamCmdStatus {
+    dl.status()
+}
+
+/// `+login anonymous +quit`, output streamed into the download log.
+#[tauri::command]
+pub async fn steamcmd_test(dl: Dl<'_>) -> CmdResult<circinus_core::steam::steamcmd::TestOutcome> {
+    let d = dl.inner().clone();
+    d.test_steamcmd().await
+}
+
+/// The user has read the "what changed" list: measure future changes from now.
+#[tauri::command]
+pub async fn acknowledge_changes(state: State<'_, Shared>) -> CmdResult<Snapshot> {
+    with_app(&state, |app| {
+        app.acknowledge_changes();
+        Ok(app.snapshot())
+    })
+    .await
 }
 
 /// Queue everything listed in ModsConfig.xml that is not installed (resolved via the Steam DB).

@@ -3,7 +3,7 @@
   import { store } from "$lib/store.svelte";
   import { I, sevIcon } from "$lib/icons";
   import { describe } from "$lib/describe";
-  import { BAND_LABEL, SOURCE_GLYPH, SOURCE_LABEL, severityOf, type ModInfo } from "$lib/types";
+  import { BAND_LABEL, SOURCE_GLYPH, SOURCE_LABEL, describeChange, severityOf, type ModInfo } from "$lib/types";
 
   // ---- virtualization: only the rows in view exist in the DOM ----
   const ROW = 40;
@@ -166,6 +166,7 @@
         {@const delta = store.moveOf.get(m.uid)}
         {@const w = store.weightOf(m)}
         {@const upd = store.updateByUid.get(m.uid)}
+        {@const chg = store.changeByUid.get(m.uid)}
         <div
           class="row"
           class:off={it.inactive}
@@ -196,6 +197,7 @@
           <span class="vers">{#each versions as v}<span class:off={!(m.supportedVersions ?? []).includes(v)}>{v}</span>{/each}</span>
           <span class="g">{#if store.groupOf(m.uid)}<span class="dot c-{store.groupOf(m.uid)?.color}" title={store.groupOf(m.uid)?.name}></span>{/if}</span>
           <span class="flags">
+            {#if chg}<span class="flag chg" title="Changed since you last opened Circinus: {describeChange(chg)}">{@html chg.kind === "added" ? I.plus : I.change}</span>{/if}
             {#if upd}<span class="flag note" title="A newer version is on the Workshop (updated {new Date(upd.remoteUpdated * 1000).toLocaleDateString()})">{@html I.up}</span>{/if}
             {#each issues.slice(0, 3) as i}<span class="flag {severityOf(i)}" title={describe(i, store.byUid, m.uid)}>{@html sevIcon[severityOf(i)] ?? sevIcon.warning}</span>{/each}
             {#if m.invalid && it.inactive}<span class="flag error" title={m.invalid}>{@html I.error}</span>{/if}
@@ -243,6 +245,7 @@
   .vers { justify-content: flex-end; }
   .g { display: grid; place-items: center; }
   .flags { display: flex; gap: 4px; justify-content: flex-end; align-items: center; }
+  .flags :global(.flag.chg) { background: var(--amber-soft); color: var(--amber); }
   .delta { font: 700 11.5px var(--mono); text-align: right; color: var(--text-3); }
   .delta.down { color: var(--amber); }
   .delta.up { color: var(--blue); }

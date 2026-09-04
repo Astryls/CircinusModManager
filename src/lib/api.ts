@@ -1,6 +1,6 @@
 // Thin wrapper over Tauri's invoke, with a browser mock so the UI can run outside Tauri.
 
-import type { AddResult, CollectionPreview, ImportPreview, Issue, Locations, ModFiles, QueueState, RentryPreview, Rule, RulesFile, Settings, Snapshot, SortResult, UserData } from "./types";
+import type { AddResult, CollectionPreview, ImportPreview, Issue, Locations, ModFiles, QueueState, RentryPreview, Rule, RulesFile, Settings, Snapshot, SortResult, SteamCmdStatus, TestOutcome, UserData } from "./types";
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -53,6 +53,9 @@ export const api = {
   downloadsPause: (paused: boolean) => invoke<QueueState>("downloads_pause", { paused }),
   downloadsAddMissing: () => invoke<[AddResult, string[]]>("downloads_add_missing"),
   steamcmdInstall: () => invoke<void>("steamcmd_install"),
+  steamcmdStatus: () => invoke<SteamCmdStatus>("steamcmd_status"),
+  steamcmdTest: () => invoke<TestOutcome>("steamcmd_test"),
+  acknowledgeChanges: () => invoke<Snapshot>("acknowledge_changes"),
   importCollection: (text: string) => invoke<CollectionPreview>("import_collection", { text }),
   importRentry: (url: string) => invoke<RentryPreview>("import_rentry", { url }),
   checkUpdates: () => invoke<number>("check_updates")

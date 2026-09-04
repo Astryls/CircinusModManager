@@ -90,6 +90,24 @@ impl SteamCmd {
         Ok(())
     }
 
+    /// Log in anonymously and quit: proves the install works and that its output reaches us.
+    pub async fn test(&self, on_line: &mut (dyn FnMut(&str) + Send)) -> Result<TestOutcome> {
+        let started = Instant::now();
+        let mut logged_in = false;
+        let mut lines = 0usize;
+        let raw = self
+            .run_raw(&["+login".to_string(), "anonymous".to_string(), "+quit".to_string()], Duration::from_secs(180), &mut |line| {
+                lines += 1;
+                let lower = line.to_ascii_lowercase();
+                if lower.contains("logged in ok") || lower.contains("waiting for user info...ok") || lower.contains("waiting for client config...ok") {
+                    logged_in = true;
+                }
+                on_line(line);
+            })
+            .await?;
+        Ok(TestOutcome { logged_in, lines, stalled: raw.stalled, exit_code: raw.exit_code, seconds: started.elapsed().as_secs() })
+    }
+
     /// Write a runscript for a batch: (item id, validate?).
     pub fn write_script(&self, items: &[(u64, bool)]) -> Result<PathBuf> {
         let mut s = String::new();
@@ -337,6 +355,19 @@ fn copy_dir(src: &Path, dest: &Path) -> Result<()> {
 pub struct RawOutcome {
     pub stalled: bool,
     pub exit_code: Option<i32>,
+}
+
+/// Result of `SteamCmd::test`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestOutcome {
+    /// SteamCMD reported an anonymous login.
+    pub logged_in: bool,
+    /// Lines of output that reached Circinus (0 on Windows means the console-log tail failed).
+    pub lines: usize,
+    pub stalled: bool,
+    pub exit_code: Option<i32>,
+    pub seconds: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

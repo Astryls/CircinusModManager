@@ -2,7 +2,7 @@
 // indexes for fast lookups, and the actions the components call.
 
 import { api, listen } from "./api";
-import type { CollectionPreview, Group, ImportPreview, Issue, ModInfo, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, UserData, Weight } from "./types";
+import type { CollectionPreview, Group, ImportPreview, Issue, ModChange, ModInfo, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamCmdStatus, UserData, Weight } from "./types";
 import { PHASES, primaryUid, severityOf } from "./types";
 
 export type View = "order" | "library" | "downloads" | "analyzer" | "settings";
@@ -34,7 +34,13 @@ class Store {
   collectionPreview = $state<CollectionPreview | null>(null);
   rentryPreview = $state<RentryPreview | null>(null);
   showImport = $state(false);
+  showChanges = $state(false);
   downloads = $state<QueueState | null>(null);
+  /** Why the download manager could not be reached, when it could not. */
+  downloadsError = $state<string | null>(null);
+  steamcmd = $state<SteamCmdStatus | null>(null);
+  /** Notices closed for this session (they come back next launch if still true). */
+  dismissed = $state<string[]>([]);
   /** uid → the list should scroll to it on the next render. */
   scrollRequest = $state<string | null>(null);
 
@@ -71,6 +77,19 @@ class Store {
   pinned = $derived(new Set(this.snap?.user.pinned ?? []));
   showWeight = $derived(this.snap?.settings.showWeight ?? false);
   updateByUid = $derived(new Map((this.snap?.updates ?? []).map((u) => [u.uid, u])));
+  changes = $derived(this.snap?.changes ?? []);
+  changeByUid = $derived(new Map(this.changes.map((c) => [c.uid, c])));
+  listChange = $derived(this.snap?.listChange ?? null);
+  changeCounts = $derived.by(() => {
+    const n = (k: ModChange["kind"]) => this.changes.filter((c) => c.kind === k).length;
+    return { updated: n("updated"), added: n("added"), removed: n("removed"), total: this.changes.length };
+  });
+  /** "3 updated, 1 new, 2 removed" */
+  changeSummary = $derived.by(() => {
+    const c = this.changeCounts;
+    return [c.updated ? `${c.updated} updated` : "", c.added ? `${c.added} new` : "", c.removed ? `${c.removed} removed` : ""].filter(Boolean).join(", ");
+  });
+  steamcmdReady = $derived(this.downloads?.steamcmdInstalled ?? false);
   queueCounts = $derived.by(() => {
     const items = this.downloads?.items ?? [];
     return { queued: items.filter((i) => i.status === "queued" || i.status === "downloading").length, failed: items.filter((i) => i.status === "failed").length, done: items.filter((i) => i.status === "done").length };
@@ -168,12 +187,34 @@ class Store {
     if (snap) {
       this.snap = snap;
       queueMicrotask(() => log("first render scheduled"));
+      if (snap.changes.length) setTimeout(() => this.say(`${snap.changes.length} mod${snap.changes.length === 1 ? "" : "s"} changed since you last opened Circinus — ${this.changeSummary}`, "warn"), 400);
+      else if (snap.listChange) setTimeout(() => this.say("Your active list was changed outside Circinus", "warn"), 400);
     }
-    api.downloadsState().then((q) => (this.downloads = q)).catch(() => {});
+    this.refreshDownloads();
+  }
+
+  refreshDownloads() {
+    api.downloadsState()
+      .then((q) => { this.downloads = q; this.downloadsError = null; })
+      .catch((e) => { this.downloadsError = String(e); console.warn("[circinus] downloads_state failed", e); });
+    api.steamcmdStatus().then((st) => (this.steamcmd = st)).catch(() => {});
   }
 
   async refresh() {
+    const had = this.snap != null;
+    const before = new Set(this.changes.map((c) => `${c.kind}:${c.uid}`));
+    const beforeList = JSON.stringify(this.listChange);
     this.snap = await api.snapshot();
+    if (!had) return;
+    // Something changed while we were open (Steam updated a mod, the game rewrote the list).
+    const fresh = this.changes.filter((c) => !before.has(`${c.kind}:${c.uid}`));
+    if (fresh.length) {
+      const first = fresh[0];
+      const what = first.kind === "updated" && first.reasons.includes("workshopUpdate") ? `Steam updated ${first.name}` : first.kind === "added" ? `${first.name} was installed` : first.kind === "removed" ? `${first.name} was removed` : `${first.name} changed on disk`;
+      this.say(fresh.length === 1 ? what : `${what} and ${fresh.length - 1} more changed`, "warn");
+    } else if (this.listChange && JSON.stringify(this.listChange) !== beforeList) {
+      this.say("ModsConfig.xml was changed outside Circinus", "warn");
+    }
   }
 
   say(msg: string, kind: "ok" | "warn" | "err" = "ok") {
@@ -328,11 +369,31 @@ class Store {
     this.downloads = await api.downloadsPause(paused);
   }
   installSteamCmd() {
+    // Show the Downloads view first so the install log streams into view.
+    this.view = "downloads";
     return this.run("Installing SteamCMD…", async () => {
       await api.steamcmdInstall();
       this.downloads = await api.downloadsState();
+      this.steamcmd = await api.steamcmdStatus();
       this.say("SteamCMD is ready");
     });
+  }
+  testSteamCmd() {
+    return this.run("Testing SteamCMD…", async () => {
+      const t = await api.steamcmdTest();
+      this.downloads = await api.downloadsState();
+      this.say(t.loggedIn ? `SteamCMD works: anonymous login in ${t.seconds}s` : t.stalled ? "SteamCMD produced no output — see the log" : `SteamCMD finished without confirming a login (exit ${t.exitCode ?? "?"})`, t.loggedIn ? "ok" : "err");
+      return t;
+    });
+  }
+  acknowledgeChanges() {
+    return this.run("Clearing…", async () => {
+      this.apply(await api.acknowledgeChanges());
+      this.showChanges = false;
+    });
+  }
+  dismiss(id: string) {
+    if (!this.dismissed.includes(id)) this.dismissed = [...this.dismissed, id];
   }
   checkUpdates() {
     return this.run("Asking the Workshop…", async () => {

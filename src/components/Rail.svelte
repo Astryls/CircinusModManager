@@ -13,7 +13,7 @@
   const nav: { id: View; label: string; icon: string; count?: () => string | number; att?: boolean }[] = [
     { id: "order", label: "Load order", icon: I.list, count: () => store.active.length },
     { id: "library", label: "Library", icon: I.library, count: () => store.mods.length },
-    { id: "downloads", label: "Downloads", icon: I.download, count: () => store.queueCounts.queued || "", att: true },
+    { id: "downloads", label: "Downloads", icon: I.download, count: () => store.queueCounts.queued || (store.downloads && !store.downloads.steamcmdInstalled && !store.downloads.installing ? "set up" : ""), att: true },
     { id: "analyzer", label: "Analyzer", icon: I.layers, count: () => store.stats.errors + store.stats.warnings, att: true },
     { id: "settings", label: "Settings", icon: I.sliders }
   ];
@@ -48,7 +48,7 @@
     {#each nav as n}
       <button class:on={store.view === n.id || (n.id === "order" && store.view === "library")} onclick={() => { store.view = n.id; if (n.id === "library") store.tab = "all"; if (n.id === "order") store.tab = "active"; }}>
         {@html n.icon}{n.label}
-        {#if n.count}<span class="count num" class:att={n.att && Number(n.count()) > 0}>{n.count()}</span>{/if}
+        {#if n.count}<span class="count num" class:att={n.att && (Number(n.count()) > 0 || n.count() === "set up")}>{n.count()}</span>{/if}
       </button>
     {/each}
   </nav>

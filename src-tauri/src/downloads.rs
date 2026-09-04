@@ -31,6 +31,25 @@ pub struct AddResult {
     pub skipped: Vec<(u64, String)>,
 }
 
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SteamCmdStatus {
+    pub installed: bool,
+    pub installing: bool,
+    pub root: String,
+    pub exe: String,
+    pub downloads_dir: String,
+    pub console_log: String,
+    pub console_log_bytes: u64,
+    pub mods_dir: Option<String>,
+    pub workshop_dir: Option<String>,
+    pub queued: usize,
+    pub running: bool,
+    pub paused: bool,
+    pub batch_size: usize,
+    pub cooldown_until: Option<i64>,
+}
+
 impl Downloads {
     pub fn start(handle: AppHandle, app: Shared) -> Arc<Downloads> {
         let mut state: QueueState = app.lock().ok().and_then(|a| a.cache.get::<QueueState>(QUEUE_KEY).ok().flatten()).unwrap_or_default();
@@ -188,6 +207,75 @@ impl Downloads {
         }
         self.emit();
         self.wake();
+        result
+    }
+
+    /// Where things are and whether SteamCMD is usable — for Settings and the Downloads view.
+    pub fn status(&self) -> SteamCmdStatus {
+        self.refresh_installed();
+        let cmd = self.steamcmd();
+        let console_log = cmd.console_log();
+        let (mods_dir, workshop_dir) = self.app.lock().map(|a| (a.locations.local_mods_dir.clone(), a.locations.workshop_dir.clone())).unwrap_or((None, None));
+        let s = self.snapshot();
+        SteamCmdStatus {
+            installed: s.steamcmd_installed,
+            installing: s.installing,
+            root: cmd.root.display().to_string(),
+            exe: cmd.exe().display().to_string(),
+            downloads_dir: cmd.downloads_dir().display().to_string(),
+            console_log: console_log.display().to_string(),
+            console_log_bytes: std::fs::metadata(&console_log).map(|m| m.len()).unwrap_or(0),
+            mods_dir: mods_dir.map(|p| p.display().to_string()),
+            workshop_dir: workshop_dir.map(|p| p.display().to_string()),
+            queued: s.queued(),
+            running: s.running,
+            paused: s.paused,
+            batch_size: s.throttle.batch_size,
+            cooldown_until: s.throttle.cooldown_until,
+        }
+    }
+
+    /// Run `+login anonymous +quit` and stream the output into the log: the quickest way to
+    /// see whether SteamCMD works on this machine (and, on Windows, whether its console log
+    /// reaches us).
+    pub async fn test_steamcmd(self: &Arc<Self>) -> Result<circinus_core::steam::steamcmd::TestOutcome, String> {
+        {
+            let mut s = self.state.lock().unwrap();
+            if s.installing {
+                return Err("SteamCMD is still being installed".into());
+            }
+            if s.running {
+                return Err("A download batch is running — try again when it finishes".into());
+            }
+            if !s.steamcmd_installed {
+                return Err("SteamCMD is not installed yet".into());
+            }
+            s.push_log("Test: login anonymous, then quit…");
+        }
+        self.emit();
+        let cmd = self.steamcmd();
+        let me = self.clone();
+        let mut last_emit = std::time::Instant::now();
+        let mut on_line = move |line: &str| {
+            if let Ok(mut s) = me.state.lock() {
+                s.push_log(line);
+            }
+            if last_emit.elapsed() > std::time::Duration::from_millis(300) {
+                me.emit();
+                last_emit = std::time::Instant::now();
+            }
+        };
+        let result = cmd.test(&mut on_line).await.map_err(|e| e.to_string());
+        {
+            let mut s = self.state.lock().unwrap();
+            match &result {
+                Ok(t) if t.logged_in => s.push_log(&format!("Test passed: anonymous login in {} s, {} lines of output.", t.seconds, t.lines)),
+                Ok(t) if t.stalled => s.push_log("Test failed: SteamCMD produced no output and was stopped."),
+                Ok(t) => s.push_log(&format!("Test finished without a login confirmation (exit code {:?}, {} lines).", t.exit_code, t.lines)),
+                Err(e) => s.push_log(&format!("Test failed: {e}")),
+            }
+        }
+        self.emit();
         result
     }
 

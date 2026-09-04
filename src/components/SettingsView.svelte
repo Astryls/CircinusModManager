@@ -1,10 +1,14 @@
 <script lang="ts">
   import { store } from "$lib/store.svelte";
-  import { api, pickFolder, inTauri, openUrl } from "$lib/api";
+  import { api, pickFolder, inTauri, openUrl, revealPath } from "$lib/api";
+  import { I } from "$lib/icons";
   import type { Locations } from "$lib/types";
 
   const s = $derived(store.snap?.settings);
   const loc = $derived(store.snap?.locations);
+  const q = $derived(store.downloads);
+  const st = $derived(store.steamcmd);
+  store.refreshDownloads();
   let appData = $state("");
   api.appDataDir().then((d) => (appData = d)).catch(() => {});
 
@@ -56,6 +60,37 @@
         <button class="btn" onclick={() => store.rescan(true)}>Re-read every mod</button>
         <span class="hint">Drops the parse cache. Normal refreshes only re-read folders that changed.</span>
       </div>
+    </section>
+
+    <section class="card">
+      <h3>SteamCMD <span class="aside">{q?.steamcmdInstalled ? "ready" : q?.installing ? "installing…" : store.downloadsError ? "unavailable" : "not installed"}</span></h3>
+      <p class="hint">Valve's command-line Steam client. Circinus uses it to download Workshop mods without the Steam client (whole collections, missing mods from a list, fresh copies of broken ones) with an anonymous login and a throttle that backs off when Steam pushes back. Valve's terms don't allow shipping it, so Circinus fetches it once into its own data folder.</p>
+      {#if store.downloadsError}
+        <p class="hint bad">The download manager did not answer: <span class="mono">{store.downloadsError}</span></p>
+        <div class="row"><button class="btn" onclick={() => store.refreshDownloads()}>{@html I.refresh}Try again</button></div>
+      {:else if q?.steamcmdInstalled}
+        <div class="loc">
+          <div class="lt"><b>Installed at</b><span>steamcmd.exe / steamcmd.sh</span></div>
+          <div class="lv"><span class="path mono" title={st?.exe ?? ""}>{st?.exe ?? "…"}</span>{#if st}<button class="btn sm" onclick={() => revealPath(st.root)}>Open</button>{/if}</div>
+        </div>
+        <div class="loc">
+          <div class="lt"><b>Downloads go to</b><span>then move into your Mods folder</span></div>
+          <div class="lv"><span class="path mono" title={st?.modsDir ?? ""}>{st?.modsDir ?? "no Mods folder — set the RimWorld folder above"}</span></div>
+        </div>
+        <div class="row">
+          <button class="btn primary" onclick={() => (store.view = "downloads")}>{@html I.download}Open Downloads</button>
+          <button class="btn" disabled={q.running || q.installing} onclick={() => store.testSteamCmd().then(() => (store.view = "downloads"))}>{@html I.terminal}Test SteamCMD</button>
+          <button class="btn" disabled={q.running || q.installing} onclick={() => store.installSteamCmd()}>{@html I.refresh}Reinstall</button>
+          <span class="hint">Batch size {q.throttle.batchSize}/25 · {store.queueCounts.queued} queued · {store.queueCounts.failed} failed</span>
+        </div>
+      {:else if q?.installing}
+        <div class="row"><span class="hint">Installing — SteamCMD downloads itself and updates on first run. Watch the output in Downloads.</span><button class="btn" onclick={() => (store.view = "downloads")}>Open Downloads</button></div>
+      {:else}
+        <div class="row">
+          <button class="btn primary" onclick={() => store.installSteamCmd()}>{@html I.download}Install SteamCMD</button>
+          <span class="hint">About 5 MB, then a self-update. Nothing is sent to Steam beyond an anonymous login.</span>
+        </div>
+      {/if}
     </section>
 
     <section class="card">
@@ -115,5 +150,6 @@
   .dbt .mono { color: var(--text-3); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .switch { margin: 6px 0; align-items: center; display: flex; }
   .lnk { color: var(--blue); font-weight: 600; }
+  .hint.bad { color: var(--red); }
   @media (max-width: 980px) { .settings { grid-template-columns: 1fr; } }
 </style>

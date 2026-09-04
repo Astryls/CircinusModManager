@@ -64,7 +64,7 @@
     </section>
   {/each}
   <section class="card">
-    <h3>Coming in milestone 3</h3>
+    <h3>Coming next</h3>
     <p class="lead">Def and patch flattening: every XML def merged in load order with inheritance resolved, so you can see which mod's value wins; and a .NET sidecar that lists Harmony patch targets per assembly, so "who patches what" is visible next to the load order.</p>
   </section>
 </main>

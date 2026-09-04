@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod downloads;
 pub mod state;
+pub mod watch;
 
 use commands::{ScanProgress, Shared};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -80,6 +81,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(shared.clone())
         .setup(move |app| {
             // The download manager needs the app handle for events; created here.
@@ -89,6 +91,8 @@ pub fn run() {
             let handle = app.handle().clone();
             let st = shared.clone();
             tauri::async_runtime::spawn_blocking(move || run_scan(handle, st, false));
+            // Then keep an eye on Steam and the game while we are open.
+            watch::start(app.handle().clone(), shared.clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -123,6 +127,9 @@ pub fn run() {
             commands::downloads_pause,
             commands::downloads_add_missing,
             commands::steamcmd_install,
+            commands::steamcmd_status,
+            commands::steamcmd_test,
+            commands::acknowledge_changes,
             commands::import_collection,
             commands::import_rentry,
             commands::check_updates,

@@ -2,6 +2,7 @@
 //! No Tauri types here so it stays testable.
 
 use circinus_core::cache::Cache;
+use circinus_core::changes::{self, Baseline, ListChange, ModChange};
 use circinus_core::game::GameVersion;
 use circinus_core::import::ImportedList;
 use circinus_core::model::*;
@@ -93,6 +94,13 @@ pub struct Snapshot {
     /// Installed workshop mods with a newer version on the Workshop (from the last check).
     pub updates: Vec<UpdateInfo>,
     pub updates_checked_at: i64,
+    /// Mods that appeared, disappeared or changed since the previous session (or since the
+    /// user last acknowledged the list).
+    pub changes: Vec<ModChange>,
+    /// Edits to ModsConfig.xml made outside Circinus since then.
+    pub list_change: Option<ListChange>,
+    /// Unix seconds of the baseline the changes are measured from (0 = first run).
+    pub changes_since: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,7 +140,17 @@ pub struct App {
     pub pending_stamps: HashMap<String, String>,
     pub updates: Vec<UpdateInfo>,
     pub updates_checked_at: i64,
+    /// What the previous session last saw; `changes` is the diff against it.
+    pub baseline: Option<Baseline>,
+    pub changes: Vec<ModChange>,
+    pub list_change: Option<ListChange>,
+    /// Steam's `timeupdated` per installed Workshop item, read with every scan.
+    pub workshop_updated: HashMap<u64, u64>,
+    /// The active list exactly as ModsConfig.xml has it (package ids, lowercase).
+    pub file_active: Vec<String>,
 }
+
+const BASELINE_KEY: &str = "mod_baseline";
 
 fn now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
@@ -155,6 +173,7 @@ impl App {
         if user.groups.is_empty() {
             user.groups = default_groups();
         }
+        let baseline: Option<Baseline> = cache.get(BASELINE_KEY).unwrap_or(None);
         let mut app = App {
             data_dir,
             cache,
@@ -177,6 +196,11 @@ impl App {
             pending_stamps: HashMap::new(),
             updates: Vec::new(),
             updates_checked_at: 0,
+            baseline,
+            changes: Vec::new(),
+            list_change: None,
+            workshop_updated: HashMap::new(),
+            file_active: Vec::new(),
         };
         app.resolve_locations();
         app.load_databases();
@@ -242,7 +266,8 @@ impl App {
         if full {
             self.cache.clear_mod_cache()?;
         }
-        let opts = ScanOptions { locations: self.locations.clone(), game_version: self.game_version.clone(), use_cache: !full };
+        self.workshop_updated = self.locations.workshop_updated();
+        let opts = ScanOptions { locations: self.locations.clone(), game_version: self.game_version.clone(), use_cache: !full, workshop_updated: self.workshop_updated.clone() };
         let out = scan::scan(&opts, Some(&self.cache), false, progress)?;
         self.mods = out.mods;
         self.files = out.files;
@@ -251,6 +276,8 @@ impl App {
         self.scanned_at = now();
         self.recompile();
         self.read_mods_config();
+        self.refresh_changes();
+        self.store_baseline();
         let shallow: Vec<ModInfo> = self.mods.iter().filter(|m| self.shallow.contains(&m.uid)).cloned().collect();
         Ok(shallow)
     }
@@ -263,7 +290,49 @@ impl App {
         for u in &done {
             self.pending_stamps.remove(u);
         }
+        self.refresh_changes();
+        self.store_baseline();
         Ok(n)
+    }
+
+    /// Diff the install against the baseline the session started with.
+    fn refresh_changes(&mut self) {
+        match &self.baseline {
+            Some(b) => {
+                let active: HashSet<String> = self.active.iter().cloned().collect();
+                let (c, l) = changes::diff(b, &self.mods, &self.workshop_updated, &active, Some(&self.file_active));
+                self.changes = c;
+                self.list_change = l;
+            }
+            None => {
+                self.changes.clear();
+                self.list_change = None;
+            }
+        }
+    }
+
+    /// Remember the current install for the next launch. Becomes the session baseline too on
+    /// the very first run, once the folders have been fully inspected (quick-phase mtimes
+    /// would otherwise read as changes a moment later).
+    fn store_baseline(&mut self) {
+        let b = Baseline::take(&self.mods, &self.workshop_updated, &self.file_active, now());
+        if let Err(e) = self.cache.set(BASELINE_KEY, &b) {
+            tracing::warn!("could not store the mod baseline: {e}");
+        }
+        if self.baseline.is_none() && self.shallow.is_empty() {
+            self.baseline = Some(b);
+        }
+    }
+
+    /// The user has seen the changes: measure from now on.
+    pub fn acknowledge_changes(&mut self) {
+        let b = Baseline::take(&self.mods, &self.workshop_updated, &self.file_active, now());
+        if let Err(e) = self.cache.set(BASELINE_KEY, &b) {
+            tracing::warn!("could not store the mod baseline: {e}");
+        }
+        self.baseline = Some(b);
+        self.changes.clear();
+        self.list_change = None;
     }
 
     /// Read ModsConfig.xml and resolve it against installed mods (keeps unsaved edits if dirty).
@@ -278,6 +347,7 @@ impl App {
         let (uids, missing) = modsconfig::resolve_active(&cfg.active_mods, &self.mods);
         self.active = uids;
         self.missing = missing;
+        self.file_active = cfg.active_mods.iter().map(|p| p.to_lowercase()).collect();
         self.previous_known = cfg.known_expansions;
         self.dirty = false;
     }
@@ -334,6 +404,9 @@ impl App {
             issues_truncated,
             updates: self.updates.clone(),
             updates_checked_at: self.updates_checked_at,
+            changes: self.changes.clone(),
+            list_change: self.list_change.clone(),
+            changes_since: self.baseline.as_ref().map(|b| b.taken_at).unwrap_or(0),
         }
     }
 
@@ -418,6 +491,13 @@ impl App {
         let cfg = modsconfig::build(&self.active, &self.mods, &self.game_version.full, &self.previous_known);
         modsconfig::write(&path, &cfg)?;
         self.dirty = false;
+        // Our own edit is not "a change made outside Circinus".
+        self.file_active = cfg.active_mods.iter().map(|p| p.to_lowercase()).collect();
+        if let Some(b) = &mut self.baseline {
+            b.active = self.file_active.clone();
+        }
+        self.refresh_changes();
+        self.store_baseline();
         Ok(path)
     }
 

@@ -1,0 +1,129 @@
+<script lang="ts">
+  import { store } from "$lib/store.svelte";
+  import { I } from "$lib/icons";
+  import { openUrl } from "$lib/api";
+  import { SOURCE_LABEL, describeChange, type ChangeKind, type ModChange } from "$lib/types";
+
+  const groups = $derived.by(() => {
+    const order: { kind: ChangeKind; title: string; hint: string }[] = [
+      { kind: "updated", title: "Updated", hint: "Newer files than last time — Workshop updates Steam applied, new versions, edited folders" },
+      { kind: "added", title: "New", hint: "Folders that were not there before" },
+      { kind: "removed", title: "Removed", hint: "Folders that are gone; mods still in your list show as missing" }
+    ];
+    return order.map((g) => ({ ...g, items: store.changes.filter((c) => c.kind === g.kind) })).filter((g) => g.items.length);
+  });
+  const list = $derived(store.listChange);
+  const since = $derived.by(() => {
+    const t = store.snap?.changesSince ?? 0;
+    return t ? new Date(t * 1000).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+  });
+  const nameOf = (pkg: string) => store.byPackage.get(pkg.replace(/_steam$/, ""))?.name ?? pkg;
+
+  function close() {
+    store.showChanges = false;
+  }
+  function show(c: ModChange) {
+    if (!store.byUid.has(c.uid)) return;
+    close();
+    store.view = "order";
+    if (!store.activeSet.has(c.uid)) store.tab = "all";
+    store.scrollTo(c.uid);
+  }
+  function changelog(c: ModChange) {
+    if (c.publishedFileId) openUrl(`https://steamcommunity.com/sharedfiles/filedetails/changelog/${c.publishedFileId}`);
+  }
+  const redownloadable = $derived(store.changes.filter((c) => c.kind !== "removed" && c.publishedFileId && (c.source === "workshop" || c.source === "steamcmd")));
+</script>
+
+<div class="scrim" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) close(); }}>
+  <div class="dlg card" role="dialog" aria-modal="true" aria-labelledby="chg-title">
+    <div class="hd">
+      <div><b id="chg-title">What changed</b><span class="sub">{since ? `Since ${since}` : "Since the previous launch"} · {store.changeSummary || "nothing"} · Circinus compares on every launch and keeps watching while open</span></div>
+      <button class="x" aria-label="Close" onclick={close}>{@html I.close}</button>
+    </div>
+
+    <div class="body">
+      {#if list}
+        <section>
+          <h4>Active list edited outside Circinus <span class="aside">ModsConfig.xml</span></h4>
+          <p class="hint">RimWorld rewrites the list when you change mods in its own menu; other managers write it too. Circinus loaded the file as it is now.</p>
+          <div class="pills">
+            {#each list.added as p}<span class="pill add" title={p}>{@html I.plus}{nameOf(p)}</span>{/each}
+            {#each list.removed as p}<span class="pill rm" title={p}>{@html I.minus}{nameOf(p)}</span>{/each}
+            {#if list.reordered}<span class="pill">{@html I.change}order changed</span>{/if}
+          </div>
+        </section>
+      {/if}
+
+      {#each groups as g (g.kind)}
+        <section>
+          <h4>{g.title} <span class="aside">{g.items.length}</span></h4>
+          <p class="hint">{g.hint}</p>
+          <div class="rows">
+            {#each g.items as c (c.uid)}
+              <div class="row {c.kind}">
+                <span class="k">{#if c.kind === "added"}{@html I.plus}{:else if c.kind === "removed"}{@html I.minus}{:else}{@html I.change}{/if}</span>
+                <span class="nm">
+                  <b>{c.name}</b>
+                  <span>{describeChange(c)} · {SOURCE_LABEL[c.source]}{c.active && c.kind !== "removed" ? " · active" : ""}</span>
+                </span>
+                <span class="acts">
+                  {#if c.publishedFileId}<button class="ib" title="Workshop changelog" onclick={() => changelog(c)}>{@html I.link}</button>{/if}
+                  {#if c.kind !== "removed" && c.publishedFileId && (c.source === "workshop" || c.source === "steamcmd")}<button class="ib" title="Re-download with SteamCMD" onclick={() => store.queueIds([c.publishedFileId!])}>{@html I.download}</button>{/if}
+                  {#if c.kind !== "removed"}<button class="btn sm" onclick={() => show(c)}>Show</button>{/if}
+                </span>
+              </div>
+            {/each}
+          </div>
+        </section>
+      {/each}
+
+      {#if !groups.length && !list}
+        <p class="hint">Nothing has changed since Circinus last looked.</p>
+      {/if}
+    </div>
+
+    <div class="ft">
+      <span class="sp"></span>
+      {#if redownloadable.length > 1}<button class="btn" onclick={() => store.queueIds(redownloadable.map((c) => c.publishedFileId!))}>{@html I.download}Re-download all {redownloadable.length}</button>{/if}
+      <button class="btn primary" onclick={() => store.acknowledgeChanges()}>{@html I.check}Got it, clear the list</button>
+    </div>
+  </div>
+</div>
+
+<style>
+  .scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(6px); display: grid; place-items: center; z-index: 40; }
+  .dlg { width: min(760px, calc(100vw - 40px)); max-height: calc(100vh - 40px); padding: 18px 20px; box-shadow: var(--shadow-float); display: flex; flex-direction: column; gap: 14px; }
+  .hd { display: flex; justify-content: space-between; align-items: flex-start; }
+  .hd b { font-size: 16px; font-weight: 800; display: block; }
+  .hd .sub { display: block; font-size: 12.5px; color: var(--text-3); margin-top: 2px; }
+  .x { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--text-3); }
+  .x:hover { background: var(--surface-2); color: var(--text); }
+  .x :global(svg) { width: 14px; height: 14px; }
+  .body { overflow: auto; min-height: 0; display: flex; flex-direction: column; gap: 16px; padding-right: 4px; }
+  h4 { margin: 0 0 4px; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2); display: flex; align-items: center; gap: 8px; }
+  .aside { color: var(--text-3); font-weight: 600; letter-spacing: 0; text-transform: none; }
+  .hint { margin: 0 0 8px; color: var(--text-3); font-size: 12.5px; line-height: 1.45; }
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 7px; background: var(--surface-3); font-size: 12px; font-weight: 600; color: var(--text-2); }
+  .pill :global(svg) { width: 10px; height: 10px; }
+  .pill.add { color: var(--green); background: var(--green-soft); }
+  .pill.rm { color: var(--red); background: var(--red-soft); }
+  .rows { display: flex; flex-direction: column; gap: 2px; }
+  .row { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px 8px; border-radius: 9px; }
+  .row:hover { background: var(--surface-2); }
+  .k { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-3); color: var(--text-2); }
+  .k :global(svg) { width: 11px; height: 11px; }
+  .row.added .k { background: var(--green-soft); color: var(--green); }
+  .row.removed .k { background: var(--red-soft); color: var(--red); }
+  .row.updated .k { background: var(--amber-soft); color: var(--amber); }
+  .nm { min-width: 0; display: flex; flex-direction: column; }
+  .nm b { font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nm span { font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .acts { display: flex; gap: 4px; align-items: center; }
+  .ib { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--text-3); }
+  .ib:hover { background: var(--surface-3); color: var(--text); }
+  .ib :global(svg) { width: 14px; height: 14px; }
+  .ft { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .sp { flex: 1; }
+</style>

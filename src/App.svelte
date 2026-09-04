@@ -9,6 +9,7 @@
   import ModList from "./components/ModList.svelte";
   import Inspector from "./components/Inspector.svelte";
   import ImportDialog from "./components/ImportDialog.svelte";
+  import ChangesDialog from "./components/ChangesDialog.svelte";
   import SettingsView from "./components/SettingsView.svelte";
   import AnalyzerView from "./components/AnalyzerView.svelte";
   import DownloadsView from "./components/DownloadsView.svelte";
@@ -26,12 +27,13 @@
     if (meta && e.key.toLowerCase() === "s") { e.preventDefault(); store.save(); }
     else if (meta && e.key.toLowerCase() === "k") { e.preventDefault(); (document.getElementById("search") as HTMLInputElement)?.focus(); }
     else if (meta && e.key.toLowerCase() === "i") { e.preventDefault(); store.showImport = true; }
+    else if (meta && e.key.toLowerCase() === "d") { e.preventDefault(); store.view = store.view === "downloads" ? "order" : "downloads"; }
     else if (e.altKey && e.key === "ArrowUp") { e.preventDefault(); store.moveSelected(-1); }
     else if (e.altKey && e.key === "ArrowDown") { e.preventDefault(); store.moveSelected(1); }
     else if (e.key === "Delete" || e.key === "Backspace") {
       const sel = store.selected.filter((u) => store.activeSet.has(u));
       if (sel.length) { e.preventDefault(); store.deactivate(sel); }
-    } else if (e.key === "Escape") { store.selected = []; store.preview = null; }
+    } else if (e.key === "Escape") { if (store.showChanges) store.showChanges = false; else { store.selected = []; store.preview = null; } }
   }
 </script>
 
@@ -64,6 +66,7 @@
     </div>
   {/if}
   {#if store.showImport}<ImportDialog />{/if}
+  {#if store.showChanges}<Panel name="Changes"><ChangesDialog /></Panel>{/if}
   <Toast />
   {#if store.loading}
     <div class="loading"><div class="spin"></div><span>{store.progress ? `Reading your mods… ${store.progress.done.toLocaleString()} of ${store.progress.total.toLocaleString()}` : store.error ? store.error : `${store.step}…`}</span></div>

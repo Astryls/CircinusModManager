@@ -3,7 +3,7 @@
   import { I, sevIcon } from "$lib/icons";
   import { describe } from "$lib/describe";
   import { api, assetUrl, openUrl, revealPath } from "$lib/api";
-  import { BAND_LABEL, PHASES, SOURCE_LABEL, formatBytes, initials, severityOf, type Phase, type Rule } from "$lib/types";
+  import { BAND_LABEL, PHASES, SOURCE_LABEL, describeChange, formatBytes, initials, severityOf, type Phase, type Rule } from "$lib/types";
 
   const m = $derived(store.selectedMod);
   const placement = $derived(m ? store.placement(m.uid) : undefined);
@@ -13,6 +13,9 @@
   const weight = $derived(m ? store.weightOf(m) : undefined);
   const group = $derived(m ? store.groupOf(m.uid) : undefined);
   const isActive = $derived(m ? store.activeSet.has(m.uid) : false);
+  const change = $derived(m ? store.changeByUid.get(m.uid) : undefined);
+  const update = $derived(m ? store.updateByUid.get(m.uid) : undefined);
+  const canRedownload = $derived(!!m?.publishedFileId && m.source !== "ludeon");
   const GRAD: Record<Phase, [string, string]> = { core: ["#3b5fd9", "#1b2a5c"], prepatch: ["#8b6cf0", "#3a2a6e"], framework: ["#2ea59e", "#12403e"], content: ["#3fb865", "#173f24"], patch: ["#d9508f", "#5a1f3c"], texture: ["#e39b3a", "#5d3a0f"], optimization: ["#f07a4d", "#5d2a17"] };
   let preview = $state<string>("");
   let description = $state<string>("");
@@ -64,6 +67,7 @@
         <dt>Versions</dt><dd>{m.supportedVersions.join(" · ") || "—"}{m.modVersion ? ` · v${m.modVersion}` : ""}</dd>
         <dt>Size</dt><dd class="num">{formatBytes(m.contents.sizeBytes)}</dd>
         <dt>Contains</dt><dd>{[m.contents.assemblies ? `${m.contents.assemblies} assembl${m.contents.assemblies === 1 ? "y" : "ies"}` : null, m.contents.defs ? `${m.contents.defs} def files` : null, m.contents.patches ? `${m.contents.patches} patches` : null, m.contents.textures + m.contents.dds ? `${(m.contents.textures + m.contents.dds).toLocaleString()} textures` : null].filter(Boolean).join(", ") || "nothing loadable"}</dd>
+        <dt>On disk</dt><dd>{m.modified ? new Date(m.modified * 1000).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—"}</dd>
         <dt>Group</dt>
         <dd>
           <select class="sel" value={group?.id ?? ""} onchange={(e) => store.setGroup(store.selected.length > 1 ? store.selected : [m.uid], (e.currentTarget as HTMLSelectElement).value || null)}>
@@ -73,6 +77,18 @@
         </dd>
       </dl>
     </section>
+
+    {#if change || update}
+      <section class="card changed">
+        <h3>{change ? "Changed since last launch" : "Newer on the Workshop"}</h3>
+        {#if change}<div class="chg"><span class="flag chg">{@html change.kind === "added" ? I.plus : I.change}</span><span>{describeChange(change)}</span></div>{/if}
+        {#if update}<div class="chg"><span class="flag note">{@html I.up}</span><span>Workshop version from {new Date(update.remoteUpdated * 1000).toLocaleDateString()}; yours is from {new Date(update.localModified * 1000).toLocaleDateString()}{update.source === "workshop" ? " — Steam updates it when the game next starts" : ""}</span></div>{/if}
+        <div class="acts two">
+          {#if m.publishedFileId}<button class="btn" onclick={() => openUrl(`https://steamcommunity.com/sharedfiles/filedetails/changelog/${m.publishedFileId}`)}>Changelog</button>{/if}
+          {#if canRedownload}<button class="btn" onclick={() => store.queueIds([m.publishedFileId!])}>{@html I.download}Re-download</button>{/if}
+        </div>
+      </section>
+    {/if}
 
     <section class="card halo">
       <h3>HALO placement</h3>
@@ -153,6 +169,7 @@
       <div class="acts">
         <button class="btn" onclick={() => revealPath(m.path)}>Open folder</button>
         <button class="btn" disabled={!workshopUrl()} onclick={() => openUrl(workshopUrl()!)}>Workshop page</button>
+        {#if canRedownload && !change && !update}<button class="btn" title="Fetch a fresh copy from the Workshop with SteamCMD (into your Mods folder)" onclick={() => store.queueIds([m.publishedFileId!])}>{@html I.download}Re-download</button>{/if}
         {#if isActive}
           <button class="btn" onclick={() => store.moveSelected(-1)}>Move up</button>
           <button class="btn" onclick={() => store.moveSelected(1)}>Move down</button>
@@ -208,6 +225,10 @@
   .issues .it { display: flex; gap: 10px; padding: 8px 0; font-size: 12.5px; color: var(--text-2); line-height: 1.4; }
   .issues .it + .it { border-top: 1px solid rgba(255, 255, 255, 0.05); }
   .issues .flag { margin-top: 1px; }
+  .changed .chg { display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; color: var(--text-2); line-height: 1.45; padding: 4px 0; }
+  .changed .chg .flag { margin-top: 2px; }
+  .changed :global(.flag.chg) { background: var(--amber-soft); color: var(--amber); }
+  .changed .acts { margin-top: 8px; }
   .acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .acts .btn { height: 32px; font-size: 12.5px; background: var(--surface-2); }
   .acts .btn.primary { background: var(--amber); }

@@ -6,6 +6,7 @@
 
 pub mod about;
 pub mod cache;
+pub mod changes;
 pub mod game;
 pub mod import;
 pub mod model;

@@ -1,7 +1,7 @@
 // Browser-only stand-in for the Rust backend: lets `npm run dev` show the UI with example data.
 // Nothing here ships in the Tauri build path (api.ts only imports it outside Tauri).
 
-import type { Issue, ModInfo, Phase, Placement, Rule, Snapshot, SortResult, Source, UserData, Weight, Settings } from "./types";
+import type { Issue, ModChange, ModInfo, Phase, Placement, QueueState, Rule, Snapshot, SortResult, Source, UserData, Weight, Settings } from "./types";
 import { PHASES } from "./types";
 
 type Seed = [name: string, author: string, pkg: string, pfid: string | null, src: Source, phase: Phase, group: string, ver: string[], size: number, flags?: string];
@@ -188,8 +188,26 @@ function snapshot(): Snapshot {
     inspecting: 0,
     issuesTruncated: 0,
     updates: [{ uid: uidOf("krkr.rocketman"), publishedFileId: 2479389928, name: "RocketMan", localModified: 1_750_000_000, remoteUpdated: 1_756_500_000, source: "workshop" }],
-    updatesCheckedAt: 1_757_000_000
+    updatesCheckedAt: 1_757_000_000,
+    changes: acknowledged ? [] : changes(),
+    listChange: acknowledged ? null : { added: ["voult.betterpawncontrol"], removed: ["some.missing.mod"], reordered: false },
+    changesSince: 1_756_900_000
   };
+}
+
+let acknowledged = false;
+function changes(): ModChange[] {
+  const c = (kind: ModChange["kind"], pkg: string, extra: Partial<ModChange> = {}): ModChange => {
+    const m = mods.find((x) => x.packageId === pkg)!;
+    return { kind, uid: m.uid, name: m.name, packageId: m.packageId, publishedFileId: m.publishedFileId ?? null, source: m.source, active: active.includes(m.uid), reasons: [], oldVersion: null, newVersion: m.modVersion ?? null, when: m.modified, ...extra };
+  };
+  return [
+    c("updated", "oskarpotocki.vanillafactionsexpanded.core", { reasons: ["workshopUpdate"], when: 1_757_000_000 }),
+    c("updated", "brrainz.harmony", { reasons: ["workshopUpdate", "versionChange"], oldVersion: "2.3.5", newVersion: "2.3.6", when: 1_756_990_000 }),
+    c("updated", "ceteam.combatextended", { reasons: ["filesChanged"], when: 1_756_950_000 }),
+    c("added", "lucifer.realisticroomsrewritten", { when: 1_756_940_000 }),
+    { kind: "removed", uid: "C:\\RimWorld\\Mods\\OldMod", name: "Old Mod That Left", packageId: "someone.oldmod", publishedFileId: 123456789, source: "local", active: true, reasons: [], oldVersion: "1.0", newVersion: null, when: 0 }
+  ];
 }
 
 function haloSort(): SortResult {
@@ -290,8 +308,12 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
     case "downloads_state":
     case "downloads_remove":
     case "downloads_clear_finished":
-    case "downloads_pause":
-      return structuredClone(queue) as unknown as T;
+    case "downloads_pause": {
+      // ?nosteamcmd shows the first-run state in the browser preview.
+      const bare = typeof location !== "undefined" && location.search.includes("nosteamcmd");
+      const q = structuredClone(queue) as unknown as QueueState;
+      return (bare ? { ...q, items: [], running: false, currentBatch: [], currentItem: null, steamcmdInstalled: false, log: [] } : q) as T;
+    }
     case "downloads_add":
     case "downloads_add_text":
       return { added: 2, skipped: [[1, "not a RimWorld workshop item"]] } as T;
@@ -301,6 +323,13 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
       return 1 as T;
     case "steamcmd_install":
       return undefined as T;
+    case "steamcmd_status":
+      return { installed: !(typeof location !== "undefined" && location.search.includes("nosteamcmd")), installing: false, root: "C:\\Users\\Astryl\\AppData\\Local\\Circinus\\steamcmd", exe: "C:\\Users\\Astryl\\AppData\\Local\\Circinus\\steamcmd\\steamcmd\\steamcmd.exe", downloadsDir: "C:\\Users\\Astryl\\AppData\\Local\\Circinus\\steamcmd\\steam\\steamapps\\workshop\\content\\294100", consoleLog: "C:\\Users\\Astryl\\AppData\\Local\\Circinus\\steamcmd\\steamcmd\\logs\\console_log.txt", consoleLogBytes: 48211, modsDir: "C:\\RimWorld\\Mods", workshopDir: "C:\\Steam\\steamapps\\workshop\\content\\294100", queued: 3, running: true, paused: false, batchSize: 12, cooldownUntil: null } as T;
+    case "steamcmd_test":
+      return { loggedIn: true, lines: 14, stalled: false, exitCode: 0, seconds: 4 } as T;
+    case "acknowledge_changes":
+      acknowledged = true;
+      return snapshot() as T;
     case "import_collection":
       return { ids: [2009463077, 818773962, 999], installed: [[2009463077, uidOf("brrainz.harmony")], [818773962, uidOf("unlimitedhugs.hugslib")]], missing: [999], names: { "2009463077": "Harmony", "818773962": "HugsLib", "999": "Some Missing Mod" } } as T;
     case "import_rentry":

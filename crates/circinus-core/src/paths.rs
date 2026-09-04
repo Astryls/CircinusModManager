@@ -52,6 +52,21 @@ impl Locations {
         self.config_dir.as_ref().map(|c| c.join("ModsConfig.xml"))
     }
 
+    /// Steam's record of installed Workshop items: `<library>/steamapps/workshop/appworkshop_294100.acf`
+    /// (two levels above the content folder).
+    pub fn workshop_acf(&self) -> Option<PathBuf> {
+        let ws = self.workshop_dir.as_ref()?;
+        Some(ws.parent()?.parent()?.join(format!("appworkshop_{RIMWORLD_APP_ID}.acf")))
+    }
+
+    /// Steam's `timeupdated` per installed Workshop item; empty when the file is not there.
+    pub fn workshop_updated(&self) -> std::collections::HashMap<u64, u64> {
+        self.workshop_acf()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .map(|t| crate::steam::acf::installed_items(&t).into_iter().filter_map(|(id, t)| t.map(|t| (id, t))).collect())
+            .unwrap_or_default()
+    }
+
     pub fn is_usable(&self) -> bool {
         self.game_dir.as_ref().map(|g| g.join("Version.txt").is_file()).unwrap_or(false)
     }

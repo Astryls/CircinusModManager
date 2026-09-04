@@ -39,7 +39,7 @@ npm run tauri build                       # Windows: .exe (NSIS) and .msi under 
 npm run tauri build -- --bundles dmg      # macOS: .dmg (run on a Mac; sign + notarize with an Apple Developer ID)
 ```
 
-Single self-contained binaries; SteamCMD and todds are downloaded on first use rather than bundled (Valve's and MPL terms).
+Single self-contained binaries; SteamCMD is downloaded on first use rather than bundled (Valve's terms).
 
 ## What works today (milestone 1)
 
@@ -61,10 +61,17 @@ Single self-contained binaries; SteamCMD and todds are downloaded on first use r
 - Import dialog accepts Steam collection links and Rentry links; missing items can be queued in one click, as can everything in ModsConfig.xml that is not installed.
 - `tools/loadtest` renders the UI at ~2,000 mods in headless Chromium; `cargo run -p circinus --example dump_snapshot` produces a real backend snapshot for it.
 
+## Milestone 3a (change detection, SteamCMD everywhere)
+
+- After every scan Circinus stores a fingerprint of each installed mod (name, packageId, version, Workshop id, source, newest mtime, and Steam's `timeupdated` from `appworkshop_294100.acf`). On the next launch the fresh scan is diffed against it: mods that were added, removed or updated are listed with the reason (Workshop update, version change, files changed, renamed) and the date; edits to `ModsConfig.xml` made outside Circinus (RimWorld's own mod menu, another manager) are reported as well. The banner, the title bar and the row flags all point at the "What changed" list; **Got it** re-baselines.
+- Steam can replace files deep inside a Workshop item without touching the folder's mtime, so `timeupdated` is part of the cache stamp and of `modified` for Workshop items. That also makes the Workshop update check exact.
+- While Circinus is open a watcher polls four mtimes every 8 s (the ACF, ModsConfig.xml, Mods/, the Workshop folder); a change triggers a cached re-read (about 150 ms for 2,000 mods), a toast, and a desktop notification via `tauri-plugin-notification` — so an update Steam applies while the game is starting is not missed.
+- SteamCMD is now visible from everywhere: a status chip in the title bar (not set up / ready / downloading / cooling down / failed), a **set up** hint in the sidebar, a Settings section with paths, **Test SteamCMD** (`+login anonymous +quit`, output in the log — on Windows this also proves the console-log tail works) and **Reinstall**, a first-run banner when the list has mods that are not installed, and **Re-download** on every Workshop mod in the Inspector and in the change list.
+
 ## Next milestones
 
-3. Def/patch flattening (who wins each XML value) and a .NET NativeAOT sidecar that lists Harmony patch targets per assembly.
-4. Instances/profiles, todds integration, auto-update, Steam-client subscribe/unsubscribe.
+3b. Def/patch flattening (who wins each XML value) and a .NET NativeAOT sidecar that lists Harmony patch targets per assembly.
+4. Instances/profiles, native DDS pipeline (BC1/BC7 with full mip chains, manifest-tracked so it is reversible, incremental by content hash), auto-update, Steam-client subscribe/unsubscribe.
 
 ## Data locations
 

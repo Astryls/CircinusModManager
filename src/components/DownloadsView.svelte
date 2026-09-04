@@ -5,6 +5,7 @@
   import { openUrl, revealPath } from "$lib/api";
 
   const q = $derived(store.downloads);
+  const st = $derived(store.steamcmd);
   const missing = $derived(store.snap?.missing ?? []);
   const updates = $derived(store.snap?.updates ?? []);
   let text = $state("");
@@ -31,14 +32,29 @@
 <main class="center">
   <div class="top">
     <section class="card cmd">
-      <h3>SteamCMD</h3>
-      {#if q?.steamcmdInstalled}
-        <div class="row"><span class="st ok">{@html I.check}</span><span>Installed in Circinus's data folder. Downloads use an anonymous Steam login and are moved into your Mods folder as <span class="mono">&lt;workshop id&gt;</span>.</span></div>
+      <h3>SteamCMD <span class="aside">{q?.steamcmdInstalled ? "ready" : q?.installing ? "installing" : store.downloadsError ? "unavailable" : q ? "not installed" : "connecting…"}</span></h3>
+      {#if store.downloadsError}
+        <div class="row"><span class="st bad">{@html I.error}</span><span>The download manager did not answer: <span class="mono">{store.downloadsError}</span></span></div>
+        <div class="ctl"><button class="btn sm" onclick={() => store.refreshDownloads()}>{@html I.refresh}Try again</button></div>
+      {:else if q?.steamcmdInstalled}
+        <div class="row"><span class="st ok">{@html I.check}</span><span>Installed. Downloads use an anonymous Steam login and land in your Mods folder as <span class="mono">&lt;workshop id&gt;</span> with a <span class="mono">PublishedFileId.txt</span>, so Circinus knows where they came from.</span></div>
+        {#if st}
+          <dl class="paths">
+            <dt>Tool</dt><dd><button class="lnk mono" title="Show in your file manager" onclick={() => revealPath(st.exe)}>{st.exe}</button></dd>
+            <dt>Console log</dt><dd title={st.consoleLog}><button class="lnk mono" title="Show in your file manager" onclick={() => revealPath(st.consoleLog)}>{st.consoleLogBytes ? `console_log.txt · ${formatBytes(st.consoleLogBytes)}` : "console_log.txt · not written yet"}</button></dd>
+            <dt>Mods folder</dt><dd class="mono">{st.modsDir ?? "not set — choose it in Settings"}</dd>
+          </dl>
+        {/if}
+        <div class="ctl">
+          <button class="btn sm" disabled={q.running || q.installing} title="Runs +login anonymous +quit and shows the output below" onclick={() => store.testSteamCmd()}>{@html I.terminal}Test SteamCMD</button>
+          <button class="btn sm" disabled={q.running || q.installing} title="Download SteamCMD again and let it update itself" onclick={() => store.installSteamCmd()}>{@html I.refresh}Reinstall</button>
+          {#if st}<button class="btn sm" onclick={() => revealPath(st.root)}>{@html I.folder}Open folder</button>{/if}
+        </div>
       {:else if q?.installing}
-        <div class="row"><span class="spin"></span><span>Installing — SteamCMD downloads itself and updates on first run.</span></div>
+        <div class="row"><span class="spin"></span><span>Installing — SteamCMD downloads itself and updates on first run. The output appears below.</span></div>
       {:else}
-        <div class="row"><span class="st warn">{@html I.warn}</span><span>Not installed. Valve's terms mean Circinus can't ship it, so it downloads it once (about 5 MB, then a self-update).</span></div>
-        <button class="btn primary" onclick={() => store.installSteamCmd()}>Install SteamCMD</button>
+        <div class="row"><span class="st warn">{@html I.warn}</span><span>Not installed. Valve's terms mean Circinus can't ship it, so it downloads it once (about 5 MB, then a self-update) into its own data folder. Needed to fetch Workshop mods without the Steam client, re-download broken ones, and pull whole collections.</span></div>
+        <button class="btn primary" onclick={() => store.installSteamCmd()}>{@html I.download}Install SteamCMD</button>
       {/if}
     </section>
 
@@ -134,6 +150,11 @@
   .st :global(svg) { width: 11px; height: 11px; }
   .st.ok { background: var(--green-soft); color: var(--green); }
   .st.warn { background: var(--amber-soft); color: var(--amber); }
+  .st.bad { background: var(--red-soft); color: var(--red); }
+  .paths { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; font-size: 12px; margin: 0 0 10px; }
+  .paths dt { color: var(--text-3); margin: 0; } .paths dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+  .paths .lnk { color: var(--blue); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+  .paths .lnk:hover { text-decoration: underline; }
   .spin { width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid var(--surface-4); border-top-color: var(--amber); animation: spin 0.8s linear infinite; flex: none; }
   .spin.sm { width: 10px; height: 10px; border-width: 2px; }
   @keyframes spin { to { transform: rotate(360deg); } }

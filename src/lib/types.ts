@@ -176,6 +176,37 @@ export interface Snapshot {
   /** Installed workshop mods with a newer version on the Workshop (from the last check). */
   updates: UpdateInfo[];
   updatesCheckedAt: number;
+  /** Mods that appeared, disappeared or changed since the previous session (or the last acknowledgement). */
+  changes: ModChange[];
+  /** Edits to ModsConfig.xml made outside Circinus since then. */
+  listChange: ListChange | null;
+  /** Unix seconds of the baseline the changes are measured from (0 = first run). */
+  changesSince: number;
+}
+
+export type ChangeKind = "added" | "removed" | "updated";
+export type ChangeReason = "workshopUpdate" | "versionChange" | "filesChanged" | "renamed" | "sourceChanged";
+
+export interface ModChange {
+  kind: ChangeKind;
+  uid: string;
+  name: string;
+  packageId: string;
+  publishedFileId?: number | null;
+  source: Source;
+  /** In the active list (for removed mods: was in the list when the baseline was taken). */
+  active: boolean;
+  reasons: ChangeReason[];
+  oldVersion?: string | null;
+  newVersion?: string | null;
+  /** Unix seconds of the change when known (Workshop update time, else the folder's mtime). */
+  when: number;
+}
+
+export interface ListChange {
+  added: string[];
+  removed: string[];
+  reordered: boolean;
 }
 
 export interface UpdateInfo {
@@ -237,6 +268,31 @@ export interface AddResult {
   skipped: [number, string][];
 }
 
+export interface SteamCmdStatus {
+  installed: boolean;
+  installing: boolean;
+  root: string;
+  exe: string;
+  downloadsDir: string;
+  consoleLog: string;
+  consoleLogBytes: number;
+  modsDir: string | null;
+  workshopDir: string | null;
+  queued: number;
+  running: boolean;
+  paused: boolean;
+  batchSize: number;
+  cooldownUntil: number | null;
+}
+
+export interface TestOutcome {
+  loggedIn: boolean;
+  lines: number;
+  stalled: boolean;
+  exitCode: number | null;
+  seconds: number;
+}
+
 export interface CollectionPreview {
   ids: number[];
   installed: [number, string][];
@@ -296,6 +352,27 @@ export const BAND_LABEL: Record<Band, string> = {
   insufficient: "Few runs",
   unknown: "Not measured"
 };
+
+export const REASON_LABEL: Record<ChangeReason, string> = {
+  workshopUpdate: "updated on the Workshop",
+  versionChange: "new version",
+  filesChanged: "files changed",
+  renamed: "renamed",
+  sourceChanged: "comes from a different place now"
+};
+
+/** "Updated on the Workshop 3 Sep · v1.2 → v1.3" */
+export function describeChange(c: ModChange): string {
+  const date = c.when ? new Date(c.when * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+  if (c.kind === "added") return `Installed${date ? ` ${date}` : ""}${c.newVersion ? ` · v${c.newVersion}` : ""}${c.active ? " · in your list" : ""}`;
+  if (c.kind === "removed") return `No longer installed${c.active ? " · it was in your list" : ""}`;
+  const parts: string[] = [];
+  const main = c.reasons.find((r) => r === "workshopUpdate") ?? c.reasons[0];
+  if (main) parts.push(REASON_LABEL[main].replace(/^./, (ch) => ch.toUpperCase()) + (date ? ` ${date}` : ""));
+  if (c.oldVersion !== c.newVersion && (c.oldVersion || c.newVersion)) parts.push(`v${c.oldVersion ?? "?"} → v${c.newVersion ?? "?"}`);
+  for (const r of c.reasons) if (r !== main && r !== "versionChange" && r !== "filesChanged") parts.push(REASON_LABEL[r]);
+  return parts.join(" · ");
+}
 
 export function severityOf(i: Issue): Severity {
   switch (i.kind) {
