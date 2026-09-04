@@ -29,6 +29,9 @@ cargo test -p circinus-core
 npm run check            # svelte-check
 ```
 
+`npm run tauri dev` builds a debug binary that loads the UI from Vite's dev server, so it only
+runs while that command is running — it is not a standalone exe. For one, build a release:
+
 ## Release builds
 
 ```sh

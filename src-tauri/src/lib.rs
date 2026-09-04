@@ -3,7 +3,7 @@ mod state;
 
 use commands::Shared;
 use std::sync::{Arc, Mutex};
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 
 pub fn run() {
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env().add_directive("circinus=info".parse().unwrap())).init();
@@ -42,10 +42,7 @@ pub fn run() {
                     }
                 }
             });
-            #[cfg(debug_assertions)]
-            if let Some(w) = app.get_webview_window("main") {
-                w.open_devtools();
-            }
+            // DevTools stay closed by default; F12 / Ctrl+Shift+I opens them in dev builds.
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
