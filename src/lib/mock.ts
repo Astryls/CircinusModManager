@@ -118,7 +118,8 @@ let settings: Settings = {
   includeLocalRuns: true,
   alphabeticalWithinPhase: false,
   updateDatabasesOnStart: false,
-  dds: { alphaFormat: "bc7", quality: "balanced", mipmaps: true, threads: 0, auto: false }
+  dds: { alphaFormat: "bc7", quality: "balanced", mipmaps: true, threads: 0, auto: false },
+  launch: { method: "auto", executable: null, args: "", saveFirst: true }
 };
 
 const rules: Rule[] = [
@@ -343,6 +344,11 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
     case "acknowledge_changes":
       acknowledged = true;
       return snapshot() as T;
+    case "get_launch_info":
+      return { executable: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld\\RimWorldWin64.exe", executableExists: true, steamInstall: true, autoResolvesTo: "steam" } as T;
+    case "launch_game":
+      dirty = false;
+      return "Asked Steam to start RimWorld (mock)" as T;
     case "dds_state":
       return structuredClone(tex) as T;
     case "dds_overview":

@@ -30,11 +30,43 @@ pub struct Settings {
     pub alphabetical_within_phase: bool,
     pub update_databases_on_start: bool,
     pub dds: DdsSettings,
+    pub launch: LaunchSettings,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { locations: Locations::default(), db_sources: rules::default_sources(), show_weight: false, include_local_runs: true, alphabetical_within_phase: false, update_databases_on_start: false, dds: DdsSettings::default() }
+        Settings { locations: Locations::default(), db_sources: rules::default_sources(), show_weight: false, include_local_runs: true, alphabetical_within_phase: false, update_databases_on_start: false, dds: DdsSettings::default(), launch: LaunchSettings::default() }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum LaunchMethod {
+    /// Steam when the game lives in a Steam library, the executable otherwise.
+    #[default]
+    Auto,
+    /// `steam://rungameid/294100` — the overlay and Workshop sync behave as usual.
+    Steam,
+    /// Start the game's executable directly (GOG, DRM-free, a copy outside Steam).
+    Executable,
+}
+
+/// How the Play button starts the game.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LaunchSettings {
+    pub method: LaunchMethod,
+    /// Explicit executable; None = detect from the game folder.
+    pub executable: Option<PathBuf>,
+    /// Extra command-line arguments, e.g. `-popupwindow`.
+    pub args: String,
+    /// Write ModsConfig.xml first when there are unsaved changes.
+    pub save_first: bool,
+}
+
+impl Default for LaunchSettings {
+    fn default() -> Self {
+        LaunchSettings { method: LaunchMethod::Auto, executable: None, args: String::new(), save_first: true }
     }
 }
 

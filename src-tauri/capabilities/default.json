@@ -9,7 +9,10 @@
     "dialog:default",
     "opener:default",
     "opener:allow-open-path",
-    "opener:allow-open-url",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://*" }, { "url": "http://*" }, { "url": "steam://*" }, { "url": "mailto:*" }]
+    },
     "opener:allow-reveal-item-in-dir"
   ]
 }

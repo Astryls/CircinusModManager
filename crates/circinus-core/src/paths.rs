@@ -72,6 +72,56 @@ impl Locations {
     }
 }
 
+/// Whether the game folder sits inside a Steam library (`…/steamapps/common/RimWorld`).
+pub fn is_steam_install(game: &Path) -> bool {
+    // Split on both separators: settings written on Windows may be read anywhere.
+    game.to_string_lossy().split(['/', '\\']).any(|c| c.eq_ignore_ascii_case("steamapps"))
+}
+
+/// The game's executable for a game folder: `RimWorldWin64.exe` on Windows, the `.app`
+/// bundle on macOS, `RimWorldLinux` (or the launcher script) on Linux. None when nothing
+/// recognisable is there (a GOG or DRM-free copy still uses these names).
+pub fn detect_executable(game: &Path) -> Option<PathBuf> {
+    if cfg!(target_os = "macos") {
+        if game.extension().map(|e| e == "app").unwrap_or(false) {
+            return Some(game.to_path_buf());
+        }
+        return std::fs::read_dir(game).ok()?.filter_map(|e| e.ok()).map(|e| e.path()).find(|p| p.extension().map(|e| e == "app").unwrap_or(false));
+    }
+    let names: &[&str] = if cfg!(target_os = "windows") { &["RimWorldWin64.exe", "RimWorldWin.exe", "RimWorld.exe"] } else { &["RimWorldLinux", "RimWorldLinux.x86_64", "start_RimWorld.sh"] };
+    names.iter().map(|n| game.join(n)).find(|p| p.is_file())
+}
+
+/// Split a command line the way a shell would for simple cases: whitespace separates,
+/// single or double quotes group.
+pub fn split_args(s: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut quote: Option<char> = None;
+    let mut has = false;
+    for c in s.chars() {
+        match (quote, c) {
+            (Some(q), ch) if ch == q => quote = None,
+            (Some(_), ch) => cur.push(ch),
+            (None, '"') | (None, '\'') => {
+                quote = Some(c);
+                has = true;
+            }
+            (None, ch) if ch.is_whitespace() => {
+                if has || !cur.is_empty() {
+                    out.push(std::mem::take(&mut cur));
+                    has = false;
+                }
+            }
+            (None, ch) => cur.push(ch),
+        }
+    }
+    if has || !cur.is_empty() {
+        out.push(cur);
+    }
+    out
+}
+
 /// On macOS the game is an app bundle; Data/ and Mods/ live inside it.
 pub fn data_dir_for_game(game: &Path) -> PathBuf {
     let inside = game.join("Contents").join("Resources").join("Data");
@@ -160,6 +210,26 @@ pub fn default_config_dir() -> Option<PathBuf> {
             return Some(proton);
         }
         Some(native)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn splits_arguments() {
+        assert_eq!(split_args("-popupwindow -screen-width 1920"), vec!["-popupwindow", "-screen-width", "1920"]);
+        assert_eq!(split_args(r#"-savedatafolder "D:\My Saves" -quicktest"#), vec!["-savedatafolder", r"D:\My Saves", "-quicktest"]);
+        assert_eq!(split_args("  "), Vec::<String>::new());
+        assert_eq!(split_args("'' x"), vec!["", "x"]);
+    }
+
+    #[test]
+    fn steam_paths() {
+        assert!(is_steam_install(Path::new("D:\\SteamLibrary\\steamapps\\common\\RimWorld")));
+        assert!(is_steam_install(Path::new("/home/x/.steam/steam/steamapps/common/RimWorld")));
+        assert!(!is_steam_install(Path::new("C:\\Games\\RimWorld")));
     }
 }
 

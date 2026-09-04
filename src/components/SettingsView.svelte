@@ -1,14 +1,34 @@
 <script lang="ts">
   import { store } from "$lib/store.svelte";
-  import { api, pickFolder, inTauri, openUrl, revealPath } from "$lib/api";
+  import { api, pickFile, pickFolder, inTauri, openUrl, revealPath } from "$lib/api";
   import { I } from "$lib/icons";
-  import type { Locations } from "$lib/types";
+  import type { LaunchInfo, LaunchMethod, Locations } from "$lib/types";
 
   const s = $derived(store.snap?.settings);
   const loc = $derived(store.snap?.locations);
   const q = $derived(store.downloads);
   const st = $derived(store.steamcmd);
   store.refreshDownloads();
+  let launch = $state<LaunchInfo | null>(null);
+  function refreshLaunch() {
+    api.launchInfo().then((l) => (launch = l)).catch(() => {});
+  }
+  refreshLaunch();
+  const L = $derived(s?.launch);
+  async function updateLaunch(patch: Partial<NonNullable<typeof L>>) {
+    if (!L) return;
+    await store.updateSettings({ launch: { ...L, ...patch } });
+    refreshLaunch();
+  }
+  async function chooseExe() {
+    const p = await pickFile([{ name: "RimWorld", extensions: ["exe", "app", "sh", "x86_64", "*"] }]);
+    if (p) await updateLaunch({ executable: p, method: "executable" });
+  }
+  const methods: { id: LaunchMethod; label: string; hint: string }[] = [
+    { id: "auto", label: "Auto", hint: "Steam when the game lives in a Steam library, otherwise the executable" },
+    { id: "steam", label: "Steam", hint: "steam://rungameid/294100 — overlay and Workshop sync as usual" },
+    { id: "executable", label: "Executable", hint: "Start the game directly: GOG, DRM-free, or a copy outside Steam" }
+  ];
   let appData = $state("");
   api.appDataDir().then((d) => (appData = d)).catch(() => {});
 
@@ -59,6 +79,32 @@
       <div class="row">
         <button class="btn" onclick={() => store.rescan(true)}>Re-read every mod</button>
         <span class="hint">Drops the parse cache. Normal refreshes only re-read folders that changed.</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>Launching RimWorld <span class="aside">{launch ? (launch.steamInstall ? "Steam install" : "not a Steam install") : ""}</span></h3>
+      <div class="opt">
+        <span class="l">Play starts</span>
+        <div class="seg">{#each methods as m}<button class:on={L?.method === m.id} title={m.hint} onclick={() => updateLaunch({ method: m.id })}>{m.label}</button>{/each}</div>
+        {#if L?.method === "auto" && launch}<span class="hint">→ {launch.autoResolvesTo === "steam" ? "Steam" : "the executable"}</span>{/if}
+      </div>
+      <div class="loc">
+        <div class="lt"><b>Executable</b><span>{L?.executable ? "chosen by you" : "detected from the RimWorld folder"}</span></div>
+        <div class="lv">
+          <span class="path mono" class:bad={launch && !launch.executableExists} title={launch?.executable ?? ""}>{launch?.executable ?? "not found — choose it"}</span>
+          <button class="btn sm" disabled={!inTauri} onclick={chooseExe}>Choose…</button>
+          {#if L?.executable}<button class="btn sm" onclick={() => updateLaunch({ executable: null })}>Auto</button>{/if}
+        </div>
+      </div>
+      <div class="loc">
+        <div class="lt"><b>Arguments</b><span>e.g. -popupwindow, -screen-width 1920</span></div>
+        <div class="lv"><input class="input mono" value={L?.args ?? ""} placeholder="none" onchange={(e) => updateLaunch({ args: e.currentTarget.value })} /></div>
+      </div>
+      <label class="switch"><input type="checkbox" checked={L?.saveFirst ?? true} onchange={(e) => updateLaunch({ saveFirst: e.currentTarget.checked })} />Save ModsConfig.xml before starting when there are unsaved changes</label>
+      <div class="row">
+        <button class="btn primary" onclick={() => store.launch()}>{@html I.play}Play now</button>
+        <span class="hint">Non-standard installs: set the RimWorld folder above (Version.txt and Data/ live in it), then choose the executable here if it isn't picked up.</span>
       </div>
     </section>
 
@@ -151,5 +197,13 @@
   .switch { margin: 6px 0; align-items: center; display: flex; }
   .lnk { color: var(--blue); font-weight: 600; }
   .hint.bad { color: var(--red); }
+  .path.bad { color: var(--red); }
+  .opt { display: flex; align-items: center; gap: 10px; margin: 6px 0 10px; font-size: 13px; }
+  .opt .l { width: 100px; color: var(--text-2); }
+  .opt .hint { margin: 0; }
+  .seg { display: inline-flex; background: var(--surface-2); border-radius: 9px; padding: 3px; gap: 2px; }
+  .seg button { padding: 5px 10px; border-radius: 7px; font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+  .seg button.on { background: var(--surface-4); color: var(--text); }
+  .lv .input { height: 30px; font-size: 12.5px; flex: 1; }
   @media (max-width: 980px) { .settings { grid-template-columns: 1fr; } }
 </style>

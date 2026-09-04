@@ -2,7 +2,7 @@
 
 use crate::downloads::{AddResult, Downloads, SteamCmdStatus};
 use crate::textures::{self, ModTextures, Report, TexState, Textures};
-use crate::state::{App, Settings, Snapshot, UserData};
+use crate::state::{App, LaunchMethod, Settings, Snapshot, UserData};
 use circinus_core::steam::steamcmd::QueueState;
 use circinus_core::steam::webapi;
 use circinus_core::import::{self, ImportedList};
@@ -274,6 +274,98 @@ pub fn app_data_dir(state: State<'_, Shared>) -> CmdResult<String> {
     Ok(app.data_dir.display().to_string())
 }
 
+
+// ---------------------------------------------------------------- launching
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct LaunchInfo {
+    /// Executable Circinus would start (detected or configured).
+    pub executable: Option<String>,
+    pub executable_exists: bool,
+    pub steam_install: bool,
+    /// What Auto resolves to right now: "steam" or "executable".
+    pub auto_resolves_to: &'static str,
+}
+
+fn launch_info(app: &App) -> LaunchInfo {
+    let game = app.locations.game_dir.clone();
+    let steam_install = game.as_deref().map(circinus_core::paths::is_steam_install).unwrap_or(false);
+    let exe = app.settings.launch.executable.clone().or_else(|| game.as_deref().and_then(circinus_core::paths::detect_executable));
+    let exists = exe.as_ref().map(|p| p.exists()).unwrap_or(false);
+    LaunchInfo { executable: exe.map(|p| p.display().to_string()), executable_exists: exists, steam_install, auto_resolves_to: if steam_install || !exists { "steam" } else { "executable" } }
+}
+
+#[tauri::command]
+pub async fn get_launch_info(state: State<'_, Shared>) -> CmdResult<LaunchInfo> {
+    with_app(&state, |app| Ok(launch_info(app))).await
+}
+
+/// Start RimWorld the way the settings say, saving ModsConfig.xml first if asked to.
+#[tauri::command]
+pub async fn launch_game(app_handle: AppHandle, state: State<'_, Shared>) -> CmdResult<String> {
+    use tauri_plugin_opener::OpenerExt;
+    let (method, exe, args, game_dir, saved) = with_app(&state, |app| {
+        let mut saved = false;
+        if app.dirty && app.settings.launch.save_first {
+            app.save().map_err(err)?;
+            saved = true;
+        }
+        let info = launch_info(app);
+        let method = match app.settings.launch.method {
+            LaunchMethod::Auto => {
+                if info.auto_resolves_to == "steam" {
+                    LaunchMethod::Steam
+                } else {
+                    LaunchMethod::Executable
+                }
+            }
+            m => m,
+        };
+        Ok((method, info.executable.map(PathBuf::from), circinus_core::paths::split_args(&app.settings.launch.args), app.locations.game_dir.clone(), saved))
+    })
+    .await?;
+    let suffix = if saved { " (ModsConfig.xml saved first)" } else { "" };
+    match method {
+        LaunchMethod::Steam | LaunchMethod::Auto => {
+            let url = if args.is_empty() { "steam://rungameid/294100".to_string() } else { format!("steam://run/294100//{}/", args.join(" ")) };
+            app_handle.opener().open_url(&url, None::<&str>).map_err(|e| format!("Could not hand the game to Steam ({e}). Is Steam installed? Otherwise set the executable in Settings → Launching RimWorld."))?;
+            Ok(format!("Asked Steam to start RimWorld{suffix}"))
+        }
+        LaunchMethod::Executable => {
+            let exe = exe.filter(|p| p.exists()).ok_or_else(|| "No RimWorld executable found — choose it in Settings → Launching RimWorld".to_string())?;
+            let name = exe.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            spawn_game(&exe, &args, game_dir.as_deref()).map_err(|e| format!("Could not start {name}: {e}"))?;
+            Ok(format!("Started {name}{suffix}"))
+        }
+    }
+}
+
+fn spawn_game(exe: &std::path::Path, args: &[String], cwd: Option<&std::path::Path>) -> std::io::Result<()> {
+    use std::process::{Command, Stdio};
+    let mut cmd = if cfg!(target_os = "macos") && exe.extension().map(|e| e == "app").unwrap_or(false) {
+        let mut c = Command::new("open");
+        c.arg(exe);
+        if !args.is_empty() {
+            c.arg("--args").args(args);
+        }
+        c
+    } else {
+        let mut c = Command::new(exe);
+        c.args(args);
+        c
+    };
+    if let Some(dir) = cwd.or_else(|| exe.parent()) {
+        cmd.current_dir(dir);
+    }
+    cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0000_0008 | 0x0000_0200); // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    }
+    cmd.spawn().map(|_| ())
+}
 
 // ---------------------------------------------------------------- downloads
 

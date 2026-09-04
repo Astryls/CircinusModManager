@@ -127,6 +127,25 @@ export interface DdsSettings {
   auto: boolean;
 }
 
+export type LaunchMethod = "auto" | "steam" | "executable";
+
+export interface LaunchSettings {
+  method: LaunchMethod;
+  /** Explicit executable; null = detect from the game folder. */
+  executable: string | null;
+  /** Extra command-line arguments, e.g. `-popupwindow`. */
+  args: string;
+  /** Write ModsConfig.xml first when there are unsaved changes. */
+  saveFirst: boolean;
+}
+
+export interface LaunchInfo {
+  executable: string | null;
+  executableExists: boolean;
+  steamInstall: boolean;
+  autoResolvesTo: "steam" | "executable";
+}
+
 export interface Settings {
   locations: Locations;
   dbSources: DbSource[];
@@ -135,6 +154,7 @@ export interface Settings {
   alphabeticalWithinPhase: boolean;
   updateDatabasesOnStart: boolean;
   dds: DdsSettings;
+  launch: LaunchSettings;
 }
 
 export interface Group {

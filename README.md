@@ -68,6 +68,10 @@ Single self-contained binaries; SteamCMD is downloaded on first use rather than 
 - While Circinus is open a watcher polls four mtimes every 8 s (the ACF, ModsConfig.xml, Mods/, the Workshop folder); a change triggers a cached re-read (about 150 ms for 2,000 mods), a toast, and a desktop notification via `tauri-plugin-notification` — so an update Steam applies while the game is starting is not missed.
 - SteamCMD is now visible from everywhere: a status chip in the title bar (not set up / ready / downloading / cooling down / failed), a **set up** hint in the sidebar, a Settings section with paths, **Test SteamCMD** (`+login anonymous +quit`, output in the log — on Windows this also proves the console-log tail works) and **Reinstall**, a first-run banner when the list has mods that are not installed, and **Re-download** on every Workshop mod in the Inspector and in the change list.
 
+## Launching the game
+
+Play starts RimWorld through Steam (`steam://rungameid/294100`) when the game folder is inside a Steam library, and otherwise runs the executable Circinus detects (`RimWorldWin64.exe`, `RimWorldMac.app`, `RimWorldLinux`). Settings → Launching RimWorld lets you force either method, pick the executable by hand (GOG, DRM-free, a copy outside Steam), add arguments such as `-popupwindow`, and choose whether unsaved changes to ModsConfig.xml are written first (default on). Non-standard folders — game, config, local mods, Workshop — are set in Settings → Where RimWorld lives.
+
 ## Milestone 4a (texture optimisation)
 
 - Native DDS pipeline in `circinus-core::dds`, no external tool: PNG → BC1 (opaque) or BC7/BC3 (alpha) with a full mip chain to 1×1, dimensions rounded up to multiples of four by resizing (never padding), colour bled into transparent texels at every level so neither the mips nor the GPU's bilinear filter pick up dark fringes. Encoding is Intel's ISPC texture compressor (`intel_tex_2`, MIT/Apache, prebuilt kernels for x86_64 and aarch64 on Windows, macOS and Linux); quality presets map to its very-fast/fast/basic/slow BC7 modes.

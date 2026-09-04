@@ -1,7 +1,6 @@
 <script lang="ts">
   import { store } from "$lib/store.svelte";
   import { I } from "$lib/icons";
-  import { openUrl } from "$lib/api";
 
   const total = $derived(store.mods.length);
   const gameDir = $derived(store.snap?.locations.gameDir ?? null);
@@ -28,10 +27,6 @@
   });
   const changesN = $derived(store.changeCounts.total);
 
-  function play() {
-    // RimWorld launches through Steam so the overlay and workshop sync behave.
-    openUrl("steam://rungameid/294100");
-  }
 </script>
 
 <header class="title">
@@ -56,7 +51,7 @@
     </button>
     <button class="ib" class:on={store.view === "settings"} aria-label="Settings" title="Settings" onclick={() => (store.view = store.view === "settings" ? "order" : "settings")}>{@html I.gear}</button>
     <button class="btn" class:save={store.snap?.dirty} disabled={!store.snap?.dirty} onclick={() => store.save()} title="Write ModsConfig.xml (Ctrl S)">{#if store.snap?.dirty}<i></i>{/if}Save</button>
-    <button class="btn" onclick={play} title="Launch RimWorld through Steam">{@html I.play}Play</button>
+    <button class="btn" onclick={() => store.launch()} disabled={!!store.busy} title={store.snap?.settings.launch.method === "executable" ? "Start RimWorld's executable (Settings → Launching RimWorld)" : "Start RimWorld — through Steam when it lives in a Steam library, otherwise its executable"}>{@html I.play}Play</button>
   </div>
 </header>
 

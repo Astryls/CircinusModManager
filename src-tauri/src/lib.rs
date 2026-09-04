@@ -140,6 +140,8 @@ pub fn run() {
             commands::dds_start,
             commands::dds_cancel,
             commands::dds_revert,
+            commands::get_launch_info,
+            commands::launch_game,
             commands::import_collection,
             commands::import_rentry,
             commands::check_updates,

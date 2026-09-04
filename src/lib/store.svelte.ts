@@ -447,6 +447,14 @@ class Store {
       this.showChanges = false;
     });
   }
+  /** Play: through Steam or the executable, per Settings; saves first when asked to. */
+  launch() {
+    return this.run("Starting RimWorld…", async () => {
+      const msg = await api.launchGame();
+      if (this.snap?.dirty) await this.refresh();
+      this.say(msg);
+    });
+  }
   dismiss(id: string) {
     if (!this.dismissed.includes(id)) this.dismissed = [...this.dismissed, id];
   }

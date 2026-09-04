@@ -1,6 +1,6 @@
 // Thin wrapper over Tauri's invoke, with a browser mock so the UI can run outside Tauri.
 
-import type { AddResult, CollectionPreview, DdsReport, ImportPreview, Issue, Locations, ModFiles, ModTextures, QueueState, RentryPreview, Rule, RulesFile, Settings, Snapshot, SortResult, SteamCmdStatus, TestOutcome, TexState, UserData } from "./types";
+import type { AddResult, CollectionPreview, DdsReport, ImportPreview, Issue, LaunchInfo, Locations, ModFiles, ModTextures, QueueState, RentryPreview, Rule, RulesFile, Settings, Snapshot, SortResult, SteamCmdStatus, TestOutcome, TexState, UserData } from "./types";
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -56,6 +56,9 @@ export const api = {
   steamcmdStatus: () => invoke<SteamCmdStatus>("steamcmd_status"),
   steamcmdTest: () => invoke<TestOutcome>("steamcmd_test"),
   acknowledgeChanges: () => invoke<Snapshot>("acknowledge_changes"),
+  // launching
+  launchInfo: () => invoke<LaunchInfo>("get_launch_info"),
+  launchGame: () => invoke<string>("launch_game"),
   // textures
   ddsState: () => invoke<TexState>("dds_state"),
   ddsOverview: () => invoke<ModTextures[]>("dds_overview"),
@@ -92,7 +95,12 @@ export async function openUrl(url: string) {
     return;
   }
   const opener = await import("@tauri-apps/plugin-opener");
-  await opener.openUrl(url);
+  try {
+    await opener.openUrl(url);
+  } catch (e) {
+    console.error(`[circinus] could not open ${url}:`, e);
+    throw e;
+  }
 }
 
 export async function pickFile(filters?: { name: string; extensions: string[] }[]): Promise<string | null> {
