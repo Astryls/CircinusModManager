@@ -9,7 +9,7 @@ use circinus_core::scan::ModFiles;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, State};
 
 pub type Shared = Arc<Mutex<App>>;
 
@@ -33,6 +33,8 @@ async fn with_app<T: Send + 'static>(state: &State<'_, Shared>, f: impl FnOnce(&
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanProgress {
+    /// "read" (About folders) or "inspect" (walking contents).
+    pub phase: &'static str,
     pub done: usize,
     pub total: usize,
 }
@@ -42,17 +44,17 @@ pub async fn get_snapshot(state: State<'_, Shared>) -> CmdResult<Snapshot> {
     with_app(&state, |app| Ok(app.snapshot())).await
 }
 
+/// Re-read the mod folders. Returns as soon as the quick phase is done; the contents
+/// inspection continues in the background and ends with a `state-changed` event.
 #[tauri::command]
 pub async fn rescan(app_handle: AppHandle, state: State<'_, Shared>, full: bool) -> CmdResult<Snapshot> {
+    let shared = state.inner().clone();
     let handle = app_handle.clone();
-    with_app(&state, move |app| {
-        let progress = move |done: usize, total: usize| {
-            let _ = handle.emit("scan-progress", ScanProgress { done, total });
-        };
-        app.scan(full, &progress).map_err(err)?;
-        Ok(app.snapshot())
-    })
-    .await
+    let shallow = tauri::async_runtime::spawn_blocking(move || crate::scan_quick_phase(&handle, &shared, full)).await.map_err(err)??;
+    let shared = state.inner().clone();
+    let handle = app_handle.clone();
+    tauri::async_runtime::spawn_blocking(move || crate::inspect_phase(&handle, &shared, shallow));
+    with_app(&state, |app| Ok(app.snapshot())).await
 }
 
 #[tauri::command]

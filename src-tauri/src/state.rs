@@ -9,7 +9,7 @@ use circinus_core::modsconfig::{self, ModsConfig};
 use circinus_core::order::{self, Context, UserOverrides};
 use circinus_core::paths::{app_data_dir, Locations};
 use circinus_core::rules::{self, Databases, DbSource, RulesFile};
-use circinus_core::scan::{self, ModFiles, ScanOptions};
+use circinus_core::scan::{self, Inspection, ModFiles, ScanOptions};
 use circinus_core::weight::{self, Weight};
 use circinus_core::Result;
 use serde::{Deserialize, Serialize};
@@ -85,6 +85,8 @@ pub struct Snapshot {
     pub dirty: bool,
     pub db_loaded: Vec<String>,
     pub scanned_at: i64,
+    /// Mods whose folders are still being inspected in the background.
+    pub inspecting: usize,
 }
 
 pub struct App {
@@ -105,6 +107,9 @@ pub struct App {
     pub weights_fetched_at: i64,
     pub dirty: bool,
     pub scanned_at: i64,
+    /// uids not yet inspected, and the cache stamps to write once they are.
+    pub shallow: Vec<String>,
+    pub pending_stamps: HashMap<String, String>,
 }
 
 fn now() -> i64 {
@@ -139,6 +144,8 @@ impl App {
             weights_fetched_at: 0,
             dirty: false,
             scanned_at: 0,
+            shallow: Vec::new(),
+            pending_stamps: HashMap::new(),
         };
         app.resolve_locations();
         app.load_databases();
@@ -197,18 +204,35 @@ impl App {
         f(&ctx)
     }
 
-    pub fn scan(&mut self, full: bool, progress: &(dyn Fn(usize, usize) + Sync)) -> Result<()> {
+    /// Phase 1: read every mod's About/ folder (fast) and resolve ModsConfig.xml. Returns the
+    /// mods whose folders still need walking; hand them to `scan::inspect_mods` outside the lock,
+    /// then call `apply_inspections`.
+    pub fn scan_quick(&mut self, full: bool, progress: &(dyn Fn(usize, usize) + Sync)) -> Result<Vec<ModInfo>> {
         if full {
             self.cache.clear_mod_cache()?;
         }
         let opts = ScanOptions { locations: self.locations.clone(), game_version: self.game_version.clone(), use_cache: !full };
-        let out = scan::scan(&opts, Some(&self.cache), progress)?;
+        let out = scan::scan(&opts, Some(&self.cache), false, progress)?;
         self.mods = out.mods;
         self.files = out.files;
+        self.shallow = out.shallow;
+        self.pending_stamps = out.stamps;
         self.scanned_at = now();
         self.recompile();
         self.read_mods_config();
-        Ok(())
+        let shallow: Vec<ModInfo> = self.mods.iter().filter(|m| self.shallow.contains(&m.uid)).cloned().collect();
+        Ok(shallow)
+    }
+
+    /// Phase 2: merge folder inspections and write them to the cache.
+    pub fn apply_inspections(&mut self, inspections: Vec<Inspection>) -> Result<usize> {
+        let done: HashSet<String> = inspections.iter().map(|i| i.uid.clone()).collect();
+        let n = scan::apply_inspections(&mut self.mods, &mut self.files, &self.pending_stamps, inspections, Some(&self.cache))?;
+        self.shallow.retain(|u| !done.contains(u));
+        for u in &done {
+            self.pending_stamps.remove(u);
+        }
+        Ok(n)
     }
 
     /// Read ModsConfig.xml and resolve it against installed mods (keeps unsaved edits if dirty).
@@ -254,6 +278,7 @@ impl App {
             dirty: self.dirty,
             db_loaded: self.db.loaded.clone(),
             scanned_at: self.scanned_at,
+            inspecting: self.shallow.len(),
         }
     }
 

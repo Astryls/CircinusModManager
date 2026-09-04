@@ -169,6 +169,8 @@ export interface Snapshot {
   dirty: boolean;
   dbLoaded: string[];
   scannedAt: number;
+  /** Mods whose folders are still being inspected in the background. */
+  inspecting: number;
 }
 
 export interface ImportedList {

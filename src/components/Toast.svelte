@@ -6,7 +6,7 @@
   <div class="toast {store.toast.kind}" role="status">{store.toast.msg}</div>
 {/if}
 {#if store.progress}
-  <div class="toast prog" role="status">Reading mods… {store.progress.done} of {store.progress.total}</div>
+  <div class="toast prog" role="status">{store.progress.phase === "inspect" ? "Inspecting mod contents" : "Reading mods"}… {store.progress.done.toLocaleString()} of {store.progress.total.toLocaleString()}</div>
 {/if}
 
 <style>

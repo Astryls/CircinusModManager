@@ -184,7 +184,8 @@ function snapshot(): Snapshot {
     weightsFetchedAt: 1_757_000_000,
     dirty,
     dbLoaded: ["communityRules.json (7,412 rules)", "steamDB.json (31,988 items)"],
-    scannedAt: 1_757_000_000
+    scannedAt: 1_757_000_000,
+    inspecting: 0
   };
 }
 

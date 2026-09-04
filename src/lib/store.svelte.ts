@@ -15,7 +15,7 @@ class Store {
   snap = $state<Snapshot | null>(null);
   loading = $state(true);
   busy = $state<string | null>(null);
-  progress = $state<{ done: number; total: number } | null>(null);
+  progress = $state<{ phase: "read" | "inspect"; done: number; total: number } | null>(null);
   error = $state<string | null>(null);
   toast = $state<{ msg: string; kind: "ok" | "warn" | "err" } | null>(null);
 
@@ -120,6 +120,10 @@ class Store {
   // ---- lifecycle ----
   async load() {
     this.loading = true;
+    // Listeners first: the first snapshot waits for the quick scan, and progress must show meanwhile.
+    await listen<{ phase: "read" | "inspect"; done: number; total: number }>("scan-progress", (p) => (this.progress = p.done >= p.total ? null : p));
+    await listen("state-changed", () => this.refresh());
+    await listen<string>("scan-error", (e) => this.say(e, "err"));
     try {
       this.snap = await api.snapshot();
       this.error = null;
@@ -128,9 +132,6 @@ class Store {
     } finally {
       this.loading = false;
     }
-    await listen<{ done: number; total: number }>("scan-progress", (p) => (this.progress = p.done >= p.total ? null : p));
-    await listen("state-changed", () => this.refresh());
-    await listen<string>("scan-error", (e) => this.say(e, "err"));
   }
 
   async refresh() {

@@ -54,7 +54,7 @@
         <ModList />
         <div class="foot">
           {#if store.snap}
-            {store.snap.mods.length} installed · {store.active.length} active · {store.snap.missing.length ? `${store.snap.missing.length} in ModsConfig.xml but not installed · ` : ""}
+            {store.snap.mods.length} installed · {store.active.length} active · {store.snap.inspecting ? `inspecting ${store.snap.inspecting} folders in the background · ` : ""}{store.snap.missing.length ? `${store.snap.missing.length} in ModsConfig.xml but not installed · ` : ""}
             {store.snap.dbLoaded.length ? store.snap.dbLoaded.join(" · ") : "no rule databases loaded yet"}
           {/if}
         </div>
@@ -65,7 +65,7 @@
   {#if store.showImport}<ImportDialog />{/if}
   <Toast />
   {#if store.loading}
-    <div class="loading"><div class="spin"></div><span>Reading your mods…</span></div>
+    <div class="loading"><div class="spin"></div><span>{store.progress ? `Reading your mods… ${store.progress.done.toLocaleString()} of ${store.progress.total.toLocaleString()}` : store.error ? store.error : "Finding RimWorld…"}</span></div>
   {/if}
 </div>
 

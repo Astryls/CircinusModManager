@@ -45,6 +45,19 @@ pub struct ScanOutput {
     pub files: HashMap<String, ModFiles>,
     pub from_cache: usize,
     pub parsed: usize,
+    /// uids whose folders have not been walked yet (quick scan). Pass them to `inspect_mods`.
+    pub shallow: Vec<String>,
+    /// uid → cache stamp for entries not yet written to the cache.
+    pub stamps: HashMap<String, String>,
+}
+
+/// Result of walking one mod folder.
+#[derive(Debug, Clone)]
+pub struct Inspection {
+    pub uid: String,
+    pub contents: Contents,
+    pub files: ModFiles,
+    pub modified: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -194,13 +207,13 @@ fn classify(info: &ModInfo) -> ModKind {
     ModKind::Unknown
 }
 
-fn parse_candidate(c: &Candidate, gv: &GameVersion) -> (ModInfo, ModFiles) {
+/// Everything that can be known from `About/` alone — no folder walk. `contents` stays empty and
+/// `kind` is Unknown until `inspect_mods` fills them in.
+fn parse_quick(c: &Candidate, gv: &GameVersion) -> ModInfo {
     let uid = c.path.to_string_lossy().to_string();
     let about_dir = c.about_xml.as_ref().and_then(|p| p.parent().map(|p| p.to_path_buf()));
     let mut info = ModInfo { uid: uid.clone(), path: c.path.clone(), source: c.source, ..Default::default() };
-    let (contents, files, newest) = inspect_folder(&c.path);
-    info.contents = contents;
-    info.modified = newest;
+    info.modified = c.stamp.rsplit(':').take(2).filter_map(|x| x.parse::<u64>().ok()).max().unwrap_or(0);
 
     match &c.about_xml {
         Some(about_path) => match read_text(about_path).and_then(|t| parse_about(&t, about_path, &gv.major_minor)) {
@@ -274,11 +287,57 @@ fn parse_candidate(c: &Candidate, gv: &GameVersion) -> (ModInfo, ModFiles) {
         }
     }
     info.kind = classify(&info);
-    (info, files)
+    info
 }
 
-/// Scan all roots. `progress(done, total)` is called from worker threads.
-pub fn scan(opts: &ScanOptions, cache: Option<&Cache>, progress: &(dyn Fn(usize, usize) + Sync)) -> Result<ScanOutput> {
+/// Walk one mod folder (the slow part) and return what it contains.
+pub fn inspect_one(info: &ModInfo) -> Inspection {
+    let (contents, files, newest) = inspect_folder(&info.path);
+    Inspection { uid: info.uid.clone(), contents, files, modified: newest.max(info.modified) }
+}
+
+/// Walk many mod folders in parallel. `progress(done, total)` is called from worker threads.
+pub fn inspect_mods(mods: &[ModInfo], progress: &(dyn Fn(usize, usize) + Sync)) -> Vec<Inspection> {
+    let total = mods.len();
+    let done = AtomicUsize::new(0);
+    mods.par_iter()
+        .map(|m| {
+            let r = inspect_one(m);
+            progress(done.fetch_add(1, Ordering::Relaxed) + 1, total);
+            r
+        })
+        .collect()
+}
+
+/// Merge inspections into a mod list, re-classify, and write the finished entries to the cache.
+pub fn apply_inspections(mods: &mut [ModInfo], files: &mut HashMap<String, ModFiles>, stamps: &HashMap<String, String>, inspections: Vec<Inspection>, cache: Option<&Cache>) -> Result<usize> {
+    let mut to_store: Vec<(String, String, String)> = Vec::new();
+    for ins in inspections {
+        let Some(m) = mods.iter_mut().find(|m| m.uid == ins.uid) else { continue };
+        m.contents = ins.contents;
+        m.modified = ins.modified;
+        m.kind = classify(m);
+        if let Some(stamp) = stamps.get(&m.uid) {
+            if let Ok(json) = serde_json::to_string(&CachedEntry { info: m.clone(), files: ins.files.clone() }) {
+                to_store.push((m.uid.clone(), stamp.clone(), json));
+            }
+        }
+        files.insert(ins.uid, ins.files);
+    }
+    let n = to_store.len();
+    if let Some(c) = cache {
+        if !to_store.is_empty() {
+            c.store_mod_entries(&to_store)?;
+        }
+    }
+    Ok(n)
+}
+
+/// Scan all roots. With `deep` false, folders that are not in the cache are only read from
+/// `About/` (fast) and listed in `ScanOutput::shallow` for a later `inspect_mods` pass; with
+/// `deep` true everything is walked here. `progress(done, total)` is called from worker threads.
+pub fn scan(opts: &ScanOptions, cache: Option<&Cache>, deep: bool, progress: &(dyn Fn(usize, usize) + Sync)) -> Result<ScanOutput> {
+    let started = std::time::Instant::now();
     let loc = &opts.locations;
     let gv = &opts.game_version;
     let mut cands: Vec<Candidate> = Vec::new();
@@ -297,16 +356,25 @@ pub fn scan(opts: &ScanOptions, cache: Option<&Cache>, progress: &(dyn Fn(usize,
         _ => HashMap::new(),
     };
     let done = AtomicUsize::new(0);
-    let results: Vec<(ModInfo, ModFiles, bool)> = cands
+    // (info, files, from_cache, inspected)
+    let results: Vec<(ModInfo, ModFiles, bool, bool)> = cands
         .par_iter()
         .map(|c| {
             let uid = c.path.to_string_lossy().to_string();
             let hit = cached.get(&uid).filter(|(stamp, _)| *stamp == c.stamp).and_then(|(_, json)| serde_json::from_str::<CachedEntry>(json).ok());
             let out = match hit {
-                Some(e) => (e.info, e.files, true),
+                Some(e) => (e.info, e.files, true, true),
                 None => {
-                    let (i, f) = parse_candidate(c, gv);
-                    (i, f, false)
+                    let mut info = parse_quick(c, gv);
+                    if deep {
+                        let ins = inspect_one(&info);
+                        info.contents = ins.contents;
+                        info.modified = ins.modified;
+                        info.kind = classify(&info);
+                        (info, ins.files, false, true)
+                    } else {
+                        (info, ModFiles::default(), false, false)
+                    }
                 }
             };
             let n = done.fetch_add(1, Ordering::Relaxed) + 1;
@@ -317,13 +385,18 @@ pub fn scan(opts: &ScanOptions, cache: Option<&Cache>, progress: &(dyn Fn(usize,
 
     let mut out = ScanOutput::default();
     let mut to_store: Vec<(String, String, String)> = Vec::new();
-    for ((info, files, from_cache), cand) in results.into_iter().zip(cands.iter()) {
+    for ((info, files, from_cache, inspected), cand) in results.into_iter().zip(cands.iter()) {
         if from_cache {
             out.from_cache += 1;
         } else {
             out.parsed += 1;
-            if let Ok(json) = serde_json::to_string(&CachedEntry { info: info.clone(), files: files.clone() }) {
-                to_store.push((info.uid.clone(), cand.stamp.clone(), json));
+            out.stamps.insert(info.uid.clone(), cand.stamp.clone());
+            if inspected {
+                if let Ok(json) = serde_json::to_string(&CachedEntry { info: info.clone(), files: files.clone() }) {
+                    to_store.push((info.uid.clone(), cand.stamp.clone(), json));
+                }
+            } else {
+                out.shallow.push(info.uid.clone());
             }
         }
         out.files.insert(info.uid.clone(), files);
@@ -337,6 +410,7 @@ pub fn scan(opts: &ScanOptions, cache: Option<&Cache>, progress: &(dyn Fn(usize,
         c.prune_mod_entries(&live)?;
     }
     out.mods.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    tracing::info!(mods = out.mods.len(), from_cache = out.from_cache, parsed = out.parsed, shallow = out.shallow.len(), ms = started.elapsed().as_millis() as u64, "scan");
     Ok(out)
 }
 
@@ -377,7 +451,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let loc = fixture_game(tmp.path());
         let opts = ScanOptions { locations: loc, game_version: GameVersion::parse("1.6.4530 rev1235").unwrap(), use_cache: false };
-        let out = scan(&opts, None, &|_, _| {}).unwrap();
+        let out = scan(&opts, None, true, &|_, _| {}).unwrap();
         let by_id = |id: &str| out.mods.iter().find(|m| m.package_id == id).unwrap();
         let core = by_id("ludeon.rimworld");
         assert_eq!(core.name, "RimWorld");
@@ -402,14 +476,36 @@ mod tests {
     }
 
     #[test]
+    fn quick_then_inspect_matches_deep() {
+        let tmp = tempfile::tempdir().unwrap();
+        let loc = fixture_game(tmp.path());
+        let cache = Cache::open(&tmp.path().join("cache.sqlite")).unwrap();
+        let opts = ScanOptions { locations: loc, game_version: GameVersion::parse("1.6.4530 rev1235").unwrap(), use_cache: true };
+        let mut quick = scan(&opts, Some(&cache), false, &|_, _| {}).unwrap();
+        assert_eq!(quick.shallow.len(), quick.mods.len());
+        assert!(quick.mods.iter().all(|m| m.contents.assemblies == 0 && matches!(m.kind, ModKind::Unknown | ModKind::Official | ModKind::Scenario)));
+        let shallow: Vec<ModInfo> = quick.mods.iter().filter(|m| quick.shallow.contains(&m.uid)).cloned().collect();
+        let ins = inspect_mods(&shallow, &|_, _| {});
+        let stored = apply_inspections(&mut quick.mods, &mut quick.files, &quick.stamps, ins, Some(&cache)).unwrap();
+        assert_eq!(stored, quick.mods.len());
+        let deep = scan(&opts, None, true, &|_, _| {}).unwrap();
+        assert_eq!(quick.mods, deep.mods);
+        assert_eq!(quick.files, deep.files);
+        // and the cache now serves everything
+        let again = scan(&opts, Some(&cache), false, &|_, _| {}).unwrap();
+        assert_eq!(again.from_cache, deep.mods.len());
+        assert!(again.shallow.is_empty());
+    }
+
+    #[test]
     fn cache_round_trip() {
         let tmp = tempfile::tempdir().unwrap();
         let loc = fixture_game(tmp.path());
         let cache = Cache::open(&tmp.path().join("cache.sqlite")).unwrap();
         let opts = ScanOptions { locations: loc, game_version: GameVersion::parse("1.6.4530 rev1235").unwrap(), use_cache: true };
-        let first = scan(&opts, Some(&cache), &|_, _| {}).unwrap();
+        let first = scan(&opts, Some(&cache), true, &|_, _| {}).unwrap();
         assert_eq!(first.from_cache, 0);
-        let second = scan(&opts, Some(&cache), &|_, _| {}).unwrap();
+        let second = scan(&opts, Some(&cache), true, &|_, _| {}).unwrap();
         assert_eq!(second.from_cache, first.mods.len());
         assert_eq!(first.mods, second.mods);
         assert_eq!(first.files, second.files);

@@ -1,9 +1,71 @@
 mod commands;
 mod state;
 
-use commands::Shared;
+use commands::{ScanProgress, Shared};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use tauri::Emitter;
+use tauri::{AppHandle, Emitter};
+
+fn progress_emitter(handle: AppHandle, phase: &'static str) -> impl Fn(usize, usize) + Sync {
+    let last = AtomicU64::new(0);
+    move |done: usize, total: usize| {
+        // at most ~20 events per second, plus the final one
+        let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+        if done == total || t.saturating_sub(last.load(Ordering::Relaxed)) >= 50 {
+            last.store(t, Ordering::Relaxed);
+            let _ = handle.emit("scan-progress", ScanProgress { phase, done, total });
+        }
+    }
+}
+
+/// Phase 1 (under the lock, seconds): read About/ folders and ModsConfig.xml, publish the list.
+/// Returns the mods whose folders still need walking.
+pub fn scan_quick_phase(handle: &AppHandle, st: &Shared, full: bool) -> Result<Vec<circinus_core::ModInfo>, String> {
+    let progress = progress_emitter(handle.clone(), "read");
+    let result = {
+        let mut app = st.lock().map_err(|_| "state lock poisoned".to_string())?;
+        app.scan_quick(full, &progress)
+    };
+    match result {
+        Ok(shallow) => {
+            let _ = handle.emit("state-changed", ());
+            Ok(shallow)
+        }
+        Err(e) => {
+            let _ = handle.emit("scan-error", e.to_string());
+            Err(e.to_string())
+        }
+    }
+}
+
+/// Phase 2 (no lock while walking): inspect folder contents, merge, cache, publish again.
+pub fn inspect_phase(handle: &AppHandle, st: &Shared, shallow: Vec<circinus_core::ModInfo>) {
+    if shallow.is_empty() {
+        return;
+    }
+    let started = std::time::Instant::now();
+    let inspections = circinus_core::scan::inspect_mods(&shallow, &progress_emitter(handle.clone(), "inspect"));
+    tracing::info!(mods = shallow.len(), ms = started.elapsed().as_millis() as u64, "inspect");
+    let result = match st.lock() {
+        Ok(mut app) => app.apply_inspections(inspections).map_err(|e| e.to_string()),
+        Err(_) => Err("state lock poisoned".into()),
+    };
+    match result {
+        Ok(_) => {
+            let _ = handle.emit("state-changed", ());
+        }
+        Err(e) => {
+            let _ = handle.emit("scan-error", e);
+        }
+    }
+}
+
+/// Both phases back to back (startup).
+pub fn run_scan(handle: AppHandle, st: Shared, full: bool) {
+    if let Ok(shallow) = scan_quick_phase(&handle, &st, full) {
+        inspect_phase(&handle, &st, shallow);
+    }
+}
 
 pub fn run() {
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env().add_directive("circinus=info".parse().unwrap())).init();
@@ -22,27 +84,7 @@ pub fn run() {
             // First scan in the background so the window appears immediately.
             let handle = app.handle().clone();
             let st = shared.clone();
-            tauri::async_runtime::spawn_blocking(move || {
-                let progress = {
-                    let h = handle.clone();
-                    move |done: usize, total: usize| {
-                        let _ = h.emit("scan-progress", commands::ScanProgress { done, total });
-                    }
-                };
-                let result = {
-                    let mut app = st.lock().unwrap();
-                    app.scan(false, &progress)
-                };
-                match result {
-                    Ok(()) => {
-                        let _ = handle.emit("state-changed", ());
-                    }
-                    Err(e) => {
-                        let _ = handle.emit("scan-error", e.to_string());
-                    }
-                }
-            });
-            // DevTools stay closed by default; F12 / Ctrl+Shift+I opens them in dev builds.
+            tauri::async_runtime::spawn_blocking(move || run_scan(handle, st, false));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
