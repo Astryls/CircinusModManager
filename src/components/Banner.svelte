@@ -15,6 +15,20 @@
 
   const notices = $derived.by((): Notice[] => {
     const out: Notice[] = [];
+    const reset = store.snap?.listReset ?? null;
+    if (reset) {
+      const from = reset.restoreFrom;
+      const when = from ? new Date(from.savedAt * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+      out.push({
+        id: "reset",
+        kind: "error",
+        title: `RimWorld reset your mod list to Core and DLC — it failed to load last time`,
+        detail: from ? `Your list of ${from.count} mods from ${when} is archived (${from.label}) and can go straight back` : `${reset.previousCount} mods were in the list before; no archived copy is available — import one from a file`,
+        action: from ? "Restore and save" : "Import a list",
+        run: () => (from ? store.restoreList(from.path, true) : (store.showImport = true)),
+        dismissable: true
+      });
+    }
     const c = store.changeCounts;
     const l = store.listChange;
     const listBits = l ? [l.added.length ? `${l.added.length} added` : "", l.removed.length ? `${l.removed.length} removed` : "", l.reordered ? "order changed" : ""].filter(Boolean).join(", ") : "";
@@ -45,13 +59,17 @@
       });
     }
     if (head) {
-      out.push({ id: "issues", kind: head.kind, title: head.title, detail: head.detail, action: "Review", run: review, dismissable: false });
+      const notice: Notice = { id: "issues", kind: head.kind, title: head.title, detail: head.detail, action: "Review", run: review, dismissable: false };
+      // Something that will make the game reset the list outranks housekeeping notices.
+      if (head.kind === "error") out.splice(reset ? 1 : 0, 0, notice);
+      else out.push(notice);
     }
     return out.filter((n) => !store.dismissed.includes(n.id));
   });
 
   function review() {
-    const target = store.issues.find((i) => i.kind === (head?.kind === "error" ? "incompatible" : "misplacedOptimization")) ?? store.issues[0];
+    const wanted = head?.kind === "error" ? ["aboveOfficial", "cycle", "incompatible", "missingDependency"] : ["misplacedOptimization"];
+    const target = store.issues.find((i) => wanted.includes(i.kind)) ?? store.issues[0];
     const uid = target && primaryUid(target);
     if (uid) store.scrollTo(uid);
   }

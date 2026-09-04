@@ -1,7 +1,8 @@
 <script lang="ts">
   import { store } from "$lib/store.svelte";
-  import { pickFile, inTauri } from "$lib/api";
+  import { api, pickFile, inTauri } from "$lib/api";
   import { I } from "$lib/icons";
+  import type { SavedList } from "$lib/types";
 
   let text = $state("");
   let link = $state("");
@@ -29,6 +30,10 @@
     store.rentryPreview = null;
   }
   const missingIds = $derived(c ? c.missing : r ? r.missingWorkshopIds : []);
+  let saved = $state<SavedList[]>([]);
+  api.savedLists().then((l) => (saved = l)).catch(() => {});
+  const labels: Record<string, string> = { saved: "saved by Circinus", seen: "found on disk", "before-reset": "rescued before a reset" };
+  const when = (t: number) => new Date(t * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 </script>
 
 <div class="scrim" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) close(); }}>
@@ -55,6 +60,21 @@
         <button class="btn" disabled={!text.trim()} onclick={() => { store.collectionPreview = null; store.rentryPreview = null; store.importFrom(undefined, text); }}>Read list</button>
       </div>
     </div>
+
+    {#if saved.length}
+      <div class="sec">
+        <div class="label">Previous lists <span class="or">every list Circinus saved or found in ModsConfig.xml</span></div>
+        <div class="hist">
+          {#each saved.slice(0, 12) as l (l.path)}
+            <div class="hrow">
+              <span class="hw">{when(l.savedAt)}</span>
+              <span class="hn"><b class="num">{l.count}</b> mods · {labels[l.label] ?? l.label}{l.gameVersion ? ` · ${l.gameVersion.split(" ")[0]}` : ""}</span>
+              <button class="btn sm" onclick={() => store.restoreList(l.path, false)}>Use as the list</button>
+            </div>
+          {/each}
+        </div>
+      </div>
+    {/if}
 
     {#if c}
       <div class="res">
@@ -107,6 +127,12 @@
   .ids { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; max-height: 120px; overflow: auto; }
   .ids .mono { background: var(--surface-3); padding: 2px 7px; border-radius: 6px; color: var(--text-2); }
   .hint { margin-top: 8px; font-size: 12px; color: var(--text-3); }
+  .hist { display: flex; flex-direction: column; gap: 2px; max-height: 190px; overflow: auto; }
+  .hrow { display: grid; grid-template-columns: 130px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 4px 6px; border-radius: 8px; font-size: 12.5px; }
+  .hrow:hover { background: var(--surface-2); }
+  .hw { color: var(--text-3); }
+  .hn { color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hn b { color: var(--text); }
   .ft { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
   .sp { flex: 1; }
 </style>

@@ -15,11 +15,15 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use walkdir::WalkDir;
 
+/// Suffix of the copy kept when Circinus replaces a DDS someone else wrote.
+pub const BACKUP_SUFFIX: &str = ".circinus-orig";
+
 /// One converted file as the manifest records it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
-    /// Path of the PNG relative to the mod folder, forward slashes, original case.
+    /// Path of the source relative to the mod folder, forward slashes, original case: the PNG,
+    /// or — for a foreign DDS rebuilt from its own pixels — the DDS itself.
     pub rel: String,
     pub src_len: u64,
     /// Milliseconds since the epoch.
@@ -35,6 +39,17 @@ pub struct Entry {
     pub width: u32,
     #[serde(default)]
     pub height: u32,
+    /// When this replaced a DDS someone else wrote: the backup of the original, relative to the
+    /// mod folder. Revert puts it back instead of just deleting ours.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replaced: Option<String>,
+}
+
+impl Entry {
+    /// The DDS this entry accounts for, relative to the mod folder.
+    pub fn dds_rel(&self) -> String {
+        Path::new(&self.rel).with_extension("dds").to_string_lossy().replace('\\', "/")
+    }
 }
 
 /// A PNG under a `Textures` folder.
@@ -138,7 +153,7 @@ pub fn plan(candidates: Vec<Candidate>, entries: &HashMap<String, Entry>, opts: 
 
 /// Write `bytes` next to the PNG: temp file first, validated content only, then an atomic
 /// swap into place.
-fn put_in_place(dds: &Path, bytes: &[u8]) -> Result<()> {
+pub(super) fn put_in_place(dds: &Path, bytes: &[u8]) -> Result<()> {
     let tmp = dds.with_extension("dds.circinus-tmp");
     std::fs::write(&tmp, bytes)?;
     if dds.exists() {
@@ -171,6 +186,7 @@ pub fn convert_one(c: &Candidate, opts: &Options, now: i64) -> Result<(Entry, En
         created_at: now,
         width: encoded.width,
         height: encoded.height,
+        replaced: None,
     };
     Ok((entry, encoded))
 }
@@ -264,21 +280,34 @@ fn is_ours(dds: &Path, e: &Entry) -> bool {
 pub fn revalidate(mod_root: &Path, entries: &[Entry]) -> Revalidation {
     let mut r = Revalidation::default();
     for e in entries {
-        let png = mod_root.join(&e.rel);
-        let dds = png.with_extension("dds");
+        let dds = mod_root.join(e.dds_rel());
+        let backup = e.replaced.as_ref().map(|b| mod_root.join(b));
         if !dds.is_file() {
             r.missing.push(e.rel.clone());
             continue;
         }
-        let source_ok = std::fs::read(&png).map(|b| hash(&b) == e.src_hash).unwrap_or(false);
-        if source_ok {
+        // The source is the PNG, or the original DDS we kept when there was no PNG.
+        let source = if e.rel.eq_ignore_ascii_case(&e.dds_rel()) { backup.clone().unwrap_or_else(|| dds.clone()) } else { mod_root.join(&e.rel) };
+        let source_ok = std::fs::read(&source).map(|b| hash(&b) == e.src_hash).unwrap_or(false);
+        if source_ok && is_ours(&dds, e) {
             r.keep.push(e.clone());
             continue;
         }
         if is_ours(&dds, e) {
-            let _ = std::fs::remove_file(&dds);
+            // Source changed under us: restore the original if we kept one, else drop ours.
+            match backup.filter(|b| b.is_file()) {
+                Some(b) if std::fs::remove_file(&dds).is_ok() && std::fs::rename(&b, &dds).is_ok() => {}
+                _ => {
+                    let _ = std::fs::remove_file(&dds);
+                }
+            }
             r.stale.push(e.rel.clone());
         } else {
+            // The mod's author (or Steam) rewrote the file: it is theirs again, and the backup
+            // of their older version is of no use to anyone.
+            if let Some(b) = backup {
+                let _ = std::fs::remove_file(b);
+            }
             r.foreign.push(e.rel.clone());
         }
     }
@@ -291,22 +320,33 @@ pub struct Reverted {
     pub deleted: Vec<String>,
     /// Files that were not the ones Circinus wrote; left in place.
     pub kept: Vec<String>,
+    /// Originals put back from their backups.
+    #[serde(default)]
+    pub restored: Vec<String>,
     pub bytes_freed: u64,
 }
 
-/// Delete the DDS files Circinus created for a mod — only those, and only if unchanged.
+/// Delete the DDS files Circinus created for a mod — only those, and only if unchanged — and
+/// put back any original it replaced.
 pub fn revert(mod_root: &Path, entries: &[Entry]) -> Reverted {
     let mut r = Reverted::default();
     for e in entries {
-        let dds = mod_root.join(&e.rel).with_extension("dds");
+        let dds = mod_root.join(e.dds_rel());
         if !dds.is_file() {
             continue;
         }
-        if is_ours(&dds, e) && std::fs::remove_file(&dds).is_ok() {
-            r.deleted.push(e.rel.clone());
-            r.bytes_freed += e.dds_len;
-        } else {
+        if !is_ours(&dds, e) {
             r.kept.push(e.rel.clone());
+            continue;
+        }
+        if std::fs::remove_file(&dds).is_err() {
+            r.kept.push(e.rel.clone());
+            continue;
+        }
+        r.bytes_freed += e.dds_len;
+        match e.replaced.as_ref().map(|b| mod_root.join(b)).filter(|b| b.is_file()) {
+            Some(b) if std::fs::rename(&b, &dds).is_ok() => r.restored.push(e.rel.clone()),
+            _ => r.deleted.push(e.rel.clone()),
         }
     }
     r

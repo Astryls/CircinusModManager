@@ -7,7 +7,7 @@ use circinus_core::dds;
 use circinus_core::game::GameVersion;
 use circinus_core::import::ImportedList;
 use circinus_core::model::*;
-use circinus_core::modsconfig::{self, ModsConfig};
+use circinus_core::modsconfig::{self, ModsConfig, SavedList};
 use circinus_core::order::{self, Context, UserOverrides};
 use circinus_core::paths::{app_data_dir, Locations};
 use circinus_core::rules::{self, Databases, DbSource, RulesFile};
@@ -171,6 +171,19 @@ pub struct Snapshot {
     pub changes_since: i64,
     /// uid → what Circinus has converted for it.
     pub dds: HashMap<String, DdsSummary>,
+    /// Set when ModsConfig.xml holds only official content although a real list was there
+    /// before: RimWorld failed to load and reset it.
+    pub list_reset: Option<ListReset>,
+}
+
+/// RimWorld gave up loading and wrote a Core-only list; here is what to put back.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListReset {
+    /// Mods in the list before the reset.
+    pub previous_count: usize,
+    /// The newest archived copy of a real list, if any.
+    pub restore_from: Option<SavedList>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -220,7 +233,11 @@ pub struct App {
     pub file_active: Vec<String>,
     /// uid → converted-texture summary, from the manifest.
     pub dds_index: HashMap<String, DdsSummary>,
+    pub list_reset: Option<ListReset>,
 }
+
+/// How many archived lists to keep.
+const LIST_HISTORY: usize = 40;
 
 const BASELINE_KEY: &str = "mod_baseline";
 
@@ -274,6 +291,7 @@ impl App {
             workshop_updated: HashMap::new(),
             file_active: Vec::new(),
             dds_index: HashMap::new(),
+            list_reset: None,
         };
         app.resolve_locations();
         app.load_databases();
@@ -440,8 +458,48 @@ impl App {
         self.active = uids;
         self.missing = missing;
         self.file_active = cfg.active_mods.iter().map(|p| p.to_lowercase()).collect();
-        self.previous_known = cfg.known_expansions;
+        self.previous_known = cfg.known_expansions.clone();
         self.dirty = false;
+        // Keep every real list we come across, whoever wrote it — and notice RimWorld's
+        // "resetting mods config" recovery, which leaves only official content behind.
+        if modsconfig::looks_reset(&cfg.active_mods) {
+            // The list this session started with is a copy too: archive it before it is lost.
+            if let Some(b) = &self.baseline {
+                if b.active.len() > cfg.active_mods.len() && !modsconfig::looks_reset(&b.active) {
+                    let prev = ModsConfig { version: self.game_version.full.clone(), active_mods: b.active.clone(), known_expansions: cfg.known_expansions.clone() };
+                    let _ = modsconfig::archive(&self.lists_dir(), &prev, "before-reset", LIST_HISTORY);
+                }
+            }
+            let history: Vec<SavedList> = modsconfig::list_archive(&self.lists_dir()).into_iter().filter(|l| l.count > cfg.active_mods.len()).collect();
+            let previous_count = self.baseline.as_ref().map(|b| b.active.len()).filter(|n| *n > cfg.active_mods.len()).or_else(|| history.first().map(|l| l.count)).unwrap_or(0);
+            if previous_count > cfg.active_mods.len() {
+                self.list_reset = Some(ListReset { previous_count, restore_from: history.into_iter().next() });
+            }
+        } else {
+            self.list_reset = None;
+            if let Err(e) = modsconfig::archive(&self.lists_dir(), &cfg, "seen", LIST_HISTORY) {
+                tracing::warn!("could not archive the list: {e}");
+            }
+        }
+    }
+
+    pub fn lists_dir(&self) -> PathBuf {
+        self.data_dir.join("lists")
+    }
+
+    /// Archived lists, newest first.
+    pub fn saved_lists(&self) -> Vec<SavedList> {
+        modsconfig::list_archive(&self.lists_dir())
+    }
+
+    /// Make an archived list the active list (unsaved until `save`).
+    pub fn restore_list(&mut self, path: &std::path::Path) -> Result<(usize, Vec<String>)> {
+        let cfg = modsconfig::read(path)?;
+        let (uids, missing) = modsconfig::resolve_active(&cfg.active_mods, &self.mods);
+        let n = uids.len();
+        self.set_active(uids);
+        self.list_reset = None;
+        Ok((n, missing))
     }
 
     pub fn issues(&self) -> Vec<Issue> {
@@ -500,6 +558,7 @@ impl App {
             list_change: self.list_change.clone(),
             changes_since: self.baseline.as_ref().map(|b| b.taken_at).unwrap_or(0),
             dds: self.dds_index.clone(),
+            list_reset: self.list_reset.clone(),
         }
     }
 
@@ -584,6 +643,10 @@ impl App {
         let cfg = modsconfig::build(&self.active, &self.mods, &self.game_version.full, &self.previous_known);
         modsconfig::write(&path, &cfg)?;
         self.dirty = false;
+        self.list_reset = None;
+        if let Err(e) = modsconfig::archive(&self.lists_dir(), &cfg, "saved", LIST_HISTORY) {
+            tracing::warn!("could not archive the list: {e}");
+        }
         // Our own edit is not "a change made outside Circinus".
         self.file_active = cfg.active_mods.iter().map(|p| p.to_lowercase()).collect();
         if let Some(b) = &mut self.baseline {

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { store } from "$lib/store.svelte";
   import { I } from "$lib/icons";
-  import { formatBytes, type DdsFormat, type DdsQuality, type ModTextures } from "$lib/types";
+  import { formatBytes, type DdsFinding, type DdsFormat, type DdsQuality, type ModTextures } from "$lib/types";
 
   const t = $derived(store.tex);
   const s = $derived(store.snap?.settings.dds);
@@ -33,6 +33,13 @@
     return { per, left };
   });
   const eta = (secs: number | null) => (secs == null ? "" : secs < 90 ? `${secs}s` : secs < 5400 ? `${Math.round(secs / 60)} min` : `${(secs / 3600).toFixed(1)} h`);
+  const audit = $derived(store.audit);
+  const auditActive = $derived(rows.filter((r) => r.active).map((r) => r.uid));
+  const auditAll = $derived(rows.map((r) => r.uid));
+  const fixAll = $derived((audit?.mods ?? []).filter((m) => m.findings.some((f) => f.fixable)).map((m) => [m.uid, []] as [string, string[]]));
+  const problem = (f: DdsFinding) =>
+    f.problem.kind === "notMultipleOf4" ? `${f.width}×${f.height} ${f.format}: a side is not a multiple of 4` : f.problem.kind === "truncated" ? `${f.format}: ${formatBytes(f.problem.actual)} of ${formatBytes(f.problem.expected)} — truncated` : `unreadable: ${f.problem.reason}`;
+  const phaseLabel = (p: string) => (p === "scanning" ? "Finding textures…" : p === "reverting" ? "Removing DDS files…" : p === "auditing" ? "Reading DDS headers…" : p === "fixing" ? "Rebuilding…" : "");
 
   function update(patch: Partial<NonNullable<typeof s>>) {
     if (!s) return;
@@ -83,9 +90,9 @@
       <p class="lead">Writes a <span class="mono">.dds</span> next to every PNG under a mod's <span class="mono">Textures</span> folders — RimWorld loads the DDS instead, ready-compressed for the GPU with mipmaps, and skips decoding the PNG. PNGs are never touched, so removing the DDS files puts everything back. Opaque textures become BC1, textures with alpha {s?.alphaFormat === "bc3" ? "BC3" : "BC7"}. Every file is decoded and checked before it is put in place; a mod that updates gets its files re-checked.</p>
       {#if t?.running}
         <div class="prog">
-          <div class="bar"><i style="width: {t.phase === 'converting' ? pct : 3}%"></i></div>
+          <div class="bar"><i style="width: {t.phase === 'converting' || t.phase === 'fixing' ? pct : 3}%"></i></div>
           <div class="pl">
-            <b class="num">{t.phase === "scanning" ? "Finding textures…" : t.phase === "reverting" ? "Removing DDS files…" : `${t.progress.done.toLocaleString()} of ${t.progress.total.toLocaleString()}`}</b>
+            <b class="num">{t.phase === "converting" || t.phase === "fixing" ? `${t.progress.done.toLocaleString()} of ${t.progress.total.toLocaleString()}` : phaseLabel(t.phase)}</b>
             {#if t.phase === "converting"}<span>{t.progress.converted} converted{t.progress.failed ? ` · ${t.progress.failed} failed` : ""} · {formatBytes(t.progress.pngBytes)} → {formatBytes(t.progress.ddsBytes)}{rate ? ` · ${rate.per.toFixed(1)}/s · ${eta(rate.left)} left` : ""}</span>{/if}
             <span class="mono cur">{t.progress.current}</span>
           </div>
@@ -101,7 +108,9 @@
           {@const r = t.report}
           <div class="report">
             {#if r.reverted || r.bytesFreed}
-              Last run removed <b class="num">{r.reverted}</b> files, freeing {formatBytes(r.bytesFreed)}.
+              Last run removed <b class="num">{r.reverted}</b> files{r.restored ? ` (${r.restored} originals put back)` : ""}, freeing {formatBytes(r.bytesFreed)}.
+            {:else if r.fixed || (t.phase === "idle" && audit && !r.converted && !r.current)}
+              Last run rebuilt <b class="num">{r.fixed ?? 0}</b> file{(r.fixed ?? 0) === 1 ? "" : "s"}{r.failed ? `, ${r.failed} failed` : ""} in {r.seconds}s; the originals are beside them as <span class="mono">.circinus-orig</span>.
             {:else}
               Last run: <b class="num">{r.converted}</b> converted{r.failed ? `, ${r.failed} failed` : ""}{r.current ? `, ${r.current} already current` : ""}{r.shipped ? `, ${r.shipped} left alone (author ships a DDS)` : ""} across {r.mods} mods in {r.seconds}s{r.cancelled ? " — stopped early" : ""}. {formatBytes(r.pngBytes)} of PNG → {formatBytes(r.ddsBytes)} of DDS.
             {/if}
@@ -136,6 +145,39 @@
       <p class="hint">Changing the format re-converts alpha textures next time; changing quality only affects new work. Opaque textures are BC1 either way. Dimensions that are not multiples of four are resized up, never padded.</p>
     </section>
   </div>
+
+  <section class="card auditc">
+    <h3>DDS files the game will refuse <span class="aside">{audit ? `${audit.files} in ${audit.mods.length} of ${audit.modsChecked} mods · ${audit.seconds}s` : "not checked yet"}</span></h3>
+    <p class="lead">Some mods ship <span class="mono">.dds</span> files that Unity cannot create a texture from — most often a side that is not a multiple of 4, which RimWorld logs as "Failed to create texture because of invalid parameters" and shows as missing art. This reads the header of every DDS Circinus did not write. Fix rebuilds the file from the PNG beside it (or from its own pixels), resized to whole blocks, and keeps the original as <span class="mono">.circinus-orig</span>; Revert puts it back.</p>
+    <div class="acts">
+      <button class="btn primary" disabled={t?.running || !auditActive.length} onclick={() => store.auditTextures(auditActive)}>{@html I.check}Check active mods <span class="cnt num">{auditActive.length}</span></button>
+      <button class="btn" disabled={t?.running || !auditAll.length} onclick={() => store.auditTextures(auditAll)}>Everything installed <span class="cnt num">{auditAll.length}</span></button>
+      {#if audit?.fixable}<button class="btn" disabled={t?.running} onclick={() => store.fixTextures(fixAll)}>Fix all <span class="cnt num">{audit.fixable}</span></button>{/if}
+    </div>
+    {#if audit}
+      {#if !audit.mods.length}
+        <p class="hint">Every DDS file in {audit.modsChecked} mods has a header Unity accepts.</p>
+      {:else}
+        <div class="findings">
+          {#each audit.mods as m (m.uid)}
+            <details class="fm" open={audit.mods.length <= 6}>
+              <summary>
+                <b>{m.name}</b>{#if !m.active}<span class="off">inactive</span>{/if}
+                <span class="fc">{m.findings.length} file{m.findings.length === 1 ? "" : "s"}{m.findings.some((f) => !f.fixable) ? ` · ${m.findings.filter((f) => !f.fixable).length} not rebuildable` : ""}</span>
+                {#if m.findings.some((f) => f.fixable)}<button class="btn sm" disabled={t?.running} onclick={(e) => { e.preventDefault(); store.fixTextures([[m.uid, []]]); }}>Fix {m.findings.filter((f) => f.fixable).length}</button>{/if}
+              </summary>
+              <div class="flist">
+                {#each m.findings.slice(0, 200) as f}
+                  <div class="fr"><span class="mono">{f.rel}</span><span class="why">{problem(f)}{f.hasPng ? " · PNG beside it" : f.fixable ? " · from its own pixels" : " · no source to rebuild from"}</span></div>
+                {/each}
+                {#if m.findings.length > 200}<div class="hint">…{m.findings.length - 200} more</div>{/if}
+              </div>
+            </details>
+          {/each}
+        </div>
+      {/if}
+    {/if}
+  </section>
 
   <section class="card list">
     <h3>Mods with textures <span class="aside">{shown.length} shown</span>
@@ -214,5 +256,15 @@
   .ib { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--text-3); }
   .ib:hover { background: var(--surface-3); color: var(--text); }
   .ib :global(svg) { width: 13px; height: 13px; }
+  .findings { margin-top: 10px; display: flex; flex-direction: column; gap: 3px; }
+  .fm { border-radius: 9px; }
+  .fm[open] { background: var(--surface-2); }
+  .fm summary { cursor: pointer; display: flex; align-items: center; gap: 10px; padding: 6px 10px; font-size: 13px; color: var(--text-2); }
+  .fm summary b { color: var(--text); }
+  .fm .fc { color: var(--text-3); font-size: 12px; margin-left: auto; }
+  .flist { display: flex; flex-direction: column; gap: 4px; padding: 4px 12px 10px 24px; max-height: 260px; overflow: auto; }
+  .fr { display: flex; flex-direction: column; font-size: 12px; }
+  .fr .mono { color: var(--text-2); word-break: break-all; }
+  .fr .why { color: var(--text-3); font-size: 11.5px; }
   @media (max-width: 1100px) { .top { grid-template-columns: 1fr; } .tiles { grid-template-columns: 1fr 1fr; } }
 </style>

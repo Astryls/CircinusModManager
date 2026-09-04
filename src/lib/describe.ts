@@ -35,6 +35,12 @@ export function describe(i: Issue, byUid: Map<string, ModInfo>, viewer?: string)
       return "About.xml has no packageId, so rules cannot refer to it.";
     case "invalid":
       return i.reason;
+    case "aboveOfficial":
+      return `Sits above ${n(i.officialUid)}. RimWorld only resolves a def's parents from mods loaded earlier, so its defs would lose them and loading fails. Move it below all official content.`;
+    case "ruleIgnored": {
+      const src = i.source === "community" ? "community rule" : i.source === "user" ? "your rule" : i.source === "manifest" ? "Manifest.xml rule" : "About.xml rule";
+      return `HALO set aside the ${src} "${i.rule === "loadBefore" ? "load before" : "load after"} ${n(i.targetUid)}" because ${i.reason}.`;
+    }
     default:
       return `Needs attention (${(i as { kind: string }).kind}).`;
   }
@@ -43,6 +49,12 @@ export function describe(i: Issue, byUid: Map<string, ModInfo>, viewer?: string)
 /** One line for the attention banner: the most pressing issue in the list. */
 export function headline(issues: Issue[], byUid: Map<string, ModInfo>): { title: string; detail: string; kind: "error" | "warning" | "note" } | null {
   const n = (uid: string) => byUid.get(uid)?.name ?? uid;
+  const above = issues.filter((i) => i.kind === "aboveOfficial");
+  if (above.length) {
+    const first = above[0] as Extract<Issue, { kind: "aboveOfficial" }>;
+    const names = above.map((i) => n(i.kind === "aboveOfficial" ? i.uid : "")).slice(0, 3).join(", ");
+    return { title: `${names}${above.length > 3 ? ` and ${above.length - 3} more` : ""} ${above.length === 1 ? "sits" : "sit"} above ${n(first.officialUid)}`, detail: "RimWorld cannot resolve their defs' parents there and will reset the list at launch. Sort with HALO or move them below all official content.", kind: "error" };
+  }
   const cycle = issues.find((i) => i.kind === "cycle");
   if (cycle && cycle.kind === "cycle") return { title: "Rules contradict each other", detail: cycle.chain, kind: "error" };
   const inc = issues.find((i) => i.kind === "incompatible");

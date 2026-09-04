@@ -200,8 +200,8 @@ pub enum ModKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Phase {
-    Core,
     Prepatch,
+    Core,
     Framework,
     Content,
     Patch,
@@ -211,8 +211,8 @@ pub enum Phase {
 
 impl Phase {
     pub const ALL: [Phase; 7] = [
-        Phase::Core,
         Phase::Prepatch,
+        Phase::Core,
         Phase::Framework,
         Phase::Content,
         Phase::Patch,
@@ -337,14 +337,30 @@ pub enum Issue {
         uid: String,
         reason: String,
     },
+    /// A mod that ships Defs sits above official content (or a DLC above Core). RimWorld resolves
+    /// `ParentName` only against mods loaded earlier, so its defs lose their parents and loading
+    /// fails.
+    AboveOfficial {
+        uid: String,
+        /// The official mod it should be below.
+        official_uid: String,
+    },
+    /// A declared rule HALO set aside, and why.
+    RuleIgnored {
+        uid: String,
+        target_uid: String,
+        rule: RuleKind,
+        source: RuleSource,
+        reason: String,
+    },
 }
 
 impl Issue {
     pub fn severity(&self) -> Severity {
         match self {
-            Issue::MissingDependency { .. } | Issue::Incompatible { .. } | Issue::Cycle { .. } | Issue::Invalid { .. } => Severity::Error,
+            Issue::MissingDependency { .. } | Issue::Incompatible { .. } | Issue::Cycle { .. } | Issue::Invalid { .. } | Issue::AboveOfficial { .. } => Severity::Error,
             Issue::OrderViolation { .. } | Issue::VersionMismatch { .. } | Issue::MisplacedOptimization { .. } | Issue::DuplicatePackageId { .. } | Issue::MissingPackageId { .. } => Severity::Warning,
-            Issue::TextureCollision { .. } => Severity::Note,
+            Issue::TextureCollision { .. } | Issue::RuleIgnored { .. } => Severity::Note,
         }
     }
     /// The mod this issue is attached to in the UI.
@@ -356,7 +372,9 @@ impl Issue {
             | Issue::VersionMismatch { uid, .. }
             | Issue::MisplacedOptimization { uid, .. }
             | Issue::MissingPackageId { uid }
-            | Issue::Invalid { uid, .. } => Some(uid),
+            | Issue::Invalid { uid, .. }
+            | Issue::AboveOfficial { uid, .. }
+            | Issue::RuleIgnored { uid, .. } => Some(uid),
             Issue::TextureCollision { winner_uid, .. } => Some(winner_uid),
             Issue::Cycle { uids, .. } | Issue::DuplicatePackageId { uids, .. } => uids.first().map(|s| s.as_str()),
         }

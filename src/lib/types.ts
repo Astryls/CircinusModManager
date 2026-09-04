@@ -78,7 +78,9 @@ export type Issue =
   | { kind: "misplacedOptimization"; uid: string; afterUids: string[] }
   | { kind: "duplicatePackageId"; packageId: string; uids: string[] }
   | { kind: "missingPackageId"; uid: string }
-  | { kind: "invalid"; uid: string; reason: string };
+  | { kind: "invalid"; uid: string; reason: string }
+  | { kind: "aboveOfficial"; uid: string; officialUid: string }
+  | { kind: "ruleIgnored"; uid: string; targetUid: string; rule: RuleKind; source: RuleSource; reason: string };
 
 export interface Placement {
   uid: string;
@@ -221,6 +223,28 @@ export interface Snapshot {
   changesSince: number;
   /** uid → what Circinus has converted for it. */
   dds: Record<string, DdsSummary>;
+  /** RimWorld failed to load and wrote a Core-only list; what to put back. */
+  listReset: ListReset | null;
+}
+
+export interface SavedList {
+  path: string;
+  savedAt: number;
+  /** "saved" (written by Circinus), "seen" (found on disk), "before-reset" (rescued from memory). */
+  label: string;
+  count: number;
+  gameVersion: string;
+}
+
+export interface ListReset {
+  previousCount: number;
+  restoreFrom: SavedList | null;
+}
+
+export interface RestoreResult {
+  snapshot: Snapshot;
+  restored: number;
+  missing: string[];
 }
 
 export interface DdsSummary {
@@ -254,12 +278,43 @@ export interface DdsReport {
   seconds: number;
   cancelled: boolean;
   reverted: number;
+  restored?: number;
   bytesFreed: number;
+  fixed?: number;
+}
+
+export type DdsProblem = { kind: "notMultipleOf4" } | { kind: "truncated"; expected: number; actual: number } | { kind: "unreadable"; reason: string };
+
+export interface DdsFinding {
+  rel: string;
+  width: number;
+  height: number;
+  format: string;
+  levels: number;
+  bytes: number;
+  problem: DdsProblem;
+  hasPng: boolean;
+  fixable: boolean;
+}
+
+export interface ModAudit {
+  uid: string;
+  name: string;
+  active: boolean;
+  findings: DdsFinding[];
+}
+
+export interface AuditReport {
+  modsChecked: number;
+  mods: ModAudit[];
+  files: number;
+  fixable: number;
+  seconds: number;
 }
 
 export interface TexState {
   running: boolean;
-  phase: "idle" | "scanning" | "converting" | "reverting";
+  phase: "idle" | "scanning" | "converting" | "reverting" | "auditing" | "fixing";
   progress: DdsProgress;
   startedAt: number;
   finishedAt: number;
@@ -426,8 +481,8 @@ export interface ModFiles {
 }
 
 export const PHASES: { id: Phase; name: string; color: string; note: string }[] = [
-  { id: "core", name: "Core & DLC", color: "blue", note: "Pinned by RimWorld" },
   { id: "prepatch", name: "Prepatch & Harmony", color: "violet", note: "Runs before everything" },
+  { id: "core", name: "Core & DLC", color: "blue", note: "Pinned by RimWorld" },
   { id: "framework", name: "Frameworks", color: "teal", note: "Libraries other mods need" },
   { id: "content", name: "Content", color: "green", note: "Things, pawns, biomes, rules" },
   { id: "patch", name: "Patches & compat", color: "pink", note: "Must see their targets first" },
@@ -475,8 +530,10 @@ export function severityOf(i: Issue): Severity {
     case "incompatible":
     case "cycle":
     case "invalid":
+    case "aboveOfficial":
       return "error";
     case "textureCollision":
+    case "ruleIgnored":
       return "note";
     default:
       return "warning";
@@ -510,4 +567,103 @@ export function initials(name: string): string {
     .slice(0, 2)
     .map((w) => w[0].toUpperCase())
     .join("");
+}
+
+// ---------------------------------------------------------------- game log analysis
+
+export type LogOutcome = "ok" | "loadFailedReset" | "crashed";
+
+export interface XmlProblem {
+  message: string;
+  sourceMod?: string | null;
+  file?: string | null;
+  missingParent?: string | null;
+  defName?: string | null;
+  line: number;
+}
+
+export interface ExceptionGroup {
+  message: string;
+  topFrame?: string | null;
+  modFrame?: string | null;
+  patchOwners: string[];
+  count: number;
+  line: number;
+}
+
+export interface DdsFailure {
+  path: string;
+  reason: string;
+  workshopId?: number | null;
+  modFolder?: string | null;
+  line: number;
+}
+
+export interface CrashInfo {
+  line: number;
+  reason?: string | null;
+  frames: string[];
+  culpritFrame?: string | null;
+  offMainThread: boolean;
+  quickstart: boolean;
+}
+
+export interface LogReport {
+  lines: number;
+  gameVersion?: string | null;
+  unityVersion?: string | null;
+  gpu?: string | null;
+  vramMb?: number | null;
+  commandLine?: string | null;
+  outcome: LogOutcome;
+  reset: boolean;
+  gaveUp: boolean;
+  loadFailure?: ExceptionGroup | null;
+  crash?: CrashInfo | null;
+  prepatcherVanillaLoadSecs?: number | null;
+  prepatcherRestarted: boolean;
+  timings: { label: string; seconds: number; line: number }[];
+  duplicates: { packageId: string; folders: string[] }[];
+  missingParents: XmlProblem[];
+  xmlErrors: XmlProblem[];
+  exceptions: ExceptionGroup[];
+  ddsFailures: DdsFailure[];
+  multipleOf4Warnings: Record<string, number>;
+  threadTextureWarnings: number;
+  texturesNotFound: [string, number][];
+  texturesNotFoundTotal: number;
+  badTextureMaterials: number;
+  quickstart: boolean;
+}
+
+export interface LogModRef {
+  uid?: string | null;
+  name: string;
+  active: boolean;
+  missingParents: number;
+  xmlErrors: number;
+  ddsFailures: number;
+  exceptions: number;
+  exceptionHits: number;
+  crashCulprit: boolean;
+  loadFailurePatch: boolean;
+  duplicateFolders: number;
+  aboveOfficial: boolean;
+}
+
+export interface LogAnalysis {
+  path: string;
+  bytes: number;
+  modified: number;
+  report: LogReport;
+  mods: LogModRef[];
+  /** Frame namespace / patch owner / source name → mod name. */
+  resolved: Record<string, string>;
+}
+
+export interface LogFile {
+  path: string;
+  exists: boolean;
+  bytes: number;
+  modified: number;
 }

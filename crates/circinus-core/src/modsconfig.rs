@@ -62,6 +62,68 @@ pub fn write(path: &Path, cfg: &ModsConfig) -> Result<()> {
     Ok(())
 }
 
+/// True when a list is what RimWorld writes after it gave up loading: official content only.
+pub fn looks_reset(ids: &[String]) -> bool {
+    !ids.is_empty() && ids.iter().all(|id| id.to_ascii_lowercase().starts_with("ludeon.rimworld"))
+}
+
+/// One archived copy of the list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedList {
+    pub path: std::path::PathBuf,
+    /// Unix seconds, from the file name.
+    pub saved_at: i64,
+    /// "saved" (written by Circinus), "seen" (found on disk, written by something else).
+    pub label: String,
+    pub count: usize,
+    pub game_version: String,
+}
+
+fn archive_name(path: &Path) -> Option<(i64, String)> {
+    let stem = path.file_stem()?.to_string_lossy().to_string();
+    let (ts, label) = stem.split_once('-')?;
+    Some((ts.parse().ok()?, label.to_string()))
+}
+
+/// Keep a copy of a list in `dir` as `<unix>-<label>.xml`, pruning to `keep` files. Returns
+/// the path, or None when the newest copy already holds this exact list.
+pub fn archive(dir: &Path, cfg: &ModsConfig, label: &str, keep: usize) -> Result<Option<std::path::PathBuf>> {
+    std::fs::create_dir_all(dir)?;
+    let existing = list_archive(dir);
+    if let Some(newest) = existing.first() {
+        if let Ok(prev) = read(&newest.path) {
+            if prev.active_mods == cfg.active_mods {
+                return Ok(None);
+            }
+        }
+    }
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+    let path = dir.join(format!("{now}-{label}.xml"));
+    std::fs::write(&path, to_xml(cfg))?;
+    for old in existing.iter().skip(keep.saturating_sub(1)) {
+        let _ = std::fs::remove_file(&old.path);
+    }
+    Ok(Some(path))
+}
+
+/// Archived lists, newest first.
+pub fn list_archive(dir: &Path) -> Vec<SavedList> {
+    let Ok(rd) = std::fs::read_dir(dir) else { return Vec::new() };
+    let mut out: Vec<SavedList> = rd
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().map(|x| x == "xml").unwrap_or(false))
+        .filter_map(|p| {
+            let (saved_at, label) = archive_name(&p)?;
+            let cfg = read(&p).ok()?;
+            Some(SavedList { path: p, saved_at, label, count: cfg.active_mods.len(), game_version: cfg.version })
+        })
+        .collect();
+    out.sort_by(|a, b| b.saved_at.cmp(&a.saved_at).then_with(|| b.path.cmp(&a.path)));
+    out
+}
+
 /// Source priority when one packageId is installed more than once (RimWorld prefers the
 /// non-Workshop copy; the `_steam` suffix selects the Workshop copy explicitly).
 fn priority(source: Source, prefer_steam: bool) -> u8 {
@@ -149,6 +211,31 @@ mod tests {
         assert_eq!(cfg.active_mods, vec!["ludeon.rimworld", "brrainz.harmony"]);
         let again = parse(&to_xml(&cfg), &PathBuf::from("x")).unwrap();
         assert_eq!(cfg, again);
+    }
+
+    #[test]
+    fn archive_keeps_history_and_detects_reset() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("lists");
+        let a = ModsConfig { version: "1.6".into(), active_mods: vec!["ludeon.rimworld".into(), "brrainz.harmony".into()], known_expansions: vec![] };
+        let b = ModsConfig { active_mods: vec!["ludeon.rimworld".into()], ..a.clone() };
+        assert!(archive(&dir, &a, "saved", 3).unwrap().is_some());
+        assert!(archive(&dir, &a, "saved", 3).unwrap().is_none(), "same list is not archived twice");
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        assert!(archive(&dir, &b, "seen", 3).unwrap().is_some());
+        let all = list_archive(&dir);
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].label, "seen");
+        assert_eq!(all[0].count, 1);
+        assert_eq!(all[1].count, 2);
+        assert!(looks_reset(&b.active_mods));
+        assert!(!looks_reset(&a.active_mods));
+        assert!(!looks_reset(&[]));
+        // pruning
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        let c = ModsConfig { active_mods: vec!["x.y".into()], ..a.clone() };
+        archive(&dir, &c, "saved", 2).unwrap();
+        assert_eq!(list_archive(&dir).len(), 2);
     }
 
     #[test]

@@ -87,6 +87,11 @@ function mod(s: Seed): ModInfo {
 const mods: ModInfo[] = SEED.map(mod);
 const uidOf = (pkg: string) => mods.find((m) => m.packageId === pkg)!.uid;
 let active: string[] = SEED.filter((s) => !(s[9] ?? "").includes("off")).map((s) => uidOf(s[2]));
+// ?abovecore puts a framework above Core, the shape of list that made RimWorld reset itself.
+if (typeof location !== "undefined" && location.search.includes("abovecore")) {
+  const dbh = uidOf("dubwise.dubsbadhygiene");
+  active = [dbh, ...active.filter((u) => u !== dbh)];
+}
 const phaseOfSeed: Record<string, Phase> = Object.fromEntries(SEED.map((s) => [uidOf(s[2]), s[5]]));
 let dirty = false;
 
@@ -155,6 +160,13 @@ function issues(order: string[]): Issue[] {
   const idx = (pkg: string) => order.indexOf(uidOf(pkg));
   const out: Issue[] = [];
   const has = (pkg: string) => idx(pkg) >= 0;
+  // Anything with Defs above the last official mod: the list RimWorld will reset.
+  const lastOfficial = Math.max(...order.map((u, i) => (mods.find((m) => m.uid === u)?.source === "ludeon" ? i : -1)));
+  for (const [i, u] of order.entries()) {
+    const m = mods.find((x) => x.uid === u);
+    if (!m || i >= lastOfficial || m.source === "ludeon" || phaseOfSeed[u] === "prepatch" || m.contents.defs === 0) continue;
+    out.push({ kind: "aboveOfficial", uid: u, officialUid: order.slice(i + 1).find((v) => mods.find((x) => x.uid === v)?.source === "ludeon")! });
+  }
   if (has("voult.betterpawncontrol") && has("oskarpotocki.vanillafactionsexpanded.core") && idx("voult.betterpawncontrol") < idx("oskarpotocki.vanillafactionsexpanded.core"))
     out.push({ kind: "orderViolation", uid: uidOf("voult.betterpawncontrol"), targetUid: uidOf("oskarpotocki.vanillafactionsexpanded.core"), rule: "loadAfter", source: "community", comment: "BPC patches VEF work tabs" });
   if (has("bs.performance") && has("razuhl.rimmsqol")) out.push({ kind: "incompatible", uid: uidOf("razuhl.rimmsqol"), otherUid: uidOf("bs.performance"), source: "about" });
@@ -195,9 +207,17 @@ function snapshot(): Snapshot {
     changes: acknowledged ? [] : changes(),
     listChange: acknowledged ? null : { added: ["voult.betterpawncontrol"], removed: ["some.missing.mod"], reordered: false },
     changesSince: 1_756_900_000,
-    dds: ddsIndex
+    dds: ddsIndex,
+    listReset: resetSimulated ? { previousCount: 44, restoreFrom: savedLists[0] } : null
   };
 }
+
+const resetSimulated = typeof location !== "undefined" && location.search.includes("reset");
+const savedLists = [
+  { path: "C:\\Users\\Astryl\\AppData\\Local\\Circinus\\lists\\1757000000-saved.xml", savedAt: 1_757_000_000, label: "saved", count: 44, gameVersion: "1.6.4530 rev1235" },
+  { path: "C:\\Users\\Astryl\\AppData\\Local\\Circinus\\lists\\1756900000-seen.xml", savedAt: 1_756_900_000, label: "seen", count: 41, gameVersion: "1.6.4530 rev1235" },
+  { path: "C:\\Users\\Astryl\\AppData\\Local\\Circinus\\lists\\1756800000-before-reset.xml", savedAt: 1_756_800_000, label: "before-reset", count: 43, gameVersion: "1.6.4530 rev1235" }
+];
 
 /** Mock manifest: a few mods already converted. */
 let ddsIndex: Record<string, Snapshot["dds"][string]> = Object.fromEntries(
@@ -344,11 +364,23 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
     case "acknowledge_changes":
       acknowledged = true;
       return snapshot() as T;
+    case "saved_lists":
+      return savedLists as T;
+    case "restore_list":
+      dirty = !A.save;
+      return { snapshot: snapshot(), restored: 44, missing: [] } as T;
     case "get_launch_info":
       return { executable: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld\\RimWorldWin64.exe", executableExists: true, steamInstall: true, autoResolvesTo: "steam" } as T;
     case "launch_game":
       dirty = false;
       return "Asked Steam to start RimWorld (mock)" as T;
+    case "player_log_paths":
+      return [
+        { path: "C:\\Users\\sean\\AppData\\LocalLow\\Ludeon Studios\\RimWorld by Ludeon Studios\\Player.log", exists: true, bytes: 3301258, modified: 1757016000 },
+        { path: "C:\\Users\\sean\\AppData\\LocalLow\\Ludeon Studios\\RimWorld by Ludeon Studios\\Player-prev.log", exists: true, bytes: 812000, modified: 1756930000 }
+      ] as T;
+    case "analyze_player_log":
+      return mockLogAnalysis((A.path as string | null) ?? "C:\\Users\\sean\\AppData\\LocalLow\\Ludeon Studios\\RimWorld by Ludeon Studios\\Player.log") as T;
     case "dds_state":
       return structuredClone(tex) as T;
     case "dds_overview":
@@ -371,6 +403,23 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
       for (const u of A.uids as string[]) { if (ddsIndex[u]) { n += ddsIndex[u].count; b += ddsIndex[u].ddsBytes; delete ddsIndex[u]; } }
       return { mods: (A.uids as string[]).length, converted: 0, failed: 0, current: 0, shipped: 0, pngBytes: 0, ddsBytes: 0, seconds: 1, cancelled: false, reverted: n, bytesFreed: b } as T;
     }
+    case "dds_audit": {
+      const uids = A.uids as string[];
+      const pick = uids.filter((u) => ["vanillaexpanded.vtexe", "nyx.retrowalls"].includes(mods.find((m) => m.uid === u)?.packageId ?? "")).slice(0, 2);
+      const findings = (i: number) => [
+        { rel: `Textures/UI/Backgrounds/Path${i}.dds`, width: 1022, height: 574, format: "BC7", levels: 1, bytes: 587776, problem: { kind: "notMultipleOf4" }, hasPng: true, fixable: true },
+        { rel: `Textures/Things/_Old/Elk_${i}_east.dds`, width: 130, height: 130, format: "DXT1", levels: 8, bytes: 11576, problem: { kind: "notMultipleOf4" }, hasPng: false, fixable: true },
+        { rel: `Textures/Things/Broken${i}.dds`, width: 256, height: 256, format: "BC5", levels: 1, bytes: 30000, problem: { kind: "truncated", expected: 65684, actual: 30000 }, hasPng: false, fixable: false }
+      ];
+      const list = pick.map((u, i) => ({ uid: u, name: mods.find((m) => m.uid === u)!.name, active: active.includes(u), findings: findings(i) }));
+      return { modsChecked: uids.length, mods: list, files: list.reduce((n, m) => n + m.findings.length, 0), fixable: list.reduce((n, m) => n + m.findings.filter((f) => f.fixable).length, 0), seconds: 2 } as T;
+    }
+    case "dds_fix": {
+      const targets = A.targets as [string, string[]][];
+      const fixed = targets.length * 2;
+      tex = { ...tex, report: { mods: targets.length, converted: 0, failed: 0, current: 0, shipped: 0, pngBytes: 0, ddsBytes: fixed * 400000, seconds: 3, cancelled: false, reverted: 0, bytesFreed: 0, fixed } };
+      return tex.report as T;
+    }
     case "import_collection":
       return { ids: [2009463077, 818773962, 999], installed: [[2009463077, uidOf("brrainz.harmony")], [818773962, uidOf("unlimitedhugs.hugslib")]], missing: [999], names: { "2009463077": "Harmony", "818773962": "HugsLib", "999": "Some Missing Mod" } } as T;
     case "import_rentry":
@@ -382,4 +431,37 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
     default:
       throw new Error(`mock: unknown command ${cmd}`);
   }
+}
+
+/** The shape of the log that crashed: frameworks above Core lost their parents, def generation threw, RimWorld reset, a quick-start crashed off the main thread. */
+function mockLogAnalysis(path: string) {
+  const dbh = uidOf("dubwise.dubsbadhygiene");
+  const missing = ["MoteBase", "FleckBase_Thrown", "DiseaseBase", "InfectionBase", "ImplantHediffBase", "BodyPartBionicBase", "SurgeryInstallImplantBase", "FloorBase", "TileMetalBase", "BuildingBase"].map((p, i) => ({
+    message: `XML error: Could not find parent node named "${p}" for node "ThingDef".`, sourceMod: "Dubs Bad Hygiene", file: `C:\\ws\\836308268\\1.6\\Defs\\x${i}.xml`, missingParent: p, defName: `DBH_Thing${i}`, line: 2340 + i
+  }));
+  const aboveCore = active.indexOf(dbh) >= 0 && active.indexOf(dbh) < active.indexOf(uidOf("ludeon.rimworld"));
+  return {
+    path, bytes: 3301258, modified: 1757016000,
+    report: {
+      lines: 30694, gameVersion: "1.6.4871 rev591", unityVersion: "2022.3.35f1", gpu: "NVIDIA GeForce RTX 4090", vramMb: 24138, commandLine: "-disable-compute-shaders",
+      outcome: "crashed", reset: true, gaveUp: true,
+      loadFailure: { message: "System.NullReferenceException: Object reference not set to an instance of an object", topFrame: "RimWorld.ThingDefGenerator_Buildings.NewFrameDef_Thing", modFrame: null, patchOwners: ["Uuugggg.rimworld.Replace_Stuff.main"], count: 1, line: 3100 },
+      crash: { line: 30500, reason: "Graphics device is null.", frames: ["UnityEngine.Texture2D..ctor", "WorkRoles.UI.WorkRolesTex.MakeCircle"], culpritFrame: "WorkRoles.UI.WorkRolesTex.MakeCircle", offMainThread: true, quickstart: true },
+      prepatcherVanillaLoadSecs: 463, prepatcherRestarted: true,
+      timings: [{ label: "DefLoadCache pipeline", seconds: 463, line: 2340 }, { label: "Prepatcher vanilla load", seconds: 463, line: 200 }],
+      duplicates: [{ packageId: "astryl.vanillalootbeams", folders: ["Mods\\3f190c6b54b1", "Mods\\0438241173f4"] }],
+      missingParents: missing, xmlErrors: [{ message: "Verse.PatchOperationReplace(xpath=\"Defs/ThingDef[defName=\"Mech_GloriaBO\"]/tools\"): Failed to find a node with the given xpath", sourceMod: "The Dead Man's Switch", file: null, missingParent: null, defName: null, line: 2280 }],
+      exceptions: [{ message: "System.NullReferenceException: Object reference not set to an instance of an object", topFrame: "GravshipSize.GravshipSizeSettings.ApplySettingsNow", modFrame: "GravshipSize.GravshipSizeSettings.ApplySettingsNow", patchOwners: ["RedMattis.GravShipSize"], count: 1, line: 3130 }],
+      ddsFailures: [{ path: "C:\\ws\\2842502659\\Textures\\UI\\Path_Old.dds", reason: "Compressed TextureFormat BC7 requires a texture size that is a multiple of 4", workshopId: 2842502659, modFolder: null, line: 5000 }],
+      multipleOf4Warnings: { BC7: 9 }, threadTextureWarnings: 1, texturesNotFound: [["BMT_Caverns/UI/BG/BGCaves", 1], ["AM/UI/BG/Combined", 1]], texturesNotFoundTotal: 2, badTextureMaterials: 0, quickstart: true
+    },
+    mods: [
+      { uid: dbh, name: "Dubs Bad Hygiene", active: active.includes(dbh), missingParents: missing.length, xmlErrors: 0, ddsFailures: 0, exceptions: 0, exceptionHits: 0, crashCulprit: false, loadFailurePatch: false, duplicateFolders: 0, aboveOfficial: aboveCore },
+      { uid: null, name: "Work Roles", active: false, missingParents: 0, xmlErrors: 0, ddsFailures: 0, exceptions: 0, exceptionHits: 0, crashCulprit: true, loadFailurePatch: false, duplicateFolders: 0, aboveOfficial: false },
+      { uid: null, name: "Gravship Size", active: false, missingParents: 0, xmlErrors: 0, ddsFailures: 0, exceptions: 1, exceptionHits: 1, crashCulprit: false, loadFailurePatch: false, duplicateFolders: 0, aboveOfficial: false },
+      { uid: null, name: "The Dead Man's Switch", active: false, missingParents: 0, xmlErrors: 1, ddsFailures: 0, exceptions: 0, exceptionHits: 0, crashCulprit: false, loadFailurePatch: false, duplicateFolders: 0, aboveOfficial: false },
+      { uid: null, name: "2842502659", active: false, missingParents: 0, xmlErrors: 0, ddsFailures: 1, exceptions: 0, exceptionHits: 0, crashCulprit: false, loadFailurePatch: false, duplicateFolders: 0, aboveOfficial: false }
+    ],
+    resolved: { WorkRoles: "Work Roles", GravshipSize: "Gravship Size", "RedMattis.GravShipSize": "Gravship Size" }
+  };
 }

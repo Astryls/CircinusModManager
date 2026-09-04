@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod downloads;
+pub mod logs;
 pub mod state;
 pub mod textures;
 pub mod watch;
@@ -140,8 +141,14 @@ pub fn run() {
             commands::dds_start,
             commands::dds_cancel,
             commands::dds_revert,
+            commands::dds_audit,
+            commands::dds_fix,
+            commands::saved_lists,
+            commands::restore_list,
             commands::get_launch_info,
             commands::launch_game,
+            commands::player_log_paths,
+            commands::analyze_player_log,
             commands::import_collection,
             commands::import_rentry,
             commands::check_updates,

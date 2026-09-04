@@ -14,6 +14,7 @@ pub mod model;
 pub mod modsconfig;
 pub mod order;
 pub mod paths;
+pub mod playerlog;
 pub mod rentry;
 pub mod rules;
 pub mod scan;

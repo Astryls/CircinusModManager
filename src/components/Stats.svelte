@@ -3,10 +3,11 @@
   import { I } from "$lib/icons";
 
   const s = $derived(store.stats);
-  const errorIssue = $derived(store.issues.find((i) => i.kind === "incompatible" || i.kind === "missingDependency" || i.kind === "cycle"));
+  const errorIssue = $derived(store.issues.find((i) => i.kind === "aboveOfficial" || i.kind === "incompatible" || i.kind === "missingDependency" || i.kind === "cycle"));
   const errorText = $derived.by(() => {
     if (!errorIssue) return "Nothing blocks a launch";
     const n = (uid: string) => store.byUid.get(uid)?.name ?? uid;
+    if (errorIssue.kind === "aboveOfficial") return `${n(errorIssue.uid)} sits above ${n(errorIssue.officialUid)}`;
     if (errorIssue.kind === "incompatible") return `${n(errorIssue.uid)} conflicts with ${n(errorIssue.otherUid)}`;
     if (errorIssue.kind === "missingDependency") return `${n(errorIssue.uid)} needs ${errorIssue.displayName ?? errorIssue.dependency}`;
     if (errorIssue.kind === "cycle") return errorIssue.chain;

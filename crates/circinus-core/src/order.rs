@@ -16,6 +16,9 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
 const PREPATCH_IDS: &[&str] = &["zetrith.prepatcher", "jikulopo.prepatcher", "brrainz.harmony", "brrainz.visualexceptions", "bs.fishery"];
+/// Loading-screen and loader mods that belong above Core and ship no Defs; they do not always
+/// say so in their About.xml.
+const TOP_IDS: &[&str] = &["me.samboycoding.betterloading", "ilyvion.loadingprogress", "taranchuk.fastergameloading", "pirateby.harmony.optimizer", "automatic.startupimpact"];
 const FRAMEWORK_IDS: &[&str] = &[
     "unlimitedhugs.hugslib",
     "oskarpotocki.vanillafactionsexpanded.core",
@@ -59,19 +62,22 @@ fn name_matches(name: &str, needles: &[&str]) -> bool {
     needles.iter().any(|x| n.contains(x))
 }
 
-/// Decide a phase for one active mod.
-pub fn classify(m: &ModInfo, ctx: &Context, dependents: usize, texture_collides: bool) -> Placement {
+/// Decide a phase for one active mod. `top` says the mod may sit above official content.
+pub fn classify(m: &ModInfo, ctx: &Context, dependents: usize, texture_collides: bool, top: bool) -> Placement {
     let uid = m.uid.clone();
     if let Some(p) = ctx.overrides.phases.get(&m.uid) {
         return Placement { uid, phase: *p, reason: "Set by you".into() };
     }
     let id = m.package_id.as_str();
     let c = &m.contents;
-    if m.source == Source::Ludeon {
+    if is_official(m) {
         return Placement { uid, phase: Phase::Core, reason: "Official content, pinned by RimWorld".into() };
     }
     if PREPATCH_IDS.contains(&id) {
         return Placement { uid, phase: Phase::Prepatch, reason: "Patches the game before other mods load".into() };
+    }
+    if top {
+        return Placement { uid, phase: Phase::Prepatch, reason: "Declares it loads before official content and ships no Defs".into() };
     }
     if ctx.rules.iter().any(|r| r.kind == RuleKind::LoadTop && r.subject == id) {
         return Placement { uid, phase: Phase::Framework, reason: "Rule: load at the top".into() };
@@ -109,6 +115,75 @@ struct Edge {
     rule: Rule,
 }
 
+const OFFICIAL_ORDER: &str = "Official content loads in release order";
+const AFTER_OFFICIAL: &str = "Loads after official content: RimWorld resolves a def's ParentName only against mods above it";
+
+fn is_official(m: &ModInfo) -> bool {
+    m.source == Source::Ludeon || official_rank(&m.package_id).is_some()
+}
+
+/// Position of an official packageId in release order (Core first); None for unknown ids.
+fn official_rank(id: &str) -> Option<usize> {
+    OFFICIAL.iter().position(|(_, p, _)| *p == id)
+}
+
+/// Mods allowed above official content.
+///
+/// RimWorld's `XmlInheritance` resolves a def's `ParentName` only against mods loaded at or
+/// before its own, so anything that ships Defs must sit below Core and every DLC — above them it
+/// loses its parents (`BuildingBase`, `MoteBase`…), its category, and the game falls over in
+/// `NewFrameDef_Thing`. What may sit above: the known pre-patchers, and mods without Defs that the
+/// user filed under Prepatch or that declare (About, community, user) they load before official
+/// content or before another such mod — Harmony, Prepatcher, Fishery, loading-screen mods.
+/// Rule-derived membership needs an inspected folder; before that only the known ids qualify.
+fn top_set(order: &[&ModInfo], ctx: &Context) -> HashSet<String> {
+    let mut top: HashSet<&str> = HashSet::new();
+    let mut eligible: HashSet<&str> = HashSet::new();
+    let mut official_ids: HashSet<&str> = HashSet::new();
+    for m in order {
+        if m.package_id.is_empty() {
+            continue;
+        }
+        if is_official(m) {
+            official_ids.insert(m.package_id.as_str());
+            continue;
+        }
+        if PREPATCH_IDS.contains(&m.package_id.as_str()) {
+            top.insert(m.package_id.as_str());
+            continue;
+        }
+        if m.contents.defs == 0 && m.kind != ModKind::Unknown {
+            eligible.insert(m.package_id.as_str());
+            if ctx.overrides.phases.get(&m.uid) == Some(&Phase::Prepatch) || TOP_IDS.contains(&m.package_id.as_str()) {
+                top.insert(m.package_id.as_str());
+            }
+        }
+    }
+    // "x before t" comes from LoadBefore(x, t) or LoadAfter(t, x).
+    let befores: Vec<(&str, &str)> = ctx
+        .rules
+        .iter()
+        .filter_map(|r| match (r.kind, r.target.as_deref()) {
+            (RuleKind::LoadBefore, Some(t)) => Some((r.subject.as_str(), t)),
+            (RuleKind::LoadAfter, Some(t)) => Some((t, r.subject.as_str())),
+            _ => None,
+        })
+        .collect();
+    loop {
+        let mut grew = false;
+        for (x, t) in &befores {
+            if !top.contains(x) && eligible.contains(x) && (official_ids.contains(t) || top.contains(t)) {
+                top.insert(x);
+                grew = true;
+            }
+        }
+        if !grew {
+            break;
+        }
+    }
+    order.iter().filter(|m| top.contains(m.package_id.as_str())).map(|m| m.uid.clone()).collect()
+}
+
 /// Build the precedence graph for the active mods. Returns the graph plus the issues found
 /// while building it (contradictions resolved, cycles cut).
 fn build_graph(order: &[&ModInfo], ctx: &Context) -> (DiGraph<usize, Rule>, Vec<Issue>) {
@@ -133,6 +208,30 @@ fn build_graph(order: &[&ModInfo], ctx: &Context) -> (DiGraph<usize, Rule>, Vec<
             RuleKind::LoadAfter => cands.push(Edge { from: *t, to: *s, rule: r.clone() }),
             RuleKind::LoadBefore => cands.push(Edge { from: *s, to: *t, rule: r.clone() }),
             _ => {}
+        }
+    }
+    // The official-content invariant: Core → DLCs in release order, then everything that is not
+    // allowed on top loads after all of them. These outrank every declared rule.
+    let top = top_set(order, ctx);
+    let mut officials: Vec<usize> = (0..order.len()).filter(|i| is_official(order[*i])).collect();
+    officials.sort_by_key(|i| (official_rank(&order[*i].package_id).unwrap_or(usize::MAX), *i));
+    let mut invariant: HashSet<(NodeIndex, NodeIndex)> = HashSet::new();
+    let halo = |subject: &str, target: &str, comment: &str| Rule { kind: RuleKind::LoadAfter, subject: subject.to_string(), target: Some(target.to_string()), source: RuleSource::Halo, comment: Some(comment.to_string()) };
+    for w in officials.windows(2) {
+        let (a, b) = (order[w[0]], order[w[1]]);
+        let (from, to) = (idx_of[a.uid.as_str()], idx_of[b.uid.as_str()]);
+        invariant.insert((from, to));
+        cands.push(Edge { from, to, rule: halo(&b.package_id, &a.package_id, OFFICIAL_ORDER) });
+    }
+    for m in order {
+        if is_official(m) || top.contains(&m.uid) {
+            continue;
+        }
+        let to = idx_of[m.uid.as_str()];
+        for o in &officials {
+            let from = idx_of[order[*o].uid.as_str()];
+            invariant.insert((from, to));
+            cands.push(Edge { from, to, rule: halo(&m.package_id, &order[*o].package_id, AFTER_OFFICIAL) });
         }
     }
     // Dependencies imply loadAfter unless an explicit rule says otherwise.
@@ -160,16 +259,26 @@ fn build_graph(order: &[&ModInfo], ctx: &Context) -> (DiGraph<usize, Rule>, Vec<
         }
     }
     let keys: Vec<(NodeIndex, NodeIndex)> = best.keys().copied().collect();
-    let mut dropped: Vec<Rule> = Vec::new();
+    let mut issues = Vec::new();
     for (a, b) in keys {
         if a < b {
             if let (Some(x), Some(y)) = (best.get(&(a, b)), best.get(&(b, a))) {
-                if x.rule.source > y.rule.source {
-                    dropped.push(y.rule.clone());
-                    best.remove(&(b, a));
+                let (winner, loser) = if x.rule.source > y.rule.source {
+                    ((a, b), (b, a))
                 } else if y.rule.source > x.rule.source {
-                    dropped.push(x.rule.clone());
-                    best.remove(&(a, b));
+                    ((b, a), (a, b))
+                } else {
+                    continue;
+                };
+                let lost = best.remove(&loser).map(|e| e.rule).expect("edge present");
+                if invariant.contains(&winner) {
+                    // A declared rule wanted a Defs-bearing mod above Core: obeying it would break
+                    // the game, so say why it was set aside instead of silently ignoring it.
+                    // Edges point from the earlier mod to the later one; map back to the rule's subject/target.
+                    let earlier = order[g[loser.0]].uid.clone();
+                    let later = order[g[loser.1]].uid.clone();
+                    let (uid, target_uid) = if lost.kind == RuleKind::LoadBefore { (earlier, later) } else { (later, earlier) };
+                    issues.push(Issue::RuleIgnored { uid, target_uid, rule: lost.kind, source: lost.source, reason: "it ships Defs, and RimWorld cannot resolve their parents above official content".into() });
                 }
             }
         }
@@ -177,7 +286,6 @@ fn build_graph(order: &[&ModInfo], ctx: &Context) -> (DiGraph<usize, Rule>, Vec<
     for e in best.into_values() {
         g.add_edge(e.from, e.to, e.rule);
     }
-    let mut issues = Vec::new();
     // Cut real cycles: report each strongly connected component, then remove its
     // lowest-precedence internal edges until it is acyclic.
     let mut guard = 0;
@@ -202,7 +310,6 @@ fn build_graph(order: &[&ModInfo], ctx: &Context) -> (DiGraph<usize, Rule>, Vec<
             }
         }
     }
-    let _ = dropped;
     (g, issues)
 }
 
@@ -230,7 +337,8 @@ pub fn placements(order: &[&ModInfo], ctx: &Context) -> Vec<Placement> {
             colliding.extend(uids.iter().cloned());
         }
     }
-    order.iter().map(|m| classify(m, ctx, deps.get(&m.package_id).copied().unwrap_or(0), colliding.contains(&m.uid))).collect()
+    let top = top_set(order, ctx);
+    order.iter().map(|m| classify(m, ctx, deps.get(&m.package_id).copied().unwrap_or(0), colliding.contains(&m.uid), top.contains(&m.uid))).collect()
 }
 
 /// Compute the HALO order for `current` (uids). Rules are hard, phases soft, pins respected.
@@ -358,6 +466,27 @@ pub fn validate(current: &[String], ctx: &Context) -> Vec<Issue> {
             issues.push(Issue::DuplicatePackageId { package_id: pkg.to_string(), uids: copies.iter().map(|m| m.uid.clone()).collect() });
         }
     }
+    // Nothing with Defs above official content, and official content in release order.
+    let top = top_set(&order, ctx);
+    let officials: Vec<usize> = (0..order.len()).filter(|i| is_official(order[*i])).collect();
+    if let Some(&last_official) = officials.last() {
+        for (i, m) in order.iter().enumerate().take(last_official) {
+            // A Defs-less mod above Core is unusual but harmless; only Defs break there.
+            if is_official(m) || top.contains(&m.uid) || m.contents.defs == 0 {
+                continue;
+            }
+            let below = officials.iter().find(|o| **o > i).map(|o| order[*o].uid.clone()).expect("an official mod follows");
+            issues.push(Issue::AboveOfficial { uid: m.uid.clone(), official_uid: below });
+        }
+        for w in officials.windows(2) {
+            let (a, b) = (order[w[0]], order[w[1]]);
+            if let (Some(ra), Some(rb)) = (official_rank(&a.package_id), official_rank(&b.package_id)) {
+                if ra > rb {
+                    issues.push(Issue::AboveOfficial { uid: a.uid.clone(), official_uid: b.uid.clone() });
+                }
+            }
+        }
+    }
     // Optimization mods should be last
     let placements = placements(&order, ctx);
     let phase_of: HashMap<&str, Phase> = placements.iter().map(|p| (p.uid.as_str(), p.phase)).collect();
@@ -418,7 +547,7 @@ mod tests {
         // A deliberately scrambled current order
         let current: Vec<String> = ["rocket", "walls", "bpc", "hugs", "harmony", "patch", "core"].iter().map(|s| s.to_string()).collect();
         let r = sort(&current, &ctx);
-        assert_eq!(r.order, vec!["core", "harmony", "hugs", "bpc", "patch", "walls", "rocket"]);
+        assert_eq!(r.order, vec!["harmony", "core", "hugs", "bpc", "patch", "walls", "rocket"]);
         assert!(r.issues.iter().all(|i| !matches!(i, Issue::OrderViolation { .. } | Issue::MisplacedOptimization { .. })));
         let before = validate(&current, &ctx);
         assert!(before.iter().any(|i| matches!(i, Issue::OrderViolation { .. })));
@@ -441,7 +570,7 @@ mod tests {
         let current: Vec<String> = ["core", "harmony", "hugs", "bpc"].iter().map(|s| s.to_string()).collect();
         let r = sort(&current, &ctx);
         assert!(r.issues.iter().all(|i| !matches!(i, Issue::Cycle { .. })));
-        assert_eq!(r.order, vec!["core", "harmony", "hugs", "bpc"]);
+        assert_eq!(r.order, vec!["harmony", "core", "hugs", "bpc"]);
         // Two About rules that contradict each other form a real cycle: reported, then cut.
         let mut mods2 = fixture();
         mods2[2].rules.load_after = vec!["brrainz.harmony".into(), "voult.betterpawncontrol".into()];
@@ -452,6 +581,81 @@ mod tests {
         let r2 = sort(&current, &ctx2);
         assert!(r2.issues.iter().any(|i| matches!(i, Issue::Cycle { chain, .. } if chain.contains("HugsLib"))));
         assert_eq!(r2.order.len(), 4);
+    }
+
+    /// The shape of the list that crashed: a loading-screen mod (no Defs) declares it loads before
+    /// Core, which held Core back while the priority sort kept placing ready "framework" mods —
+    /// Ancot Library, Dubs Bad Hygiene — above it. Above Core they cannot inherit `BuildingBase`,
+    /// and RimWorld fails in `NewFrameDef_Thing`. Frameworks must stay below every official mod.
+    #[test]
+    fn nothing_with_defs_sorts_above_official_content() {
+        let mut core = m("core", "ludeon.rimworld", "RimWorld", Source::Ludeon);
+        core.contents.defs = 3000;
+        core.kind = ModKind::Official;
+        let mut royalty = m("royalty", "ludeon.rimworld.royalty", "Royalty", Source::Ludeon);
+        royalty.contents.defs = 800;
+        royalty.kind = ModKind::Official;
+        let mut harmony = m("harmony", "brrainz.harmony", "Harmony", Source::Workshop);
+        harmony.contents.assemblies = 1;
+        harmony.kind = ModKind::Code;
+        harmony.rules.load_before = vec!["ludeon.rimworld".into(), "ludeon.rimworld.royalty".into()];
+        let mut loader = m("loader", "me.samboycoding.betterloading", "Better Loading", Source::Workshop);
+        loader.contents.assemblies = 1;
+        loader.kind = ModKind::Code;
+        loader.rules.load_before = vec!["ludeon.rimworld".into()];
+        let mut ancot = m("ancot", "ancot.ancotlibrary", "Ancot Library", Source::Workshop);
+        ancot.contents.assemblies = 1;
+        ancot.contents.defs = 120;
+        ancot.kind = ModKind::Code;
+        let mut dbh = m("dbh", "dubwise.dubsbadhygiene", "Dubs Bad Hygiene", Source::Workshop);
+        dbh.contents.assemblies = 1;
+        dbh.contents.defs = 300;
+        dbh.kind = ModKind::Code;
+        let mut addons = Vec::new();
+        for i in 0..3 {
+            let mut a = m(&format!("dbh{i}"), &format!("x.dbhaddon{i}"), &format!("DBH Addon {i}"), Source::Workshop);
+            a.contents.defs = 5;
+            a.kind = ModKind::Xml;
+            a.rules.dependencies = vec![Dependency { package_id: "dubwise.dubsbadhygiene".into(), ..Default::default() }];
+            addons.push(a);
+        }
+        // A mod with Defs whose About.xml wrongly asks to sit above Core.
+        let mut wrong = m("wrong", "x.wrong", "Wrong Way Up", Source::Workshop);
+        wrong.contents.defs = 12;
+        wrong.kind = ModKind::Xml;
+        wrong.rules.load_before = vec!["ludeon.rimworld".into()];
+        let mut mods = vec![core, royalty, harmony, loader, ancot, dbh];
+        mods.extend(addons);
+        mods.push(wrong);
+        let db = Databases::default();
+        let rules = compile_rules(&mods, &db);
+        let files = HashMap::new();
+        let ov = UserOverrides::default();
+        let ctx = Context { mods: &mods, files: &files, rules: &rules, db: &db, major_minor: "1.6", overrides: &ov };
+        let current: Vec<String> = mods.iter().map(|m| m.uid.clone()).collect();
+        let r = sort(&current, &ctx);
+        let pos = |u: &str| r.order.iter().position(|x| x == u).unwrap();
+        assert!(pos("harmony") < pos("core"), "{:?}", r.order);
+        assert!(pos("loader") < pos("core"), "a Defs-less loader may stay above Core: {:?}", r.order);
+        assert!(pos("core") < pos("royalty"), "{:?}", r.order);
+        for u in ["ancot", "dbh", "dbh0", "dbh1", "dbh2", "wrong"] {
+            assert!(pos(u) > pos("royalty"), "{u} must load after all official content: {:?}", r.order);
+        }
+        assert!(pos("dbh") < pos("dbh0"));
+        let phase = |u: &str| r.placements.iter().find(|p| p.uid == u).unwrap().phase;
+        assert_eq!(phase("ancot"), Phase::Framework);
+        assert_eq!(phase("loader"), Phase::Prepatch, "declares it loads before Core and ships no Defs");
+        assert!(r.issues.iter().any(|i| matches!(i, Issue::RuleIgnored { uid, .. } if uid == "wrong")), "{:?}", r.issues);
+        assert!(!r.issues.iter().any(|i| matches!(i, Issue::AboveOfficial { .. } | Issue::Cycle { .. })), "{:?}", r.issues);
+        // The order that crashed is flagged as an error before Play.
+        let crashed: Vec<String> = ["harmony", "ancot", "dbh", "loader", "core", "royalty", "dbh0", "dbh1", "dbh2", "wrong"].iter().map(|s| s.to_string()).collect();
+        let issues = validate(&crashed, &ctx);
+        let above: Vec<&str> = issues.iter().filter_map(|i| match i { Issue::AboveOfficial { uid, .. } => Some(uid.as_str()), _ => None }).collect();
+        assert_eq!(above, vec!["ancot", "dbh"]);
+        assert!(issues.iter().any(|i| i.severity() == Severity::Error));
+        // A DLC above Core is the same error.
+        let dlc_first: Vec<String> = ["harmony", "loader", "royalty", "core", "ancot", "dbh", "dbh0", "dbh1", "dbh2", "wrong"].iter().map(|s| s.to_string()).collect();
+        assert!(validate(&dlc_first, &ctx).iter().any(|i| matches!(i, Issue::AboveOfficial { uid, official_uid } if uid == "royalty" && official_uid == "core")));
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! The command surface the Svelte UI calls with `invoke`.
 
 use crate::downloads::{AddResult, Downloads, SteamCmdStatus};
-use crate::textures::{self, ModTextures, Report, TexState, Textures};
+use crate::textures::{self, AuditReport, ModTextures, Report, TexState, Textures};
 use crate::state::{App, LaunchMethod, Settings, Snapshot, UserData};
 use circinus_core::steam::steamcmd::QueueState;
 use circinus_core::steam::webapi;
@@ -274,6 +274,75 @@ pub fn app_data_dir(state: State<'_, Shared>) -> CmdResult<String> {
     Ok(app.data_dir.display().to_string())
 }
 
+
+// ---------------------------------------------------------------- list history
+
+#[tauri::command]
+pub async fn saved_lists(state: State<'_, Shared>) -> CmdResult<Vec<circinus_core::modsconfig::SavedList>> {
+    with_app(&state, |app| Ok(app.saved_lists())).await
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreResult {
+    pub snapshot: Snapshot,
+    pub restored: usize,
+    pub missing: Vec<String>,
+}
+
+/// Put an archived list back as the active list; `save` writes it to ModsConfig.xml too.
+#[tauri::command]
+pub async fn restore_list(state: State<'_, Shared>, path: String, save: bool) -> CmdResult<RestoreResult> {
+    with_app(&state, move |app| {
+        let (restored, missing) = app.restore_list(std::path::Path::new(&path)).map_err(err)?;
+        if save {
+            app.save().map_err(err)?;
+        }
+        Ok(RestoreResult { snapshot: app.snapshot(), restored, missing })
+    })
+    .await
+}
+
+// ---------------------------------------------------------------- game log
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct LogFile {
+    pub path: String,
+    pub exists: bool,
+    pub bytes: u64,
+    /// Unix seconds.
+    pub modified: i64,
+}
+
+fn log_file(p: &std::path::Path) -> LogFile {
+    let md = std::fs::metadata(p).ok();
+    LogFile {
+        path: p.display().to_string(),
+        exists: md.is_some(),
+        bytes: md.as_ref().map(|m| m.len()).unwrap_or(0),
+        modified: md.and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs() as i64).unwrap_or(0),
+    }
+}
+
+/// Where RimWorld writes Player.log and Player-prev.log on this machine.
+#[tauri::command]
+pub async fn player_log_paths(state: State<'_, Shared>) -> CmdResult<Vec<LogFile>> {
+    with_app(&state, |app| Ok(crate::logs::default_paths(app).iter().map(|p| log_file(p)).collect())).await
+}
+
+/// Parse a Player.log (the current one when `path` is None) and tie it to the installed mods.
+#[tauri::command]
+pub async fn analyze_player_log(state: State<'_, Shared>, path: Option<String>) -> CmdResult<crate::logs::LogAnalysis> {
+    with_app(&state, move |app| {
+        let path = match path {
+            Some(p) => PathBuf::from(p),
+            None => crate::logs::default_paths(app).into_iter().find(|p| p.is_file()).ok_or_else(|| "No Player.log found. RimWorld writes it next to its Config folder once it has run.".to_string())?,
+        };
+        crate::logs::analyze(app, &path)
+    })
+    .await
+}
 
 // ---------------------------------------------------------------- launching
 
@@ -574,6 +643,20 @@ pub fn dds_cancel(tex: Tex<'_>) {
 pub async fn dds_revert(tex: Tex<'_>, uids: Vec<String>) -> CmdResult<Report> {
     let t = tex.inner().clone();
     tauri::async_runtime::spawn_blocking(move || t.revert(uids)).await.map_err(err)?
+}
+
+/// Find DDS files (not Circinus's) the game will refuse, in `uids`.
+#[tauri::command]
+pub async fn dds_audit(tex: Tex<'_>, uids: Vec<String>) -> CmdResult<AuditReport> {
+    let t = tex.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || t.audit(uids)).await.map_err(err)?
+}
+
+/// Rebuild flagged files: `targets` pairs a mod with the files to fix (empty = all flagged).
+#[tauri::command]
+pub async fn dds_fix(tex: Tex<'_>, targets: Vec<(String, Vec<String>)>) -> CmdResult<Report> {
+    let t = tex.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || t.fix(targets)).await.map_err(err)?
 }
 
 /// Ask the Workshop for the current update time of every installed workshop mod.

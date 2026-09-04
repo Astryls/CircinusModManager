@@ -3,11 +3,13 @@
   import { describe } from "$lib/describe";
   import { sevIcon } from "$lib/icons";
   import { primaryUid, severityOf, type Issue } from "$lib/types";
+  import GameLog from "./GameLog.svelte";
 
   const n = (uid: string) => store.byUid.get(uid)?.name ?? uid;
   const groups = $derived.by(() => {
-    const order: Issue["kind"][] = ["cycle", "incompatible", "missingDependency", "misplacedOptimization", "orderViolation", "versionMismatch", "duplicatePackageId", "missingPackageId", "invalid", "textureCollision"];
+    const order: Issue["kind"][] = ["aboveOfficial", "cycle", "incompatible", "missingDependency", "misplacedOptimization", "orderViolation", "versionMismatch", "duplicatePackageId", "missingPackageId", "invalid", "ruleIgnored", "textureCollision"];
     const titles: Record<Issue["kind"], string> = {
+      aboveOfficial: "Above Core or a DLC — the game will reset the list",
       cycle: "Rules that contradict each other",
       incompatible: "Incompatible mods both active",
       missingDependency: "Missing dependencies",
@@ -17,6 +19,7 @@
       duplicatePackageId: "Installed more than once",
       missingPackageId: "No packageId",
       invalid: "Folders that are not usable mods",
+      ruleIgnored: "Rules HALO set aside",
       textureCollision: "Textures replaced by more than one mod"
     };
     return order.map((k) => ({ kind: k, title: titles[k], items: store.issues.filter((i) => i.kind === k) })).filter((g) => g.items.length);
@@ -40,6 +43,7 @@
 </script>
 
 <main class="center">
+  <GameLog />
   {#if !groups.length}
     <section class="card"><h3>Analyzer</h3><p class="lead">Nothing needs attention. Rules, versions, dependencies and texture overrides all check out.</p></section>
   {/if}

@@ -1,6 +1,6 @@
 // Thin wrapper over Tauri's invoke, with a browser mock so the UI can run outside Tauri.
 
-import type { AddResult, CollectionPreview, DdsReport, ImportPreview, Issue, LaunchInfo, Locations, ModFiles, ModTextures, QueueState, RentryPreview, Rule, RulesFile, Settings, Snapshot, SortResult, SteamCmdStatus, TestOutcome, TexState, UserData } from "./types";
+import type { AddResult, AuditReport, CollectionPreview, DdsReport, ImportPreview, Issue, LaunchInfo, Locations, LogAnalysis, LogFile, ModFiles, ModTextures, QueueState, RentryPreview, RestoreResult, Rule, RulesFile, SavedList, Settings, Snapshot, SortResult, SteamCmdStatus, TestOutcome, TexState, UserData } from "./types";
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -56,15 +56,23 @@ export const api = {
   steamcmdStatus: () => invoke<SteamCmdStatus>("steamcmd_status"),
   steamcmdTest: () => invoke<TestOutcome>("steamcmd_test"),
   acknowledgeChanges: () => invoke<Snapshot>("acknowledge_changes"),
+  // list history
+  savedLists: () => invoke<SavedList[]>("saved_lists"),
+  restoreList: (path: string, save: boolean) => invoke<RestoreResult>("restore_list", { path, save }),
   // launching
   launchInfo: () => invoke<LaunchInfo>("get_launch_info"),
   launchGame: () => invoke<string>("launch_game"),
+  // game log
+  playerLogPaths: () => invoke<LogFile[]>("player_log_paths"),
+  analyzePlayerLog: (path?: string) => invoke<LogAnalysis>("analyze_player_log", { path: path ?? null }),
   // textures
   ddsState: () => invoke<TexState>("dds_state"),
   ddsOverview: () => invoke<ModTextures[]>("dds_overview"),
   ddsStart: (uids: string[]) => invoke<void>("dds_start", { uids }),
   ddsCancel: () => invoke<void>("dds_cancel"),
   ddsRevert: (uids: string[]) => invoke<DdsReport>("dds_revert", { uids }),
+  ddsAudit: (uids: string[]) => invoke<AuditReport>("dds_audit", { uids }),
+  ddsFix: (targets: [string, string[]][]) => invoke<DdsReport>("dds_fix", { targets }),
   importCollection: (text: string) => invoke<CollectionPreview>("import_collection", { text }),
   importRentry: (url: string) => invoke<RentryPreview>("import_rentry", { url }),
   checkUpdates: () => invoke<number>("check_updates")

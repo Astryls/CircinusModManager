@@ -2,7 +2,7 @@
 // indexes for fast lookups, and the actions the components call.
 
 import { api, listen } from "./api";
-import type { CollectionPreview, Group, ImportPreview, Issue, ModChange, ModInfo, ModTextures, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamCmdStatus, TexState, UserData, Weight } from "./types";
+import type { CollectionPreview, Group, ImportPreview, Issue, ModChange, ModInfo, ModTextures, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamCmdStatus, TexState, UserData, Weight, LogAnalysis, LogFile, AuditReport } from "./types";
 import { PHASES, primaryUid, severityOf } from "./types";
 
 export type View = "order" | "library" | "downloads" | "textures" | "analyzer" | "settings";
@@ -42,10 +42,15 @@ class Store {
   /** Texture optimisation job state (from `dds-progress`). */
   tex = $state<TexState | null>(null);
   texOverview = $state<ModTextures[]>([]);
+  /** Last DDS audit: foreign files the game will refuse. */
+  audit = $state<AuditReport | null>(null);
   /** Notices closed for this session (they come back next launch if still true). */
   dismissed = $state<string[]>([]);
   /** uid → the list should scroll to it on the next render. */
   scrollRequest = $state<string | null>(null);
+  /** Last Player.log analysis, and the logs RimWorld writes on this machine. */
+  gameLog = $state<LogAnalysis | null>(null);
+  gameLogFiles = $state<LogFile[]>([]);
 
   // ---- derived indexes ----
   mods = $derived.by(() => {
@@ -224,6 +229,37 @@ class Store {
       await api.ddsStart(uids);
       this.tex = await api.ddsState();
       this.view = "textures";
+    });
+  }
+  /** Check DDS files Circinus did not write for things Unity refuses. */
+  auditTextures(uids: string[]) {
+    if (!uids.length) return;
+    return this.run("Checking DDS files…", async () => {
+      const r = await api.ddsAudit(uids);
+      this.audit = r;
+      this.tex = await api.ddsState();
+      this.say(r.files ? `${r.files} DDS file${r.files === 1 ? "" : "s"} the game will refuse in ${r.mods.length} mod${r.mods.length === 1 ? "" : "s"} · ${r.fixable} can be rebuilt` : `All DDS files in ${r.modsChecked} mods look loadable`, r.files ? "warn" : "ok");
+      return r;
+    });
+  }
+  /** Rebuild flagged files (all of a mod's when `rels` is empty), keeping the originals. */
+  fixTextures(targets: [string, string[]][]) {
+    if (!targets.length) return;
+    return this.run("Rebuilding DDS files…", async () => {
+      const r = await api.ddsFix(targets);
+      this.tex = await api.ddsState();
+      await this.refresh();
+      this.refreshTextures();
+      this.say(`${r.fixed ?? 0} file${(r.fixed ?? 0) === 1 ? "" : "s"} rebuilt${r.failed ? `, ${r.failed} failed` : ""} · originals kept as .circinus-orig`, r.failed ? "warn" : "ok");
+      // Whatever was fixed no longer belongs in the findings.
+      if (this.audit) {
+        const uids = new Set(targets.map((t) => t[0]));
+        const only = new Map(targets.map((t) => [t[0], t[1]]));
+        this.audit = { ...this.audit, mods: this.audit.mods.map((m) => (!uids.has(m.uid) ? m : { ...m, findings: m.findings.filter((f) => !f.fixable || (only.get(m.uid)!.length > 0 && !only.get(m.uid)!.includes(f.rel))) })).filter((m) => m.findings.length), files: 0, fixable: 0 };
+        this.audit.files = this.audit.mods.reduce((n, m) => n + m.findings.length, 0);
+        this.audit.fixable = this.audit.mods.reduce((n, m) => n + m.findings.filter((f) => f.fixable).length, 0);
+      }
+      return r;
     });
   }
   revertTextures(uids: string[]) {
@@ -445,6 +481,36 @@ class Store {
     return this.run("Clearing…", async () => {
       this.apply(await api.acknowledgeChanges());
       this.showChanges = false;
+    });
+  }
+  /** Put an archived list back; with `save`, write it to ModsConfig.xml straight away. */
+  restoreList(path: string, save: boolean) {
+    return this.run(save ? "Restoring and saving…" : "Restoring…", async () => {
+      const r = await api.restoreList(path, save);
+      this.snap = r.snapshot;
+      this.preview = null;
+      this.showImport = false;
+      this.say(`${r.restored} mods back in the list${r.missing.length ? `, ${r.missing.length} not installed` : ""}${save ? " · ModsConfig.xml saved" : " · press Save to write it"}`, r.missing.length ? "warn" : "ok");
+      return r;
+    });
+  }
+  /** Which Player.log files exist right now. */
+  async refreshGameLogFiles() {
+    try {
+      this.gameLogFiles = await api.playerLogPaths();
+    } catch (e) {
+      console.warn("[circinus] player log paths:", e);
+    }
+  }
+  /** Parse a Player.log (the current one by default) and tie it to the installed mods. */
+  analyzeGameLog(path?: string) {
+    return this.run("Reading the game log…", async () => {
+      const a = await api.analyzePlayerLog(path);
+      this.gameLog = a;
+      await this.refreshGameLogFiles();
+      const r = a.report;
+      this.say(r.outcome === "crashed" ? "The game crashed — see what led up to it" : r.outcome === "loadFailedReset" ? "RimWorld failed to load and reset the list" : `Read ${r.lines.toLocaleString()} lines · ${r.exceptions.length} exception group${r.exceptions.length === 1 ? "" : "s"}`, r.outcome === "ok" ? "ok" : "warn");
+      return a;
     });
   }
   /** Play: through Steam or the executable, per Settings; saves first when asked to. */

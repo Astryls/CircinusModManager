@@ -2,7 +2,7 @@
 //! thread pool, keep the manifest in the cache, and re-check converted mods when they change.
 
 use crate::commands::Shared;
-use circinus_core::dds::{self, job, Entry, Options, Progress};
+use circinus_core::dds::{self, audit, job, Entry, Finding, Options, Progress};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -26,7 +26,13 @@ pub struct Report {
     pub seconds: u64,
     pub cancelled: bool,
     pub reverted: usize,
+    /// Originals put back from their `.circinus-orig` backups.
+    #[serde(default)]
+    pub restored: usize,
     pub bytes_freed: u64,
+    /// Foreign DDS files rebuilt by the audit's fix.
+    #[serde(default)]
+    pub fixed: usize,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -213,7 +219,8 @@ impl Textures {
                 continue;
             }
             let r = job::revert(&path, &entries);
-            report.reverted += r.deleted.len();
+            report.reverted += r.deleted.len() + r.restored.len();
+            report.restored += r.restored.len();
             report.bytes_freed += r.bytes_freed;
             let mut app = self.app.lock().unwrap();
             let _ = app.cache.dds_delete_all(&uid);
@@ -291,6 +298,153 @@ impl Textures {
                 let _ = me.convert(to_convert);
             });
         }
+    }
+}
+
+/// One mod's foreign DDS files the game will refuse.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModAudit {
+    pub uid: String,
+    pub name: String,
+    pub active: bool,
+    pub findings: Vec<Finding>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditReport {
+    pub mods_checked: usize,
+    pub mods: Vec<ModAudit>,
+    pub files: usize,
+    pub fixable: usize,
+    pub seconds: u64,
+}
+
+impl Textures {
+    /// Look at every DDS Circinus did not write in `uids` and report the ones Unity refuses.
+    /// Header reads only; a large install takes a few seconds.
+    pub fn audit(self: &Arc<Self>, uids: Vec<String>) -> Result<AuditReport, String> {
+        self.begin("auditing")?;
+        self.emit();
+        let started = std::time::Instant::now();
+        let (mods, manifest, active): (Vec<(String, String, PathBuf)>, HashMap<String, Vec<Entry>>, HashSet<String>) = {
+            let app = self.app.lock().unwrap();
+            let want: HashSet<&str> = uids.iter().map(|s| s.as_str()).collect();
+            let mods = app.mods.iter().filter(|m| want.contains(m.uid.as_str()) && m.invalid.is_none() && m.source != circinus_core::Source::Ludeon).map(|m| (m.uid.clone(), m.name.clone(), m.path.clone())).collect();
+            (mods, app.cache.dds_all().unwrap_or_default(), app.active.iter().cloned().collect())
+        };
+        use rayon::prelude::*;
+        let mut out: Vec<ModAudit> = mods
+            .par_iter()
+            .filter_map(|(uid, name, path)| {
+                if self.cancel.load(Ordering::Relaxed) {
+                    return None;
+                }
+                let ours: HashSet<String> = manifest.get(uid).map(|v| v.iter().map(|e| e.dds_rel()).collect()).unwrap_or_default();
+                let findings = audit::audit(path, &ours);
+                (!findings.is_empty()).then(|| ModAudit { uid: uid.clone(), name: name.clone(), active: active.contains(uid), findings })
+            })
+            .collect();
+        out.sort_by(|a, b| b.active.cmp(&a.active).then_with(|| b.findings.len().cmp(&a.findings.len())).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+        let report = AuditReport { mods_checked: mods.len(), files: out.iter().map(|m| m.findings.len()).sum(), fixable: out.iter().flat_map(|m| &m.findings).filter(|f| f.fixable).count(), mods: out, seconds: started.elapsed().as_secs() };
+        self.finish(Report { mods: report.mods_checked, seconds: report.seconds, cancelled: self.cancel.load(Ordering::Relaxed), ..Report::default() });
+        self.emit();
+        Ok(report)
+    }
+
+    /// Rebuild the flagged files of `uids` (all of them when `rels` is empty), keeping the
+    /// originals as backups; the manifest then treats them like any converted texture.
+    pub fn fix(self: &Arc<Self>, targets: Vec<(String, Vec<String>)>) -> Result<Report, String> {
+        self.begin("fixing")?;
+        self.emit();
+        let started = std::time::Instant::now();
+        let (opts, threads, _) = self.options();
+        let (mods, manifest): (HashMap<String, (String, PathBuf)>, HashMap<String, Vec<Entry>>) = {
+            let app = self.app.lock().unwrap();
+            (app.mods.iter().filter(|m| m.invalid.is_none() && m.source != circinus_core::Source::Ludeon).map(|m| (m.uid.clone(), (m.name.clone(), m.path.clone()))).collect(), app.cache.dds_all().unwrap_or_default())
+        };
+        // Audit again right now: the list the UI holds may be minutes old.
+        let mut work: Vec<(String, PathBuf, Finding)> = Vec::new();
+        for (uid, rels) in &targets {
+            let Some((_, path)) = mods.get(uid) else { continue };
+            let ours: HashSet<String> = manifest.get(uid).map(|v| v.iter().map(|e| e.dds_rel()).collect()).unwrap_or_default();
+            for f in audit::audit(path, &ours) {
+                if f.fixable && (rels.is_empty() || rels.contains(&f.rel)) {
+                    work.push((uid.clone(), path.clone(), f));
+                }
+            }
+        }
+        let mut report = Report { mods: targets.len(), ..Report::default() };
+        {
+            let mut s = self.state.lock().unwrap();
+            s.phase = "fixing".into();
+            s.progress = Progress { total: work.len(), ..Progress::default() };
+        }
+        self.emit();
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(threads.max(1)).build().map_err(|e| e.to_string())?;
+        let done = std::sync::atomic::AtomicUsize::new(0);
+        let results: Vec<(String, String, std::result::Result<Entry, String>)> = pool.install(|| {
+            use rayon::prelude::*;
+            work.par_iter()
+                .map(|(uid, path, f)| {
+                    if self.cancel.load(Ordering::Relaxed) {
+                        return (uid.clone(), f.rel.clone(), Err("cancelled".to_string()));
+                    }
+                    let r = audit::fix_one(path, f, &opts, now()).map_err(|e| e.to_string());
+                    let n = done.fetch_add(1, Ordering::Relaxed) + 1;
+                    if let Ok(mut s) = self.state.lock() {
+                        s.progress.done = n;
+                        s.progress.current = f.rel.clone();
+                        if r.is_ok() {
+                            s.progress.converted += 1;
+                        } else {
+                            s.progress.failed += 1;
+                        }
+                    }
+                    if n % 4 == 0 || n == work.len() {
+                        self.emit();
+                    }
+                    (uid.clone(), f.rel.clone(), r)
+                })
+                .collect()
+        });
+        let mut store: Vec<(String, String, Entry)> = Vec::new();
+        let mut touched: HashSet<String> = HashSet::new();
+        for (uid, rel, r) in results {
+            match r {
+                Ok(e) => {
+                    report.fixed += 1;
+                    report.dds_bytes += e.dds_len;
+                    touched.insert(uid.clone());
+                    store.push((uid, e.rel.clone(), e));
+                }
+                Err(msg) if msg == "cancelled" => report.cancelled = true,
+                Err(msg) => {
+                    report.failed += 1;
+                    let mut s = self.state.lock().unwrap();
+                    if s.errors.len() < 300 {
+                        s.errors.push((mods.get(&uid).map(|m| m.0.clone()).unwrap_or(uid), rel, msg));
+                    }
+                }
+            }
+        }
+        {
+            let mut app = self.app.lock().unwrap();
+            if let Err(e) = app.cache.dds_store(&store) {
+                tracing::warn!("could not store the DDS manifest: {e}");
+            }
+            app.reload_dds_index();
+            let uids: Vec<String> = touched.iter().cloned().collect();
+            let _ = app.cache.forget_mod_entries(&uids);
+        }
+        report.seconds = started.elapsed().as_secs();
+        self.finish(report.clone());
+        self.emit();
+        if !touched.is_empty() {
+            crate::run_scan(self.handle.clone(), self.app.clone(), false);
+        }
+        Ok(report)
     }
 }
 
