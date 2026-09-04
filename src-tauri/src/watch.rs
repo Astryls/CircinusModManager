@@ -55,7 +55,7 @@ fn notify(handle: &AppHandle, st: &Shared, before: &HashSet<String>, before_list
         let active = owned.iter().filter(|c| c.active).count();
         (title, format!("{}{}. Open Circinus to see what changed.", changes::summary(&owned), if active > 0 { format!(" · {active} in your active list") } else { String::new() }))
     } else if list_now.is_some() && list_now != *before_list {
-        ("Your mod list was changed outside Circinus".to_string(), "ModsConfig.xml was rewritten — by RimWorld or another manager.".to_string())
+        ("Your mod list was changed outside Circinus".to_string(), "ModsConfig.xml was rewritten by RimWorld or another manager.".to_string())
     } else {
         return;
     };

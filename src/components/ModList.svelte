@@ -192,16 +192,16 @@
           <span class="name"><b>{m.name ?? m.uid}</b><span>{m.invalid ?? (m.authors ?? []).join(", ")}</span></span>
           <span class="pkg">{m.packageId}</span>
           {#if store.showWeight}
-            <span class="wt">{#if w && w.share != null}<span class="band {w.band}" title="{BAND_LABEL[w.band]} · median {w.share.toFixed(2)}% of frame · {w.measured ?? '?'} runs · {w.origin === 'local' ? 'your runs' : 'circinus.sh'}">{w.share.toFixed(1)}%</span>{:else if w}<span class="band {w.band}" title={BAND_LABEL[w.band]}>—</span>{/if}</span>
+            <span class="wt">{#if w && w.share != null}<span class="band {w.band}" title="Performance cost: {w.share.toFixed(2)} % of frame time, {BAND_LABEL[w.band].toLowerCase()}. {w.measured ?? '?'} runs measured, from {w.origin === 'local' ? 'your runs' : 'circinus.sh'}">{w.share.toFixed(1)} %</span>{:else if w}<span class="band {w.band}" title="Performance cost: {BAND_LABEL[w.band].toLowerCase()}">{w.band === "negligible" ? "<0.1 %" : "n/a"}</span>{/if}</span>
           {/if}
           <span class="vers">{#each versions as v}<span class:off={!(m.supportedVersions ?? []).includes(v)}>{v}</span>{/each}</span>
           <span class="g">{#if store.groupOf(m.uid)}<span class="dot c-{store.groupOf(m.uid)?.color}" title={store.groupOf(m.uid)?.name}></span>{/if}</span>
           <span class="flags">
             {#if chg}<span class="flag chg" title="Changed since you last opened Circinus: {describeChange(chg)}">{@html chg.kind === "added" ? I.plus : I.change}</span>{/if}
-            {#if upd}<span class="flag note" title="A newer version is on the Workshop (updated {new Date(upd.remoteUpdated * 1000).toLocaleDateString()})">{@html I.up}</span>{/if}
+            {#if upd}<span class="flag note" title="A newer version is on the Workshop, updated {new Date(upd.remoteUpdated * 1000).toLocaleDateString()}">{@html I.up}</span>{/if}
             {#each issues.slice(0, 3) as i}<span class="flag {severityOf(i)}" title={describe(i, store.byUid, m.uid)}>{@html sevIcon[severityOf(i)] ?? sevIcon.warning}</span>{/each}
             {#if m.invalid && it.inactive}<span class="flag error" title={m.invalid}>{@html I.error}</span>{/if}
-            {#if store.pinned.has(m.uid)}<span class="flag pin" title="Pinned: keeps this position">{@html I.pin}</span>{/if}
+            {#if store.pinned.has(m.uid)}<span class="flag pin" title="Pinned: keeps this position when sorting">{@html I.pin}</span>{/if}
           </span>
           <span class="delta num" class:down={delta && delta > 0} class:up={delta && delta < 0}>{#if delta}{delta > 0 ? "+" : ""}{delta}{/if}</span>
         </div>
@@ -210,7 +210,7 @@
     {#if dropEnd}<div class="drop-line" style="transform: translateY({total}px)"></div>{/if}
   </div>
   {#if !items.length}
-    <div class="empty">{store.active.length || store.tab !== "active" ? "No mod matches the search or filters." : "No active mods. Import a list or activate mods from the Inactive tab."}</div>
+    <div class="empty">{store.active.length || store.tab !== "active" ? "No mod matches the search or filters." : "No active mods. Import a list, or activate mods from the Inactive tab."}</div>
   {/if}
 </div>
 
@@ -224,7 +224,7 @@
   .ph .n { font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-2); }
   .ph .c { font-size: 11px; color: var(--text-3); font-weight: 600; }
   .ph .note { margin-left: auto; font-size: 11.5px; color: var(--text-3); }
-  .row { position: absolute; left: 0; right: 0; height: 40px; display: grid; grid-template-columns: 34px 18px 22px minmax(0, 1fr) 150px auto 64px 14px 78px 40px; align-items: center; gap: 10px; padding: 0 8px 0 4px; border-radius: var(--r-row); cursor: default; }
+  .row { position: absolute; left: 0; right: 0; height: 40px; display: grid; grid-template-columns: 34px 18px 22px minmax(0, 1fr) 150px auto 64px 14px 82px 40px; align-items: center; gap: 10px; padding: 0 8px 0 4px; border-radius: var(--r-row); cursor: default; }
   .row:hover { background: var(--surface-2); }
   .row.sel { background: var(--surface-3); }
   .row.off { opacity: 0.72; }
@@ -241,11 +241,12 @@
   .name b { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .name span { font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pkg { font-family: var(--mono); font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .wt { min-width: 52px; display: flex; justify-content: flex-end; }
+  .wt { min-width: 60px; display: flex; justify-content: flex-end; }
   .vers { justify-content: flex-end; }
   .g { display: grid; place-items: center; }
   .flags { display: flex; gap: 4px; justify-content: flex-end; align-items: center; }
-  .flags :global(.flag.chg) { background: var(--amber-soft); color: var(--amber); }
+  .flags .flag { width: 17px; height: 17px; }
+  .flags .flag :global(svg) { width: 15px; height: 15px; }
   .delta { font: 700 11.5px var(--mono); text-align: right; color: var(--text-3); }
   .delta.down { color: var(--amber); }
   .delta.up { color: var(--blue); }

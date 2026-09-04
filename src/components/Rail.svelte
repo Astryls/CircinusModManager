@@ -13,10 +13,10 @@
   const nav: { id: View; label: string; icon: string; count?: () => string | number; att?: boolean }[] = [
     { id: "order", label: "Load order", icon: I.list, count: () => store.active.length },
     { id: "library", label: "Library", icon: I.library, count: () => store.mods.length },
-    { id: "downloads", label: "Downloads", icon: I.download, count: () => store.queueCounts.queued || (store.downloads && !store.downloads.steamcmdInstalled && !store.downloads.installing ? "set up" : ""), att: true },
-    { id: "textures", label: "Textures", icon: I.image, count: () => (store.tex?.running ? (store.tex.phase === "converting" && store.tex.progress.total ? `${Math.round((store.tex.progress.done / store.tex.progress.total) * 100)}%` : "…") : store.ddsTotals.mods || ""), att: false },
-    { id: "analyzer", label: "Analyzer", icon: I.layers, count: () => store.stats.errors + store.stats.warnings, att: true },
-    { id: "settings", label: "Settings", icon: I.sliders }
+    { id: "downloads", label: "Downloads", icon: I.cloud, count: () => store.queueCounts.queued || (store.downloads && !store.downloads.steamcmdInstalled && !store.downloads.installing ? "set up" : ""), att: true },
+    { id: "textures", label: "Textures", icon: I.image, count: () => (store.tex?.running ? (store.tex.phase === "converting" && store.tex.progress.total ? `${Math.round((store.tex.progress.done / store.tex.progress.total) * 100)}%` : "busy") : store.ddsTotals.mods || ""), att: false },
+    { id: "analyzer", label: "Analyzer", icon: I.analyze, count: () => store.stats.errors + store.stats.warnings, att: true },
+    { id: "settings", label: "Settings", icon: I.gear }
   ];
   const sources: Source[] = ["workshop", "local", "steamcmd", "git", "ludeon"];
   function toggleSource(s: Source) {
@@ -38,11 +38,11 @@
 
 <aside class="rail">
   <section class="card inst">
-    <div class="ver">RimWorld {snap?.gameVersion.majorMinor ?? "—"}</div>
-    <div class="sub">{snap?.gameVersion.full ?? "not found"}{snap?.locations.workshopDir ? " · Steam" : ""}</div>
-    <div class="row"><span>{store.mods.length} mods installed</span><span class="num">{store.active.length} active</span></div>
+    <div class="ver">RimWorld {snap?.gameVersion.majorMinor ?? "not found"}</div>
+    <div class="sub">{snap?.gameVersion.full ?? "Set the game folder in Settings"}{snap?.locations.workshopDir ? " · Steam" : ""}</div>
+    <div class="row"><span class="num">{store.active.length} active</span><span class="num">{store.mods.length} installed</span></div>
     <div class="meter c-blue" style="--v:{pct}%"><i></i></div>
-    <div class="row"><span>ModsConfig.xml</span><span>{snap?.dirty ? "unsaved changes" : "saved"}</span></div>
+    <div class="row"><span>ModsConfig.xml</span><span class:att={snap?.dirty}>{snap?.dirty ? "not saved" : "saved"}</span></div>
   </section>
 
   <nav class="card nav" aria-label="Views">
@@ -73,32 +73,31 @@
   </section>
 
   <section class="card filters">
-    <div class="label">Source</div>
+    <div class="label">Show mods from</div>
     <div class="chips">
       {#each sources as s}<button class="chip" class:on={store.sources.includes(s)} onclick={() => toggleSource(s)}>{SOURCE_LABEL[s]}</button>{/each}
     </div>
-    <div class="label">Version</div>
-    <div class="chips">
-      <button class="chip" class:on={store.onlyCurrentVersion} onclick={() => (store.onlyCurrentVersion = !store.onlyCurrentVersion)}>Only {snap?.gameVersion.majorMinor ?? "current"}</button>
-    </div>
     <div class="label">Show only</div>
     <div class="chips">
-      <button class="chip" class:on={store.showOnly === "warning"} onclick={() => (store.showOnly = store.showOnly === "warning" ? null : "warning")}>▲ Warnings</button>
-      <button class="chip err" class:on={store.showOnly === "error"} onclick={() => (store.showOnly = store.showOnly === "error" ? null : "error")}>✕ Errors</button>
-      <button class="chip note" class:on={store.showOnly === "note"} onclick={() => (store.showOnly = store.showOnly === "note" ? null : "note")}>◆ HALO notes</button>
+      <button class="chip" class:on={store.onlyCurrentVersion} onclick={() => (store.onlyCurrentVersion = !store.onlyCurrentVersion)}>Made for {snap?.gameVersion.majorMinor ?? "this version"}</button>
+      <button class="chip err" class:on={store.showOnly === "error"} onclick={() => (store.showOnly = store.showOnly === "error" ? null : "error")}>{@html I.error}Errors</button>
+      <button class="chip" class:on={store.showOnly === "warning"} onclick={() => (store.showOnly = store.showOnly === "warning" ? null : "warning")}>{@html I.warn}Warnings</button>
+      <button class="chip note" class:on={store.showOnly === "note"} onclick={() => (store.showOnly = store.showOnly === "note" ? null : "note")}>{@html I.note}Notes</button>
     </div>
   </section>
 </aside>
 
 <style>
-  .rail { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: auto; padding-bottom: 4px; }
-  .inst .ver { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
-  .inst .sub { color: var(--text-2); font-size: 12.5px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .inst .row { display: flex; justify-content: space-between; margin-top: 12px; font-size: 12px; color: var(--text-3); }
-  .inst .meter { margin-top: 8px; }
-  .nav { padding: 8px; display: flex; flex-direction: column; }
-  .nav button { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border-radius: 9px; color: var(--text-2); font-weight: 600; font-size: 13.5px; text-align: left; }
-  .nav button :global(svg) { width: 16px; height: 16px; flex: none; }
+  .rail { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: hidden auto; }
+  .rail .card { padding: 12px; flex: none; }
+  .inst .ver { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
+  .inst .sub { color: var(--text-2); font-size: 12px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .inst .row { display: flex; justify-content: space-between; margin-top: 9px; font-size: 12px; color: var(--text-3); }
+  .inst .row .att { color: var(--amber); font-weight: 700; }
+  .inst .meter { margin-top: 7px; }
+  .nav { padding: 6px !important; display: flex; flex-direction: column; }
+  .nav button { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 9px; color: var(--text-2); font-weight: 600; font-size: 13.5px; text-align: left; }
+  .nav button :global(svg) { width: 18px; height: 18px; flex: none; }
   .nav button:hover { background: var(--surface-2); color: var(--text); }
   .nav button.on { background: var(--surface-3); color: var(--text); }
   .nav .count { margin-left: auto; font-size: 11.5px; font-weight: 700; color: var(--text-3); }
@@ -107,7 +106,8 @@
   .plus:hover { color: var(--text); }
   .newg { display: flex; gap: 6px; margin-bottom: 8px; }
   .newg .input { height: 28px; font-size: 12.5px; }
-  .groups .g { display: flex; align-items: center; gap: 9px; height: 32px; padding: 0 8px; margin: 0 -6px; border-radius: 8px; font-weight: 600; font-size: 13px; width: calc(100% + 12px); text-align: left; }
+  .groups h3 { margin-bottom: 4px; }
+  .groups .g { display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; margin: 0 -6px; border-radius: 8px; font-weight: 600; font-size: 13px; width: calc(100% + 12px); text-align: left; }
   .groups .g:hover { background: var(--surface-2); }
   .groups .g.on { background: var(--surface-3); }
   .groups .g .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -116,6 +116,8 @@
   .groups .g .ov :global(svg) { width: 13px; height: 13px; }
   .clear { margin-top: 6px; font-size: 12px; color: var(--text-3); font-weight: 600; }
   .clear:hover { color: var(--text); }
-  .filters .label { margin: 12px 0 8px; }
+  .filters .label { margin: 10px 0 6px; }
   .filters .label:first-child { margin-top: 0; }
+  .filters .chip { height: 24px; padding: 0 8px; font-size: 11.5px; gap: 5px; }
+  .filters .chip :global(svg) { width: 13px; height: 13px; }
 </style>

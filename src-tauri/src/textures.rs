@@ -227,7 +227,7 @@ impl Textures {
             if !r.kept.is_empty() {
                 let mut s = self.state.lock().unwrap();
                 for rel in r.kept.iter().take(50) {
-                    s.errors.push((uid.clone(), rel.clone(), "not the file Circinus wrote — left in place".into()));
+                    s.errors.push((uid.clone(), rel.clone(), "not the file Circinus wrote, so it was left in place".into()));
                 }
             }
             touched.push(uid.clone());

@@ -398,11 +398,11 @@ pub async fn launch_game(app_handle: AppHandle, state: State<'_, Shared>) -> Cmd
     match method {
         LaunchMethod::Steam | LaunchMethod::Auto => {
             let url = if args.is_empty() { "steam://rungameid/294100".to_string() } else { format!("steam://run/294100//{}/", args.join(" ")) };
-            app_handle.opener().open_url(&url, None::<&str>).map_err(|e| format!("Could not hand the game to Steam ({e}). Is Steam installed? Otherwise set the executable in Settings → Launching RimWorld."))?;
+            app_handle.opener().open_url(&url, None::<&str>).map_err(|e| format!("Could not hand the game to Steam ({e}). Is Steam installed? Otherwise set the executable in Settings, under Launching RimWorld."))?;
             Ok(format!("Asked Steam to start RimWorld{suffix}"))
         }
         LaunchMethod::Executable => {
-            let exe = exe.filter(|p| p.exists()).ok_or_else(|| "No RimWorld executable found — choose it in Settings → Launching RimWorld".to_string())?;
+            let exe = exe.filter(|p| p.exists()).ok_or_else(|| "No RimWorld executable found. Choose it in Settings, under Launching RimWorld".to_string())?;
             let name = exe.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
             spawn_game(&exe, &args, game_dir.as_deref()).map_err(|e| format!("Could not start {name}: {e}"))?;
             Ok(format!("Started {name}{suffix}"))

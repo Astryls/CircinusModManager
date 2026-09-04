@@ -58,14 +58,14 @@
         <Panel name="Attention banner"><Banner /></Panel>
         <Panel name="Toolbar"><Toolbar /></Panel>
         <Panel name="Mod list"><ModList /></Panel>
-        <div class="foot">
-          {#if store.snap}
-            {store.snap.mods.length} installed · {store.active.length} active · {store.snap.inspecting ? `inspecting ${store.snap.inspecting} folders in the background · ` : ""}{store.snap.missing.length ? `${store.snap.missing.length} in ModsConfig.xml but not installed · ` : ""}
-            {store.snap.dbLoaded.length ? store.snap.dbLoaded.join(" · ") : "no rule databases loaded yet"}
-          {/if}
-        </div>
       </main>
       <Panel name="Inspector"><Inspector /></Panel>
+      <div class="foot">
+        {#if store.snap}
+          {store.snap.mods.length} mods installed · {store.active.length} active · {store.snap.inspecting ? `reading ${store.snap.inspecting} folders in the background · ` : ""}{store.snap.missing.length ? `${store.snap.missing.length} in ModsConfig.xml but not installed · ` : ""}
+          {store.snap.dbLoaded.length ? `Rule databases: ${store.snap.dbLoaded.join(", ")}` : "No rule databases loaded yet: Settings, Update now"}
+        {/if}
+      </div>
     </div>
   {/if}
   {#if store.showImport}<ImportDialog />{/if}
@@ -80,10 +80,11 @@
 
 <style>
   .app { height: 100vh; display: grid; grid-template-rows: 56px minmax(0, 1fr); overflow: hidden; }
-  .frame { display: grid; grid-template-columns: 236px minmax(0, 1fr) 316px; grid-template-rows: minmax(0, 1fr); gap: 14px; padding: 0 14px 14px; min-height: 0; }
+  .frame { display: grid; grid-template-columns: 236px minmax(0, 1fr) 340px; grid-template-rows: minmax(0, 1fr) auto; gap: 12px 14px; padding: 0 14px 10px; min-height: 0; }
   .frame.two { grid-template-columns: 236px minmax(0, 1fr); }
+  .frame > :global(*) { min-width: 0; min-height: 0; }
   .center { display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; }
-  .foot { font-size: 11px; color: var(--text-4); text-align: right; padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .foot { grid-column: 1 / -1; font-size: 11.5px; color: var(--text-3); text-align: center; padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: -4px; }
   .loading { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(11, 11, 13, 0.7); backdrop-filter: blur(4px); z-index: 50; color: var(--text-2); font-weight: 600; }
   .loading > * { grid-area: 1 / 1; }
   .loading span { margin-top: 70px; max-width: 60ch; text-align: center; line-height: 1.5; user-select: text; }
@@ -92,5 +93,6 @@
   .spin { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--surface-4); border-top-color: var(--amber); animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (max-width: 1240px) { .frame { grid-template-columns: 220px minmax(0, 1fr); } .frame :global(.inspector) { display: none; } }
+  @media (min-width: 1700px) { .frame { grid-template-columns: 250px minmax(0, 1fr) 380px; } }
   @media (max-width: 980px) { .frame { grid-template-columns: minmax(0, 1fr); } .frame :global(.rail) { display: none; } }
 </style>

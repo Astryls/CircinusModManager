@@ -16,12 +16,12 @@
   </div>
   <span class="sp"></span>
   <button class="btn" onclick={() => (store.showImport = true)} title="Import a mod list (Ctrl I)">{@html I.download}Import</button>
-  <button class="btn" onclick={() => store.rescan(false)} title="Re-read mod folders">{@html I.refresh}Refresh</button>
+  <button class="btn" onclick={() => store.rescan(false)} title="Read the mod folders again">{@html I.refresh}Refresh</button>
   {#if store.preview}
     <button class="btn" onclick={() => (store.preview = null)}>Discard</button>
     <button class="btn primary" onclick={() => store.haloApply()}>{@html I.check}Apply {previewCount} move{previewCount === 1 ? "" : "s"}</button>
   {:else}
-    <button class="btn primary" onclick={() => store.haloPreview()} title="Preview the Harmonized Automated Load Order">{@html I.halo}Sort with HALO</button>
+    <button class="btn primary" onclick={() => store.haloPreview()} title="Preview the load order HALO would use, then apply it or discard it">{@html I.halo}Sort with HALO</button>
   {/if}
 </div>
 

@@ -10,7 +10,7 @@ export function describe(i: Issue, byUid: Map<string, ModInfo>, viewer?: string)
         : `Needs ${i.displayName ?? i.dependency}, which is not installed.`;
     case "incompatible": {
       const other = viewer === i.otherUid ? i.uid : i.otherUid;
-      return `Incompatible with ${n(other)} — both are active.`;
+      return `Does not work together with ${n(other)}. Both are active.`;
     }
     case "orderViolation": {
       const who = viewer && viewer === i.targetUid ? n(i.uid) : n(i.targetUid);
@@ -19,24 +19,24 @@ export function describe(i: Issue, byUid: Map<string, ModInfo>, viewer?: string)
       return `${src}: ${viewer && viewer === i.targetUid ? who : "this mod"} ${verb} ${viewer && viewer === i.targetUid ? "this mod" : who}.${i.comment ? ` (${i.comment})` : ""}`;
     }
     case "versionMismatch":
-      return i.supported.length ? `Lists ${i.supported.join(", ")} — not ${"the current game version"}.` : "Does not list any supported version.";
+      return i.supported.length ? `Made for ${i.supported.join(", ")}, not for this game version.` : "Does not say which game versions it supports.";
     case "cycle":
-      return `Rules form a loop: ${i.chain}. The weakest rule was set aside to keep sorting.`;
+      return `Rules form a loop: ${i.chain}. The weakest rule was set aside so sorting could finish.`;
     case "textureCollision": {
       const winner = n(i.winnerUid);
       const others = i.uids.filter((u) => u !== i.winnerUid).map(n).join(", ");
-      return viewer === i.winnerUid ? `Wins ${i.path} over ${others}.` : `${i.path} is replaced again by ${winner}, which loads later.`;
+      return viewer === i.winnerUid ? `Its ${i.path} wins over ${others}.` : `Its ${i.path} is replaced again by ${winner}, which loads later.`;
     }
     case "misplacedOptimization":
-      return `Should be the last kind of mod; ${i.afterUids.length} other${i.afterUids.length === 1 ? "" : "s"} load after it (${i.afterUids.slice(0, 3).map(n).join(", ")}${i.afterUids.length > 3 ? "…" : ""}).`;
+      return `Should load last, but ${i.afterUids.length} other mod${i.afterUids.length === 1 ? "" : "s"} load after it (${i.afterUids.slice(0, 3).map(n).join(", ")}${i.afterUids.length > 3 ? " and more" : ""}).`;
     case "duplicatePackageId":
-      return `${i.packageId} is installed ${i.uids.length} times; the copy RimWorld picks is ambiguous.`;
+      return `${i.packageId} is installed ${i.uids.length} times. RimWorld picks one copy and ignores the rest.`;
     case "missingPackageId":
-      return "About.xml has no packageId, so rules cannot refer to it.";
+      return "About.xml has no packageId, so no rule can refer to it.";
     case "invalid":
       return i.reason;
     case "aboveOfficial":
-      return `Sits above ${n(i.officialUid)}. RimWorld only resolves a def's parents from mods loaded earlier, so its defs would lose them and loading fails. Move it below all official content.`;
+      return `Sits above ${n(i.officialUid)}. A def can only inherit from mods loaded before it, so this mod would lose its parents and the game would fail to load. Move it below the game and all DLC.`;
     case "ruleIgnored": {
       const src = i.source === "community" ? "community rule" : i.source === "user" ? "your rule" : i.source === "manifest" ? "Manifest.xml rule" : "About.xml rule";
       return `HALO set aside the ${src} "${i.rule === "loadBefore" ? "load before" : "load after"} ${n(i.targetUid)}" because ${i.reason}.`;
@@ -53,16 +53,16 @@ export function headline(issues: Issue[], byUid: Map<string, ModInfo>): { title:
   if (above.length) {
     const first = above[0] as Extract<Issue, { kind: "aboveOfficial" }>;
     const names = above.map((i) => n(i.kind === "aboveOfficial" ? i.uid : "")).slice(0, 3).join(", ");
-    return { title: `${names}${above.length > 3 ? ` and ${above.length - 3} more` : ""} ${above.length === 1 ? "sits" : "sit"} above ${n(first.officialUid)}`, detail: "RimWorld cannot resolve their defs' parents there and will reset the list at launch. Sort with HALO or move them below all official content.", kind: "error" };
+    return { title: `${names}${above.length > 3 ? ` and ${above.length - 3} more` : ""} ${above.length === 1 ? "sits" : "sit"} above ${n(first.officialUid)}`, detail: "Their defs cannot find their parents there, and the game will reset the list when it starts. Sort with HALO, or move them below the game and all DLC.", kind: "error" };
   }
   const cycle = issues.find((i) => i.kind === "cycle");
-  if (cycle && cycle.kind === "cycle") return { title: "Rules contradict each other", detail: cycle.chain, kind: "error" };
+  if (cycle && cycle.kind === "cycle") return { title: "Some rules contradict each other", detail: cycle.chain, kind: "error" };
   const inc = issues.find((i) => i.kind === "incompatible");
-  if (inc && inc.kind === "incompatible") return { title: `${n(inc.uid)} and ${n(inc.otherUid)} are incompatible`, detail: "Both are active. Deactivate one of them before playing.", kind: "error" };
+  if (inc && inc.kind === "incompatible") return { title: `${n(inc.uid)} and ${n(inc.otherUid)} do not work together`, detail: "Both are active. Deactivate one of them before playing.", kind: "error" };
   const dep = issues.find((i) => i.kind === "missingDependency");
-  if (dep && dep.kind === "missingDependency") return { title: `${n(dep.uid)} needs ${dep.displayName ?? dep.dependency}`, detail: dep.installedUid ? "It is installed but inactive — activate it." : "It is not installed.", kind: "error" };
+  if (dep && dep.kind === "missingDependency") return { title: `${n(dep.uid)} needs ${dep.displayName ?? dep.dependency}`, detail: dep.installedUid ? "It is installed but not active. Activate it." : "It is not installed.", kind: "error" };
   const opt = issues.find((i) => i.kind === "misplacedOptimization");
-  if (opt && opt.kind === "misplacedOptimization") return { title: `${n(opt.uid)} should load last`, detail: `${opt.afterUids.length} mod${opt.afterUids.length === 1 ? "" : "s"} load after it. Sort with HALO fixes this.`, kind: "warning" };
+  if (opt && opt.kind === "misplacedOptimization") return { title: `${n(opt.uid)} should load last`, detail: `${opt.afterUids.length} mod${opt.afterUids.length === 1 ? "" : "s"} load after it. Sort with HALO to fix this.`, kind: "warning" };
   const coll = issues.filter((i) => i.kind === "textureCollision");
   if (coll.length) {
     const first = coll[0] as Extract<Issue, { kind: "textureCollision" }>;
@@ -70,7 +70,7 @@ export function headline(issues: Issue[], byUid: Map<string, ModInfo>): { title:
     for (const c of coll) if (c.kind === "textureCollision") winners.set(c.winnerUid, (winners.get(c.winnerUid) ?? 0) + 1);
     const [top, count] = [...winners.entries()].sort((a, b) => b[1] - a[1])[0];
     const losers = [...new Set(coll.flatMap((c) => (c.kind === "textureCollision" ? c.uids.filter((u) => u !== c.winnerUid) : [])))].map(n);
-    return { title: `${n(top)} replaces ${count} texture${count === 1 ? "" : "s"} that ${losers.slice(0, 2).join(" and ")} already replaced`, detail: `${n(top)} loads later, so it wins. Pin it if that's intended.${first ? "" : ""}`, kind: "note" };
+    return { title: `${n(top)} replaces ${count} texture${count === 1 ? "" : "s"} that ${losers.slice(0, 2).join(" and ")} already replaced`, detail: `${n(top)} loads later, so its files win. Pin it if that is what you want.${first ? "" : ""}`, kind: "note" };
   }
   const ov = issues.find((i) => i.kind === "orderViolation");
   if (ov && ov.kind === "orderViolation") return { title: `${n(ov.uid)} is out of order`, detail: describe(ov, byUid), kind: "warning" };

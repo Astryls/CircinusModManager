@@ -38,7 +38,7 @@
   const auditAll = $derived(rows.map((r) => r.uid));
   const fixAll = $derived((audit?.mods ?? []).filter((m) => m.findings.some((f) => f.fixable)).map((m) => [m.uid, []] as [string, string[]]));
   const problem = (f: DdsFinding) =>
-    f.problem.kind === "notMultipleOf4" ? `${f.width}×${f.height} ${f.format}: a side is not a multiple of 4` : f.problem.kind === "truncated" ? `${f.format}: ${formatBytes(f.problem.actual)} of ${formatBytes(f.problem.expected)} — truncated` : `unreadable: ${f.problem.reason}`;
+    f.problem.kind === "notMultipleOf4" ? `${f.width}×${f.height} ${f.format}: a side is not a multiple of 4` : f.problem.kind === "truncated" ? `${f.format}: only ${formatBytes(f.problem.actual)} of ${formatBytes(f.problem.expected)}, the file is cut short` : `cannot be read: ${f.problem.reason}`;
   const phaseLabel = (p: string) => (p === "scanning" ? "Finding textures…" : p === "reverting" ? "Removing DDS files…" : p === "auditing" ? "Reading DDS headers…" : p === "fixing" ? "Rebuilding…" : "");
 
   function update(patch: Partial<NonNullable<typeof s>>) {
@@ -49,14 +49,14 @@
     store.revertTextures([r.uid]);
   }
   const qualities: { id: DdsQuality; label: string; hint: string }[] = [
-    { id: "quick", label: "Quick", hint: "BC7 very fast — fine for a first pass" },
-    { id: "balanced", label: "Balanced", hint: "BC7 fast — the default" },
-    { id: "high", label: "High", hint: "BC7 basic — about half the speed" },
-    { id: "max", label: "Max", hint: "BC7 slow — three times slower again" }
+    { id: "quick", label: "Quick", hint: "Fastest. Fine for a first pass" },
+    { id: "balanced", label: "Balanced", hint: "Fast. The default" },
+    { id: "high", label: "High", hint: "About half the speed of Balanced" },
+    { id: "max", label: "Max", hint: "Slow, about three times slower than High" }
   ];
   const formats: { id: DdsFormat; label: string; hint: string }[] = [
-    { id: "bc7", label: "BC7", hint: "Best quality for alpha; what todds and RimSort use" },
-    { id: "bc3", label: "BC3 (DXT5)", hint: "Older format, coarser alpha, same size" }
+    { id: "bc7", label: "BC7", hint: "Best quality for transparency. What todds and RimSort use" },
+    { id: "bc3", label: "BC3 (DXT5)", hint: "Older format, rougher transparency, same size" }
   ];
 </script>
 
@@ -70,12 +70,12 @@
     <section class="card tile">
       <div class="k">On disk</div>
       <div class="v num">{formatBytes(totals.ddsBytes)}</div>
-      <div class="sub">of DDS beside {formatBytes(totals.pngBytes)} of PNG (kept)</div>
+      <div class="sub">of DDS next to {formatBytes(totals.pngBytes)} of PNG, which is kept</div>
     </section>
     <section class="card tile">
-      <div class="k">In VRAM</div>
-      <div class="v num">{totals.vramBefore ? `${Math.round((1 - totals.ddsBytes / totals.vramBefore) * 100)}%` : "—"}</div>
-      <div class="sub">less than uncompressed: {formatBytes(totals.vramBefore)} → {formatBytes(totals.ddsBytes)}</div>
+      <div class="k">Graphics memory saved</div>
+      <div class="v num">{totals.vramBefore ? `${Math.round((1 - totals.ddsBytes / totals.vramBefore) * 100)} %` : "n/a"}</div>
+      <div class="sub">{formatBytes(totals.vramBefore)} uncompressed becomes {formatBytes(totals.ddsBytes)}</div>
     </section>
     <section class="card tile">
       <div class="k">PNG textures</div>
@@ -86,8 +86,8 @@
 
   <div class="top">
     <section class="card run">
-      <h3>Optimise textures <span class="aside">{t?.running ? t.phase : "idle"}</span></h3>
-      <p class="lead">Writes a <span class="mono">.dds</span> next to every PNG under a mod's <span class="mono">Textures</span> folders — RimWorld loads the DDS instead, ready-compressed for the GPU with mipmaps, and skips decoding the PNG. PNGs are never touched, so removing the DDS files puts everything back. Opaque textures become BC1, textures with alpha {s?.alphaFormat === "bc3" ? "BC3" : "BC7"}. Every file is decoded and checked before it is put in place; a mod that updates gets its files re-checked.</p>
+      <h3>Make DDS textures <span class="aside">{t?.running ? t.phase : "idle"}</span></h3>
+      <p class="lead">Writes a <span class="mono">.dds</span> file next to every PNG in a mod's <span class="mono">Textures</span> folders. RimWorld then loads the DDS, which is already in the format the graphics card wants, and skips decoding the PNG. PNGs are never changed, so removing the DDS files puts everything back. Every file is decoded and checked before it is put in place, and a mod that updates gets its files checked again.</p>
       {#if t?.running}
         <div class="prog">
           <div class="bar"><i style="width: {t.phase === 'converting' || t.phase === 'fixing' ? pct : 3}%"></i></div>
@@ -100,9 +100,9 @@
         </div>
       {:else}
         <div class="acts">
-          <button class="btn primary" disabled={!activeUids.length} onclick={() => store.optimizeTextures(activeUids)}>{@html I.layers}Optimise active mods <span class="cnt num">{activeUids.length}</span></button>
+          <button class="btn primary" disabled={!activeUids.length} onclick={() => store.optimizeTextures(activeUids)}>{@html I.image}Convert active mods <span class="cnt num">{activeUids.length}</span></button>
           <button class="btn" disabled={!allUids.length} onclick={() => store.optimizeTextures(allUids)}>Everything installed <span class="cnt num">{allUids.length}</span></button>
-          <button class="btn" disabled={!convertedUids.length} onclick={() => store.revertTextures(convertedUids)}>Remove all DDS Circinus made</button>
+          <button class="btn" disabled={!convertedUids.length} onclick={() => store.revertTextures(convertedUids)}>Remove every DDS Circinus made</button>
         </div>
         {#if t?.report}
           {@const r = t.report}
@@ -110,17 +110,17 @@
             {#if r.reverted || r.bytesFreed}
               Last run removed <b class="num">{r.reverted}</b> files{r.restored ? ` (${r.restored} originals put back)` : ""}, freeing {formatBytes(r.bytesFreed)}.
             {:else if r.fixed || (t.phase === "idle" && audit && !r.converted && !r.current)}
-              Last run rebuilt <b class="num">{r.fixed ?? 0}</b> file{(r.fixed ?? 0) === 1 ? "" : "s"}{r.failed ? `, ${r.failed} failed` : ""} in {r.seconds}s; the originals are beside them as <span class="mono">.circinus-orig</span>.
+              Last run rebuilt <b class="num">{r.fixed ?? 0}</b> file{(r.fixed ?? 0) === 1 ? "" : "s"}{r.failed ? `, ${r.failed} failed` : ""} in {r.seconds}s. The originals are next to them as <span class="mono">.circinus-orig</span>.
             {:else}
-              Last run: <b class="num">{r.converted}</b> converted{r.failed ? `, ${r.failed} failed` : ""}{r.current ? `, ${r.current} already current` : ""}{r.shipped ? `, ${r.shipped} left alone (author ships a DDS)` : ""} across {r.mods} mods in {r.seconds}s{r.cancelled ? " — stopped early" : ""}. {formatBytes(r.pngBytes)} of PNG → {formatBytes(r.ddsBytes)} of DDS.
+              Last run: <b class="num">{r.converted}</b> converted{r.failed ? `, ${r.failed} failed` : ""}{r.current ? `, ${r.current} already current` : ""}{r.shipped ? `, ${r.shipped} left alone because the author ships a DDS` : ""} across {r.mods} mods in {r.seconds}s{r.cancelled ? ", stopped early" : ""}. {formatBytes(r.pngBytes)} of PNG became {formatBytes(r.ddsBytes)} of DDS.
             {/if}
           </div>
         {/if}
       {/if}
       {#if t?.errors.length}
         <details class="errs">
-          <summary>{t.errors.length} file{t.errors.length === 1 ? "" : "s"} could not be converted (left as PNG)</summary>
-          <div class="errlist">{#each t.errors.slice(0, 200) as [m, rel, msg]}<div><b>{m}</b> <span class="mono">{rel}</span> — {msg}</div>{/each}</div>
+          <summary>{t.errors.length} file{t.errors.length === 1 ? "" : "s"} could not be converted and stay as PNG</summary>
+          <div class="errlist">{#each t.errors.slice(0, 200) as [m, rel, msg]}<div><b>{m}</b> <span class="mono">{rel}</span>: {msg}</div>{/each}</div>
         </details>
       {/if}
     </section>
@@ -128,27 +128,27 @@
     <section class="card opts">
       <h3>Settings</h3>
       <div class="opt">
-        <span class="l">Alpha textures</span>
+        <span class="l">Transparent textures</span>
         <div class="seg">{#each formats as f}<button class:on={s?.alphaFormat === f.id} title={f.hint} onclick={() => update({ alphaFormat: f.id })}>{f.label}</button>{/each}</div>
       </div>
       <div class="opt">
         <span class="l">Quality</span>
         <div class="seg">{#each qualities as q}<button class:on={s?.quality === q.id} title={q.hint} onclick={() => update({ quality: q.id })}>{q.label}</button>{/each}</div>
       </div>
-      <label class="switch"><input type="checkbox" checked={s?.mipmaps ?? true} onchange={(e) => update({ mipmaps: e.currentTarget.checked })} />Generate mipmaps (smooth when zoomed out; recommended)</label>
+      <label class="switch"><input type="checkbox" checked={s?.mipmaps ?? true} onchange={(e) => update({ mipmaps: e.currentTarget.checked })} />Make mipmaps (smoother when zoomed out, recommended)</label>
       <label class="switch"><input type="checkbox" checked={s?.auto ?? false} onchange={(e) => update({ auto: e.currentTarget.checked })} />Convert new and updated mods automatically</label>
       <div class="opt">
         <span class="l">Threads</span>
         <input class="input num" type="number" min="0" max="64" value={s?.threads ?? 0} onchange={(e) => update({ threads: Math.max(0, Math.min(64, Number(e.currentTarget.value) || 0)) })} />
         <span class="hint">0 = all cores but one</span>
       </div>
-      <p class="hint">Changing the format re-converts alpha textures next time; changing quality only affects new work. Opaque textures are BC1 either way. Dimensions that are not multiples of four are resized up, never padded.</p>
+      <p class="hint">Changing the format converts textures with transparency again next time. Changing quality only affects new work. Sides that are not multiples of four are resized up, never padded.</p>
     </section>
   </div>
 
   <section class="card auditc">
-    <h3>DDS files the game will refuse <span class="aside">{audit ? `${audit.files} in ${audit.mods.length} of ${audit.modsChecked} mods · ${audit.seconds}s` : "not checked yet"}</span></h3>
-    <p class="lead">Some mods ship <span class="mono">.dds</span> files that Unity cannot create a texture from — most often a side that is not a multiple of 4, which RimWorld logs as "Failed to create texture because of invalid parameters" and shows as missing art. This reads the header of every DDS Circinus did not write. Fix rebuilds the file from the PNG beside it (or from its own pixels), resized to whole blocks, and keeps the original as <span class="mono">.circinus-orig</span>; Revert puts it back.</p>
+    <h3>DDS files the game cannot load <span class="aside">{audit ? `${audit.files} in ${audit.mods.length} of ${audit.modsChecked} mods · ${audit.seconds}s` : "not checked yet"}</span></h3>
+    <p class="lead">Some mods ship <span class="mono">.dds</span> files the game cannot load, most often because a side is not a multiple of 4. RimWorld logs "Failed to create texture because of invalid parameters" and the art goes missing. This check reads the header of every DDS file Circinus did not write. Fix rebuilds the file from the PNG next to it (or from its own pixels), resized so it loads, and keeps the original as <span class="mono">.circinus-orig</span>. Revert puts the original back.</p>
     <div class="acts">
       <button class="btn primary" disabled={t?.running || !auditActive.length} onclick={() => store.auditTextures(auditActive)}>{@html I.check}Check active mods <span class="cnt num">{auditActive.length}</span></button>
       <button class="btn" disabled={t?.running || !auditAll.length} onclick={() => store.auditTextures(auditAll)}>Everything installed <span class="cnt num">{auditAll.length}</span></button>
@@ -156,7 +156,7 @@
     </div>
     {#if audit}
       {#if !audit.mods.length}
-        <p class="hint">Every DDS file in {audit.modsChecked} mods has a header Unity accepts.</p>
+        <p class="hint">Every DDS file in {audit.modsChecked} mods looks fine.</p>
       {:else}
         <div class="findings">
           {#each audit.mods as m (m.uid)}
@@ -193,11 +193,11 @@
           <span class="nm"><b>{r.name}</b>{#if !r.active}<span class="off">inactive</span>{/if}</span>
           <span class="r num">{r.pngs.toLocaleString()}</span>
           <span class="r num">{r.dds.toLocaleString()}</span>
-          <span class="r num" class:ok={r.converted > 0}>{r.converted ? r.converted.toLocaleString() : "—"}</span>
+          <span class="r num" class:ok={r.converted > 0}>{r.converted ? r.converted.toLocaleString() : "0"}</span>
           <span class="r num">{r.ddsBytes ? formatBytes(r.ddsBytes) : ""}</span>
           <span class="acts2">
-            <button class="ib" title={r.excluded ? "Excluded — click to allow conversion" : "Exclude this mod from conversion"} onclick={() => store.setDdsExcluded(r.uid, !r.excluded)}>{@html r.excluded ? I.close : I.check}</button>
-            <button class="btn sm" disabled={t?.running || r.excluded || !r.pngs} onclick={() => store.optimizeTextures([r.uid])}>Optimise</button>
+            <button class="ib" title={r.excluded ? "Skipped. Click to allow conversion" : "Skip this mod when converting"} onclick={() => store.setDdsExcluded(r.uid, !r.excluded)}>{@html r.excluded ? I.close : I.check}</button>
+            <button class="btn sm" disabled={t?.running || r.excluded || !r.pngs} onclick={() => store.optimizeTextures([r.uid])}>Convert</button>
             <button class="btn sm" disabled={t?.running || !r.converted} onclick={() => revertOne(r)}>Revert</button>
           </span>
         </div>

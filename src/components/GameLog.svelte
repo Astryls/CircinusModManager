@@ -18,7 +18,7 @@
     if (!frame) return "";
     const root = frame.split(/[.+:]/)[0];
     const name = a?.resolved[frame] ?? a?.resolved[root];
-    return name ? `${name} — ${frame}` : frame;
+    return name ? `${name} (${frame})` : frame;
   }
   function owners(list: string[]): string {
     return list.map((o) => a?.resolved[o] ?? o).join(", ");
@@ -56,13 +56,13 @@
   const verdict = $derived.by(() => {
     if (!r) return null;
     if (r.outcome === "crashed") return { kind: "error", title: "RimWorld crashed", sub: r.reset ? "after loading failed and the mod list was reset" : r.crash?.reason ?? "" };
-    if (r.outcome === "loadFailedReset") return { kind: "error", title: "Loading failed — RimWorld reset the mod list", sub: r.gaveUp ? "and then gave up on the second attempt" : "and loaded official content only" };
+    if (r.outcome === "loadFailedReset") return { kind: "error", title: "Loading failed and RimWorld reset the mod list", sub: r.gaveUp ? "then it gave up on the second try" : "then it loaded the game and DLC only" };
     const bad = r.exceptions.reduce((s, e) => s + e.count, 0);
     return { kind: bad || r.missingParents.length ? "warning" : "note", title: "Loaded without a fatal error", sub: `${r.exceptions.length} exception group${r.exceptions.length === 1 ? "" : "s"}, ${r.missingParents.length + r.xmlErrors.length} XML error${r.missingParents.length + r.xmlErrors.length === 1 ? "" : "s"}, ${r.ddsFailures.length} DDS failure${r.ddsFailures.length === 1 ? "" : "s"}` };
   });
   const flags = (m: LogModRef) => {
     const out: { cls: string; text: string; title: string }[] = [];
-    if (m.aboveOfficial) out.push({ cls: "error", text: "above Core", title: "Sits above official content in the current list, so its defs cannot inherit Core's parents" });
+    if (m.aboveOfficial) out.push({ cls: "error", text: "above the game", title: "Sits above the game or a DLC in the current list, so its defs cannot inherit their parents" });
     if (m.crashCulprit) out.push({ cls: "error", text: "in the crash", title: "First mod frame in the native crash stack" });
     if (m.loadFailurePatch) out.push({ cls: "error", text: "in the load failure", title: "Its code or Harmony patch is in the exception that made loading fail" });
     if (m.missingParents) out.push({ cls: "warning", text: `${m.missingParents} missing parent${m.missingParents === 1 ? "" : "s"}`, title: "Defs whose ParentName could not be found" });
@@ -80,13 +80,13 @@
     {#if a}<span class="aside mono">{a.path} · {when(a.modified)} · {formatBytes(a.bytes)}</span>{/if}
   </h3>
   {#if !a}
-    <p class="lead">Read RimWorld's <span class="mono">Player.log</span> to see what the last launch did: whether it loaded, which mods' XML broke, what threw, and what crashed — tied to the mods in your list.</p>
+    <p class="lead">Read RimWorld's <span class="mono">Player.log</span> to see what happened the last time the game ran: whether it loaded, which mods had broken XML, what threw errors, and what crashed. Each finding is tied to a mod in your list.</p>
     <div class="acts">
       <button class="btn primary" disabled={!current?.exists && files.length > 0} onclick={() => store.analyzeGameLog()}>{@html I.terminal}Read Player.log{#if current?.exists}<span class="cnt">{when(current.modified)}</span>{/if}</button>
       {#if previous?.exists}<button class="btn" onclick={() => store.analyzeGameLog(previous.path)}>Previous run <span class="cnt">{when(previous.modified)}</span></button>{/if}
       <button class="btn" onclick={choose}>Choose a log…</button>
     </div>
-    {#if files.length && !current?.exists}<p class="hint">No Player.log at <span class="mono">{current?.path}</span> yet — RimWorld writes it when it runs.</p>{/if}
+    {#if files.length && !current?.exists}<p class="hint">No Player.log at <span class="mono">{current?.path}</span> yet. RimWorld writes it when it runs.</p>{/if}
   {:else if r && verdict}
     <div class="verdict {verdict.kind}">
       <span class="flag {verdict.kind}">{@html sevIcon[verdict.kind as "error" | "warning" | "note"]}</span>
@@ -103,13 +103,13 @@
     <ol class="chain">
       {#if misplaced.length}
         <li class="error">
-          <b>{misplaced.map((m) => m.name).join(", ")} {misplaced.length === 1 ? "sits" : "sit"} above Core in the current list.</b>
-          A def can only inherit from mods loaded above it, so {r.missingParents.length} of {misplaced.length === 1 ? "its" : "their"} defs lost their parents ({[...new Set(r.missingParents.map((p) => p.missingParent).filter(Boolean))].slice(0, 6).join(", ")}{new Set(r.missingParents.map((p) => p.missingParent)).size > 6 ? "…" : ""}) and with them their category, thing class and comps. That is what breaks def generation next. Sort with HALO or move them below the DLCs.
+          <b>{misplaced.map((m) => m.name).join(", ")} {misplaced.length === 1 ? "sits" : "sit"} above the game in the current list.</b>
+          A def can only inherit from mods loaded above it, so {r.missingParents.length} of {misplaced.length === 1 ? "its" : "their"} defs lost their parents ({[...new Set(r.missingParents.map((p) => p.missingParent).filter(Boolean))].slice(0, 6).join(", ")}{new Set(r.missingParents.map((p) => p.missingParent)).size > 6 ? "…" : ""}) and with them their category, thing class and comps. That is what broke the next step. Sort with HALO, or move them below the DLC.
         </li>
       {:else if r.missingParents.length}
         <li class="warning">
           <b>{r.missingParents.length} def{r.missingParents.length === 1 ? "" : "s"} could not find {r.missingParents.length === 1 ? "its" : "their"} parent.</b>
-          Parents named: {[...new Set(r.missingParents.map((p) => p.missingParent).filter(Boolean))].slice(0, 8).join(", ")}. Usually the mod that defines the parent is missing, outdated, or loads below the mod that needs it.
+          Parents named: {[...new Set(r.missingParents.map((p) => p.missingParent).filter(Boolean))].slice(0, 8).join(", ")}. Usually the mod that defines the parent is missing, out of date, or loads below the mod that needs it.
         </li>
       {/if}
       {#if r.loadFailure}
@@ -120,13 +120,13 @@
         </li>
       {/if}
       {#if r.reset}
-        <li class="error"><b>RimWorld reset ModsConfig.xml to official content and tried again</b>{#if r.gaveUp}, then gave up{/if}. Your list on disk is gone; Import can bring it back from a save game or an archived list.</li>
+        <li class="error"><b>RimWorld reset ModsConfig.xml to official content and tried again</b>{#if r.gaveUp}, then gave up{/if}. Your list on disk is gone. Import can bring it back from a save game or a saved list.</li>
       {/if}
       {#if r.crash}
         <li class="error">
           <b>Native crash</b>{#if r.crash.reason}: <span class="mono">{r.crash.reason}</span>{/if}
           {#if r.crash.culpritFrame}<span class="det">first mod frame: {who(r.crash.culpritFrame)}</span>{/if}
-          {#if r.crash.offMainThread}<span class="det">It happened on a worker thread{r.crash.quickstart ? " during a quick-start" : ""} — a texture or graphics call off the main thread. After a reset this is a symptom, not the cause.</span>{/if}
+          {#if r.crash.offMainThread}<span class="det">It happened on a background thread{r.crash.quickstart ? " during a quick start" : ""}, in a texture or graphics call that must run on the main thread. After a reset this is a symptom, not the cause.</span>{/if}
         </li>
       {/if}
       {#if r.prepatcherRestarted}<li class="note">Prepatcher restarted the game{r.prepatcherVanillaLoadSecs ? ` (vanilla load ${Math.round(r.prepatcherVanillaLoadSecs)}s)` : ""}.</li>{/if}
@@ -151,13 +151,13 @@
       {#if parentsByMod.length}
         <details>
           <summary>Missing parents <span class="aside">{r.missingParents.length} defs in {parentsByMod.length} mods</span></summary>
-          <div class="dl">{#each parentsByMod as [mod, e]}<div><b>{mod}</b> — {e.defs} def{e.defs === 1 ? "" : "s"}: <span class="mono">{[...e.names].join(", ")}</span></div>{/each}</div>
+          <div class="dl">{#each parentsByMod as [mod, e]}<div><b>{mod}</b>: {e.defs} def{e.defs === 1 ? "" : "s"}, missing <span class="mono">{[...e.names].join(", ")}</span></div>{/each}</div>
         </details>
       {/if}
       {#if xmlByMod.length}
         <details>
           <summary>Other XML errors <span class="aside">{r.xmlErrors.length}</span></summary>
-          <div class="dl">{#each xmlByMod.slice(0, 80) as [mod, list]}<div><b>{mod}</b> — {list.length}<div class="msgs">{#each list.slice(0, 6) as p}<span class="mono">{p.message}</span>{/each}{#if list.length > 6}<span class="mono">… {list.length - 6} more</span>{/if}</div></div>{/each}</div>
+          <div class="dl">{#each xmlByMod.slice(0, 80) as [mod, list]}<div><b>{mod}</b>: {list.length}<div class="msgs">{#each list.slice(0, 6) as p}<span class="mono">{p.message}</span>{/each}{#if list.length > 6}<span class="mono">… {list.length - 6} more</span>{/if}</div></div>{/each}</div>
         </details>
       {/if}
       {#if r.exceptions.length}
@@ -178,7 +178,7 @@
         <details>
           <summary>DDS textures Unity refused <span class="aside">{r.ddsFailures.length}</span></summary>
           <div class="dl">{#each r.ddsFailures as d}<div><span class="mono">{d.path}</span><div class="det">{d.reason}</div></div>{/each}</div>
-          {#if Object.keys(r.multipleOf4Warnings).length}<p class="hint">"Requires a texture size that is a multiple of 4": {Object.entries(r.multipleOf4Warnings).map(([f, c]) => `${f} ×${c}`).join(", ")}. These files were shipped by their authors that way; Circinus never writes such a file, and the DDS audit can regenerate them from the PNG.</p>{/if}
+          {#if Object.keys(r.multipleOf4Warnings).length}<p class="hint">"Requires a texture size that is a multiple of 4": {Object.entries(r.multipleOf4Warnings).map(([f, c]) => `${f} ×${c}`).join(", ")}. The mod authors shipped these files that way. Circinus never writes such a file, and the DDS check in Textures can rebuild them from the PNG.</p>{/if}
         </details>
       {/if}
       {#if r.texturesNotFound.length}
@@ -199,7 +199,7 @@
           <div>RimWorld <b>{r.gameVersion ?? "?"}</b> · Unity {r.unityVersion ?? "?"}</div>
           <div>{r.gpu ?? "GPU unknown"}{r.vramMb ? ` · ${Math.round(r.vramMb / 1024)} GB VRAM` : ""}</div>
           {#if r.commandLine}<div class="mono">{r.commandLine}</div>{/if}
-          <div>{r.lines.toLocaleString()} lines{r.threadTextureWarnings ? ` · ${r.threadTextureWarnings} off-main-thread texture warnings` : ""}{r.badTextureMaterials ? ` · ${r.badTextureMaterials} bad texture materials` : ""}</div>
+          <div>{r.lines.toLocaleString()} lines{r.threadTextureWarnings ? ` · ${r.threadTextureWarnings} texture calls off the main thread` : ""}{r.badTextureMaterials ? ` · ${r.badTextureMaterials} bad texture materials` : ""}</div>
         </div>
       </details>
     </div>

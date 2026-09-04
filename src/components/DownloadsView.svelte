@@ -42,7 +42,7 @@
           <dl class="paths">
             <dt>Tool</dt><dd><button class="lnk mono" title="Show in your file manager" onclick={() => revealPath(st.exe)}>{st.exe}</button></dd>
             <dt>Console log</dt><dd title={st.consoleLog}><button class="lnk mono" title="Show in your file manager" onclick={() => revealPath(st.consoleLog)}>{st.consoleLogBytes ? `console_log.txt · ${formatBytes(st.consoleLogBytes)}` : "console_log.txt · not written yet"}</button></dd>
-            <dt>Mods folder</dt><dd class="mono">{st.modsDir ?? "not set — choose it in Settings"}</dd>
+            <dt>Mods folder</dt><dd class="mono">{st.modsDir ?? "not set, choose it in Settings"}</dd>
           </dl>
         {/if}
         <div class="ctl">
@@ -51,7 +51,7 @@
           {#if st}<button class="btn sm" onclick={() => revealPath(st.root)}>{@html I.folder}Open folder</button>{/if}
         </div>
       {:else if q?.installing}
-        <div class="row"><span class="spin"></span><span>Installing — SteamCMD downloads itself and updates on first run. The output appears below.</span></div>
+        <div class="row"><span class="spin"></span><span>Installing. SteamCMD downloads itself and updates on first run. The output appears below.</span></div>
       {:else}
         <div class="row"><span class="st warn">{@html I.warn}</span><span>Not installed. Valve's terms mean Circinus can't ship it, so it downloads it once (about 5 MB, then a self-update) into its own data folder. Needed to fetch Workshop mods without the Steam client, re-download broken ones, and pull whole collections.</span></div>
         <button class="btn primary" onclick={() => store.installSteamCmd()}>{@html I.download}Install SteamCMD</button>
@@ -67,7 +67,7 @@
           <span class="v num">{q.throttle.batchSize}<small>/25</small></span>
         </div>
         {#if cooldown > 0}
-          <div class="cool"><span class="flag warning">{@html I.warn}</span>Steam is refusing downloads — cooling down <b class="num">{cooldown}s</b>, then trying a smaller batch.</div>
+          <div class="cool"><span class="flag warning">{@html I.warn}</span>Steam is refusing downloads. Waiting <b class="num">{cooldown}s</b>, then trying a smaller batch.</div>
         {:else if q.throttle.last}
           <div class="last">Last batch: <b class="num">{q.throttle.last.succeeded}</b> ok, <b class="num">{q.throttle.last.failed + q.throttle.last.timedOut}</b> failed in {q.throttle.last.seconds}s{q.throttle.last.stalled ? " · stalled and was restarted" : ""}{q.throttle.last.authFailed ? " · login refused" : ""}</div>
         {:else}
@@ -85,7 +85,7 @@
   <section class="card add">
     <h3>Add downloads</h3>
     <div class="addrow">
-      <input class="input" placeholder="Workshop link, collection link, workshop id — or paste a whole list" bind:value={text} onkeydown={(e) => e.key === "Enter" && add()} />
+      <input class="input" placeholder="Workshop link, collection link, workshop id, or paste a whole list" bind:value={text} onkeydown={(e) => e.key === "Enter" && add()} />
       <button class="btn primary" disabled={!text.trim()} onclick={add}>{@html I.download}Queue</button>
     </div>
     <div class="quick">

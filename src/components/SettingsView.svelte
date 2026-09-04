@@ -25,18 +25,18 @@
     if (p) await updateLaunch({ executable: p, method: "executable" });
   }
   const methods: { id: LaunchMethod; label: string; hint: string }[] = [
-    { id: "auto", label: "Auto", hint: "Steam when the game lives in a Steam library, otherwise the executable" },
-    { id: "steam", label: "Steam", hint: "steam://rungameid/294100 — overlay and Workshop sync as usual" },
-    { id: "executable", label: "Executable", hint: "Start the game directly: GOG, DRM-free, or a copy outside Steam" }
+    { id: "auto", label: "Auto", hint: "Through Steam when the game lives in a Steam library, otherwise from the executable" },
+    { id: "steam", label: "Steam", hint: "Asks Steam to start the game, so the overlay and Workshop updates work as usual" },
+    { id: "executable", label: "Executable", hint: "Starts the game file directly: GOG, DRM-free, or a copy outside Steam" }
   ];
   let appData = $state("");
   api.appDataDir().then((d) => (appData = d)).catch(() => {});
 
   type Key = keyof Locations;
   const fields: { key: Key; label: string; hint: string }[] = [
-    { key: "gameDir", label: "RimWorld folder", hint: "Contains Version.txt and Data/ (on macOS, the RimWorldMac.app bundle)" },
-    { key: "configDir", label: "Config folder", hint: "Contains ModsConfig.xml" },
-    { key: "localModsDir", label: "Local mods folder", hint: "Usually <RimWorld>/Mods; SteamCMD downloads land here" },
+    { key: "gameDir", label: "RimWorld folder", hint: "Has Version.txt and Data in it. On macOS: the RimWorldMac.app bundle" },
+    { key: "configDir", label: "Config folder", hint: "Has ModsConfig.xml in it" },
+    { key: "localModsDir", label: "Local mods folder", hint: "Usually RimWorld/Mods. SteamCMD downloads go here" },
     { key: "workshopDir", label: "Workshop folder", hint: "steamapps/workshop/content/294100" }
   ];
   async function choose(key: Key) {
@@ -63,7 +63,6 @@
 </script>
 
 <main class="settings">
-  <div class="col">
     <section class="card">
       <h3>Where RimWorld lives</h3>
       {#each fields as f}
@@ -77,8 +76,8 @@
         </div>
       {/each}
       <div class="row">
-        <button class="btn" onclick={() => store.rescan(true)}>Re-read every mod</button>
-        <span class="hint">Drops the parse cache. Normal refreshes only re-read folders that changed.</span>
+        <button class="btn" onclick={() => store.rescan(true)}>{@html I.refresh}Read every mod again</button>
+        <span class="hint">Forgets what it knows and reads every folder. A normal Refresh only reads folders that changed.</span>
       </div>
     </section>
 
@@ -87,30 +86,31 @@
       <div class="opt">
         <span class="l">Play starts</span>
         <div class="seg">{#each methods as m}<button class:on={L?.method === m.id} title={m.hint} onclick={() => updateLaunch({ method: m.id })}>{m.label}</button>{/each}</div>
-        {#if L?.method === "auto" && launch}<span class="hint">→ {launch.autoResolvesTo === "steam" ? "Steam" : "the executable"}</span>{/if}
+        {#if L?.method === "auto" && launch}<span class="hint">right now: {launch.autoResolvesTo === "steam" ? "Steam" : "the executable"}</span>{/if}
       </div>
       <div class="loc">
         <div class="lt"><b>Executable</b><span>{L?.executable ? "chosen by you" : "detected from the RimWorld folder"}</span></div>
         <div class="lv">
-          <span class="path mono" class:bad={launch && !launch.executableExists} title={launch?.executable ?? ""}>{launch?.executable ?? "not found — choose it"}</span>
+          <span class="path mono" class:bad={launch && !launch.executableExists} title={launch?.executable ?? ""}>{launch?.executable ?? "not found, choose it"}</span>
           <button class="btn sm" disabled={!inTauri} onclick={chooseExe}>Choose…</button>
           {#if L?.executable}<button class="btn sm" onclick={() => updateLaunch({ executable: null })}>Auto</button>{/if}
         </div>
       </div>
       <div class="loc">
-        <div class="lt"><b>Arguments</b><span>e.g. -popupwindow, -screen-width 1920</span></div>
+        <div class="lt"><b>Extra arguments</b><span>For example -popupwindow or -screen-width 1920</span></div>
         <div class="lv"><input class="input mono" value={L?.args ?? ""} placeholder="none" onchange={(e) => updateLaunch({ args: e.currentTarget.value })} /></div>
       </div>
-      <label class="switch"><input type="checkbox" checked={L?.saveFirst ?? true} onchange={(e) => updateLaunch({ saveFirst: e.currentTarget.checked })} />Save ModsConfig.xml before starting when there are unsaved changes</label>
+      <label class="switch"><input type="checkbox" checked={L?.saveFirst ?? true} onchange={(e) => updateLaunch({ saveFirst: e.currentTarget.checked })} />Save ModsConfig.xml first when there are unsaved changes</label>
       <div class="row">
         <button class="btn primary" onclick={() => store.launch()}>{@html I.play}Play now</button>
-        <span class="hint">Non-standard installs: set the RimWorld folder above (Version.txt and Data/ live in it), then choose the executable here if it isn't picked up.</span>
+        <span class="hint">Game installed somewhere unusual? Set the RimWorld folder above, then choose the executable here if it is not found.</span>
       </div>
     </section>
+  
 
     <section class="card">
-      <h3>SteamCMD <span class="aside">{q?.steamcmdInstalled ? "ready" : q?.installing ? "installing…" : store.downloadsError ? "unavailable" : "not installed"}</span></h3>
-      <p class="hint">Valve's command-line Steam client. Circinus uses it to download Workshop mods without the Steam client (whole collections, missing mods from a list, fresh copies of broken ones) with an anonymous login and a throttle that backs off when Steam pushes back. Valve's terms don't allow shipping it, so Circinus fetches it once into its own data folder.</p>
+      <h3>SteamCMD <span class="aside">{q?.steamcmdInstalled ? "ready" : q?.installing ? "installing" : store.downloadsError ? "not available" : "not installed"}</span></h3>
+      <p class="hint">Valve's command line Steam tool. Circinus uses it to download Workshop mods without the Steam client: whole collections, missing mods from a list, fresh copies of broken ones. It logs in anonymously and slows down when Steam pushes back. Valve does not allow it to be bundled, so Circinus fetches it once into its own data folder.</p>
       {#if store.downloadsError}
         <p class="hint bad">The download manager did not answer: <span class="mono">{store.downloadsError}</span></p>
         <div class="row"><button class="btn" onclick={() => store.refreshDownloads()}>{@html I.refresh}Try again</button></div>
@@ -120,21 +120,21 @@
           <div class="lv"><span class="path mono" title={st?.exe ?? ""}>{st?.exe ?? "…"}</span>{#if st}<button class="btn sm" onclick={() => revealPath(st.root)}>Open</button>{/if}</div>
         </div>
         <div class="loc">
-          <div class="lt"><b>Downloads go to</b><span>then move into your Mods folder</span></div>
-          <div class="lv"><span class="path mono" title={st?.modsDir ?? ""}>{st?.modsDir ?? "no Mods folder — set the RimWorld folder above"}</span></div>
+          <div class="lt"><b>Downloads go to</b><span>they move into your Mods folder when done</span></div>
+          <div class="lv"><span class="path mono" title={st?.modsDir ?? ""}>{st?.modsDir ?? "no Mods folder, set the RimWorld folder first"}</span></div>
         </div>
         <div class="row">
           <button class="btn primary" onclick={() => (store.view = "downloads")}>{@html I.download}Open Downloads</button>
           <button class="btn" disabled={q.running || q.installing} onclick={() => store.testSteamCmd().then(() => (store.view = "downloads"))}>{@html I.terminal}Test SteamCMD</button>
           <button class="btn" disabled={q.running || q.installing} onclick={() => store.installSteamCmd()}>{@html I.refresh}Reinstall</button>
-          <span class="hint">Batch size {q.throttle.batchSize}/25 · {store.queueCounts.queued} queued · {store.queueCounts.failed} failed</span>
+          <span class="hint">Batch size {q.throttle.batchSize} of 25 · {store.queueCounts.queued} queued · {store.queueCounts.failed} failed</span>
         </div>
       {:else if q?.installing}
-        <div class="row"><span class="hint">Installing — SteamCMD downloads itself and updates on first run. Watch the output in Downloads.</span><button class="btn" onclick={() => (store.view = "downloads")}>Open Downloads</button></div>
+        <div class="row"><span class="hint">Installing. SteamCMD downloads itself and updates on first run. Watch the output in Downloads.</span><button class="btn" onclick={() => (store.view = "downloads")}>Open Downloads</button></div>
       {:else}
         <div class="row">
           <button class="btn primary" onclick={() => store.installSteamCmd()}>{@html I.download}Install SteamCMD</button>
-          <span class="hint">About 5 MB, then a self-update. Nothing is sent to Steam beyond an anonymous login.</span>
+          <span class="hint">About 5 MB, then it updates itself. It only logs in to Steam anonymously.</span>
         </div>
       {/if}
     </section>
@@ -148,48 +148,46 @@
         <button class="btn primary" onclick={() => store.updateDatabases()}>Update now</button>
         <label class="switch"><input type="checkbox" checked={s?.updateDatabasesOnStart ?? false} onchange={(e) => store.updateSettings({ updateDatabasesOnStart: e.currentTarget.checked })} />Update when Circinus starts</label>
       </div>
-      <p class="hint">Loaded: {store.snap?.dbLoaded.join(" · ") || "nothing yet — press Update now"}. The RimSort databases carry no licence, so Circinus fetches them on your request and never ships them.</p>
+      <p class="hint">{store.snap?.dbLoaded.length ? `Loaded: ${store.snap.dbLoaded.join(", ")}.` : "Nothing loaded yet. Press Update now."} The RimSort databases have no licence, so Circinus fetches them when you ask and never bundles them.</p>
     </section>
-  </div>
 
-  <div class="col">
     <section class="card">
-      <h3>Circinus weight</h3>
-      <p class="hint">Per-mod frame-time share measured by the <button class="lnk" onclick={() => openUrl("https://circinus.sh")}>Circinus profiler</button>. Median across clean runs; ranked only after 25 runs from 10 installs. Shares dilute on long lists, so compare mods, not totals.</p>
-      <label class="switch"><input type="checkbox" checked={s?.showWeight ?? false} onchange={(e) => store.updateSettings({ showWeight: e.currentTarget.checked })} />Show weight next to each mod</label>
-      <label class="switch"><input type="checkbox" checked={s?.includeLocalRuns ?? true} onchange={(e) => store.updateSettings({ includeLocalRuns: e.currentTarget.checked })} />Include my own runs (Circinus/Runs beside the config folder)</label>
+      <h3>Performance figures</h3>
+      <p class="hint">How much frame time each mod costs, measured by the <button class="lnk" onclick={() => openUrl("https://circinus.sh")}>Circinus profiler</button>. Shown as a share of frame time, the median across clean runs. A mod is ranked after 25 runs from 10 players. Long lists spread the total thin, so compare mods rather than adding them up.</p>
+      <label class="switch"><input type="checkbox" checked={s?.showWeight ?? false} onchange={(e) => store.updateSettings({ showWeight: e.currentTarget.checked })} />Show the figure next to each mod</label>
+      <label class="switch"><input type="checkbox" checked={s?.includeLocalRuns ?? true} onchange={(e) => store.updateSettings({ includeLocalRuns: e.currentTarget.checked })} />Include my own runs (the Circinus/Runs folder next to the config folder)</label>
       <div class="row">
-        <button class="btn" onclick={() => store.refreshWeights()}>Fetch from circinus.sh</button>
-        <span class="hint">{Object.keys(store.snap?.weights ?? {}).length} mods with figures · fetched {fetchedAgo}</span>
+        <button class="btn" onclick={() => store.refreshWeights()}>{@html I.gauge}Fetch from circinus.sh</button>
+        <span class="hint">{Object.keys(store.snap?.weights ?? {}).length.toLocaleString()} mods have figures · fetched {fetchedAgo}</span>
       </div>
     </section>
 
     <section class="card">
-      <h3>Ordering</h3>
-      <label class="switch"><input type="checkbox" checked={s?.alphabeticalWithinPhase ?? false} onchange={(e) => store.updateSettings({ alphabeticalWithinPhase: e.currentTarget.checked })} />Alphabetical within a phase (otherwise HALO keeps your arrangement where rules allow)</label>
-      <p class="hint">Rules are hard constraints. Your rules beat community rules, which beat a mod's own About.xml. A loop between equal rules is reported and the weakest link set aside rather than refusing to sort.</p>
+      <h3>Sorting</h3>
+      <label class="switch"><input type="checkbox" checked={s?.alphabeticalWithinPhase ?? false} onchange={(e) => store.updateSettings({ alphabeticalWithinPhase: e.currentTarget.checked })} />Sort alphabetically inside each phase</label>
+      <p class="hint">Off: HALO keeps your own arrangement wherever the rules allow. Rules always win. Your rules beat community rules, which beat a mod's own About.xml. When rules form a loop, the weakest one is set aside and reported.</p>
     </section>
 
     <section class="card">
       <h3>About</h3>
-      <p class="hint">Circinus Mod Manager 0.1 · MIT licence · data folder <span class="mono">{appData || "…"}</span></p>
-      <p class="hint">Reads: About.xml (with ByVersion blocks), Fluffy's Manifest.xml, LoadFolders.xml, PublishedFileId.txt. Writes: ModsConfig.xml (keeps a .bak), your rules in dbs/userRules.json.</p>
-      <button class="btn" onclick={() => (store.view = "order")}>Back to load order</button>
+      <p class="hint">Circinus Mod Manager 0.1 · MIT licence · data folder <span class="mono">{appData || "loading"}</span></p>
+      <p class="hint">Reads About.xml (with ByVersion blocks), Fluffy's Manifest.xml, LoadFolders.xml and PublishedFileId.txt. Writes ModsConfig.xml (and keeps a .bak) and your rules in dbs/userRules.json.</p>
     </section>
-  </div>
 </main>
 
 <style>
-  .settings { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 0 14px 14px; min-height: 0; overflow: auto; align-content: start; }
-  .col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-  .loc { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+  /* Multi-column layout balances the cards so both (or all three) columns end at about the same height. */
+  .settings { columns: 2; column-gap: 14px; padding: 0 14px 14px; min-height: 0; overflow: auto; }
+  .settings > .card { break-inside: avoid; margin-bottom: 12px; display: block; }
+  @media (min-width: 1600px) { .settings { columns: 3; } }
+  .loc { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
   .loc:last-of-type { border-bottom: 0; }
   .lt b { display: block; font-size: 13px; }
   .lt span { display: block; font-size: 11.5px; color: var(--text-3); }
   .lv { display: flex; gap: 6px; align-items: center; min-width: 0; }
   .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); background: var(--surface-2); padding: 5px 8px; border-radius: 7px; user-select: text; }
   .row { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
-  .hint { color: var(--text-3); font-size: 12.5px; line-height: 1.5; margin: 8px 0 0; }
+  .hint { color: var(--text-3); font-size: 12.5px; line-height: 1.45; margin: 6px 0 0; }
   .dbrow { display: flex; align-items: center; gap: 12px; padding: 6px 0; font-weight: 500; }
   .dbt { display: flex; flex-direction: column; min-width: 0; }
   .dbt b { font-size: 13px; font-weight: 600; }
@@ -205,5 +203,5 @@
   .seg button { padding: 5px 10px; border-radius: 7px; font-size: 12.5px; font-weight: 600; color: var(--text-2); }
   .seg button.on { background: var(--surface-4); color: var(--text); }
   .lv .input { height: 30px; font-size: 12.5px; flex: 1; }
-  @media (max-width: 980px) { .settings { grid-template-columns: 1fr; } }
+  @media (max-width: 980px) { .settings { columns: 1; } }
 </style>

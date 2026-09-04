@@ -131,7 +131,7 @@ impl Downloads {
                             names.insert(*id, item.title.clone());
                             accepted.push(*id);
                         }
-                        Some(item) if item.file_type == 2 => skipped.push((*id, "that is a collection — import it from the Import dialog".into())),
+                        Some(item) if item.file_type == 2 => skipped.push((*id, "that is a collection. Import it from the Import dialog".into())),
                         Some(item) if item.result != 1 => skipped.push((*id, "Steam says this item is hidden or removed".into())),
                         Some(_) => skipped.push((*id, "not a RimWorld workshop item".into())),
                         None => accepted.push(*id),
@@ -245,7 +245,7 @@ impl Downloads {
                 return Err("SteamCMD is still being installed".into());
             }
             if s.running {
-                return Err("A download batch is running — try again when it finishes".into());
+                return Err("A download batch is running. Try again when it finishes".into());
             }
             if !s.steamcmd_installed {
                 return Err("SteamCMD is not installed yet".into());
@@ -363,7 +363,7 @@ impl Downloads {
                     let (cool, size) = (s.throttle.remaining_cooldown(now()), s.throttle.batch_size);
                     let msg = match cool {
                         0 => format!("Batch done in {} s; next batch size {}", outcome.seconds, size),
-                        c => format!("Steam is refusing downloads — cooling down for {c} s, batch size now {size}"),
+                        c => format!("Steam is refusing downloads. Waiting {c} s, batch size now {size}"),
                     };
                     s.push_log(&msg);
                 }

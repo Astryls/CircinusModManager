@@ -22,8 +22,8 @@
       out.push({
         id: "reset",
         kind: "error",
-        title: `RimWorld reset your mod list to Core and DLC — it failed to load last time`,
-        detail: from ? `Your list of ${from.count} mods from ${when} is archived (${from.label}) and can go straight back` : `${reset.previousCount} mods were in the list before; no archived copy is available — import one from a file`,
+        title: `RimWorld reset your mod list to the game and DLC only, because it failed to load last time`,
+        detail: from ? `Your list of ${from.count} mods from ${when} is saved (${from.label}) and can go straight back` : `${reset.previousCount} mods were in the list before. No saved copy is available, so import one from a file.`,
         action: from ? "Restore and save" : "Import a list",
         run: () => (from ? store.restoreList(from.path, true) : (store.showImport = true)),
         dismissable: true
@@ -44,7 +44,7 @@
         dismissable: true
       });
     } else if (l) {
-      out.push({ id: "changes", kind: "warning", title: "Your active list was changed outside Circinus", detail: `${listBits} in ModsConfig.xml — by RimWorld or another manager`, action: "Show", run: () => (store.showChanges = true), dismissable: true });
+      out.push({ id: "changes", kind: "warning", title: "Your active list was changed outside Circinus", detail: `${listBits} in ModsConfig.xml, by RimWorld or another manager`, action: "Show", run: () => (store.showChanges = true), dismissable: true });
     }
     if (missing.length) {
       const ready = store.steamcmdReady;
@@ -78,7 +78,7 @@
 {#each notices as n, i (n.id)}
   <div class="banner {n.kind}" class:compact={i > 0} role="status">
     <span class="ico">{@html n.kind === "error" ? I.error : n.kind === "warning" ? I.warn : n.id === "changes" ? I.bell : I.note}</span>
-    <span class="t">{n.title}{#if i === 0}<small>{n.detail}</small>{:else}<span class="inline">— {n.detail}</span>{/if}</span>
+    <span class="t">{n.title}{#if i === 0}<small>{n.detail}</small>{:else}<span class="inline">{n.detail}</span>{/if}</span>
     <button onclick={n.run}>{n.action}</button>
     {#if n.dismissable}<button class="x" aria-label="Dismiss" title="Hide until next launch" onclick={() => store.dismiss(n.id)}>{@html I.close}</button>{/if}
   </div>

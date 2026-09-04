@@ -140,7 +140,7 @@ class Store {
       const w = m && this.weightOf(m);
       if (w?.share != null) { share += w.share; measured++; }
     }
-    return { errors, warnings, collisions: collisions.length, collidingMods, orderRules, violations, satisfied, pct: orderRules ? Math.round((satisfied / orderRules) * 100) : 100, share, measured };
+    return { errors, warnings, collisions: collisions.length, collidingMods, orderRules, violations, satisfied, pct: orderRules ? Math.floor((satisfied / orderRules) * 1000) / 10 : 100, share, measured };
   });
 
   // ---- filtering ----
@@ -202,7 +202,7 @@ class Store {
     if (snap) {
       this.snap = snap;
       queueMicrotask(() => log("first render scheduled"));
-      if (snap.changes.length) setTimeout(() => this.say(`${snap.changes.length} mod${snap.changes.length === 1 ? "" : "s"} changed since you last opened Circinus — ${this.changeSummary}`, "warn"), 400);
+      if (snap.changes.length) setTimeout(() => this.say(`${snap.changes.length} mod${snap.changes.length === 1 ? "" : "s"} changed since you last opened Circinus: ${this.changeSummary}`, "warn"), 400);
       else if (snap.listChange) setTimeout(() => this.say("Your active list was changed outside Circinus", "warn"), 400);
     }
     this.refreshDownloads();
@@ -392,7 +392,7 @@ class Store {
     return this.run("Computing HALO order…", async () => {
       this.preview = await api.halo(false);
       const n = this.preview.moves.length;
-      this.say(n ? `HALO would move ${n} mod${n === 1 ? "" : "s"} — review the arrows, then apply` : "Already in HALO order");
+      this.say(n ? `HALO would move ${n} mod${n === 1 ? "" : "s"}. Check the arrows, then apply` : "Already in HALO order");
     });
   }
   haloApply() {
@@ -473,7 +473,7 @@ class Store {
     return this.run("Testing SteamCMD…", async () => {
       const t = await api.steamcmdTest();
       this.downloads = await api.downloadsState();
-      this.say(t.loggedIn ? `SteamCMD works: anonymous login in ${t.seconds}s` : t.stalled ? "SteamCMD produced no output — see the log" : `SteamCMD finished without confirming a login (exit ${t.exitCode ?? "?"})`, t.loggedIn ? "ok" : "err");
+      this.say(t.loggedIn ? `SteamCMD works: anonymous login in ${t.seconds}s` : t.stalled ? "SteamCMD produced no output. See the log" : `SteamCMD finished without confirming a login (exit ${t.exitCode ?? "?"})`, t.loggedIn ? "ok" : "err");
       return t;
     });
   }
@@ -509,7 +509,7 @@ class Store {
       this.gameLog = a;
       await this.refreshGameLogFiles();
       const r = a.report;
-      this.say(r.outcome === "crashed" ? "The game crashed — see what led up to it" : r.outcome === "loadFailedReset" ? "RimWorld failed to load and reset the list" : `Read ${r.lines.toLocaleString()} lines · ${r.exceptions.length} exception group${r.exceptions.length === 1 ? "" : "s"}`, r.outcome === "ok" ? "ok" : "warn");
+      this.say(r.outcome === "crashed" ? "The game crashed. See what led up to it" : r.outcome === "loadFailedReset" ? "RimWorld failed to load and reset the list" : `Read ${r.lines.toLocaleString()} lines · ${r.exceptions.length} exception group${r.exceptions.length === 1 ? "" : "s"}`, r.outcome === "ok" ? "ok" : "warn");
       return a;
     });
   }

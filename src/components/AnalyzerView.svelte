@@ -9,16 +9,16 @@
   const groups = $derived.by(() => {
     const order: Issue["kind"][] = ["aboveOfficial", "cycle", "incompatible", "missingDependency", "misplacedOptimization", "orderViolation", "versionMismatch", "duplicatePackageId", "missingPackageId", "invalid", "ruleIgnored", "textureCollision"];
     const titles: Record<Issue["kind"], string> = {
-      aboveOfficial: "Above Core or a DLC — the game will reset the list",
+      aboveOfficial: "Above the game or a DLC, so the game will reset the list",
       cycle: "Rules that contradict each other",
-      incompatible: "Incompatible mods both active",
+      incompatible: "Mods that do not work together, both active",
       missingDependency: "Missing dependencies",
-      misplacedOptimization: "Optimization mods not at the end",
+      misplacedOptimization: "Performance mods not at the end",
       orderViolation: "Load order rules not met",
-      versionMismatch: "Not built for this game version",
+      versionMismatch: "Not made for this game version",
       duplicatePackageId: "Installed more than once",
       missingPackageId: "No packageId",
-      invalid: "Folders that are not usable mods",
+      invalid: "Folders that are not working mods",
       ruleIgnored: "Rules HALO set aside",
       textureCollision: "Textures replaced by more than one mod"
     };
@@ -45,7 +45,7 @@
 <main class="center">
   <GameLog />
   {#if !groups.length}
-    <section class="card"><h3>Analyzer</h3><p class="lead">Nothing needs attention. Rules, versions, dependencies and texture overrides all check out.</p></section>
+    <section class="card"><h3>Analyzer</h3><p class="lead">Nothing needs attention. Rules, versions, dependencies and texture packs all check out.</p></section>
   {/if}
   {#each groups as g}
     <section class="card">
@@ -61,7 +61,7 @@
         {#each g.items.slice(0, 200) as i}
           <button class="it" onclick={() => go(i)}>
             <span class="flag {severityOf(i)}">{@html sevIcon[severityOf(i)]}</span>
-            <span class="txt"><b>{i.kind === "cycle" ? "Loop" : n(primaryUid(i) ?? "")}</b> — {describe(i, store.byUid)}</span>
+            <span class="txt"><b>{i.kind === "cycle" ? "Loop" : n(primaryUid(i) ?? "")}</b>: {describe(i, store.byUid)}</span>
           </button>
         {/each}
       {/if}
@@ -69,7 +69,7 @@
   {/each}
   <section class="card">
     <h3>Coming next</h3>
-    <p class="lead">Def and patch flattening: every XML def merged in load order with inheritance resolved, so you can see which mod's value wins; and a .NET sidecar that lists Harmony patch targets per assembly, so "who patches what" is visible next to the load order.</p>
+    <p class="lead">A view of every XML def merged in load order, so you can see which mod's value wins. And a list of what each mod's code patches, so "who patches what" sits next to the load order.</p>
   </section>
 </main>
 

@@ -249,7 +249,7 @@ impl SteamCmd {
                 }
                 _ = tokio::time::sleep(stall) => {
                     stalled = true;
-                    on_line("No output from SteamCMD for too long — stopping it");
+                    on_line("No output from SteamCMD for too long. Stopping it");
                     let _ = child.kill().await;
                     break;
                 }

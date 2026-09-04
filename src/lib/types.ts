@@ -481,13 +481,13 @@ export interface ModFiles {
 }
 
 export const PHASES: { id: Phase; name: string; color: string; note: string }[] = [
-  { id: "prepatch", name: "Prepatch & Harmony", color: "violet", note: "Runs before everything" },
-  { id: "core", name: "Core & DLC", color: "blue", note: "Pinned by RimWorld" },
-  { id: "framework", name: "Frameworks", color: "teal", note: "Libraries other mods need" },
+  { id: "prepatch", name: "Before the game", color: "violet", note: "Harmony, Prepatcher, loaders" },
+  { id: "core", name: "Game and DLC", color: "blue", note: "RimWorld's own content" },
+  { id: "framework", name: "Libraries", color: "teal", note: "Other mods build on these" },
   { id: "content", name: "Content", color: "green", note: "Things, pawns, biomes, rules" },
-  { id: "patch", name: "Patches & compat", color: "pink", note: "Must see their targets first" },
-  { id: "texture", name: "Texture overrides", color: "amber", note: "Last of a kind wins" },
-  { id: "optimization", name: "Optimization", color: "coral", note: "Always last" }
+  { id: "patch", name: "Patches", color: "pink", note: "Load after the mods they change" },
+  { id: "texture", name: "Texture packs", color: "amber", note: "The later pack wins" },
+  { id: "optimization", name: "Performance", color: "coral", note: "Load last to see everything" }
 ];
 
 export const SOURCE_LABEL: Record<Source, string> = { ludeon: "Ludeon", workshop: "Steam", local: "Local", steamcmd: "SteamCMD", git: "Git" };

@@ -66,10 +66,10 @@
       </div>
       <dl class="kv">
         <dt>Source</dt><dd>{SOURCE_LABEL[m.source]}{#if m.publishedFileId} · <button class="lnk mono" onclick={() => openUrl(workshopUrl()!)}>{m.publishedFileId}</button>{/if}</dd>
-        <dt>Versions</dt><dd>{m.supportedVersions.join(" · ") || "—"}{m.modVersion ? ` · v${m.modVersion}` : ""}</dd>
+        <dt>Game versions</dt><dd>{m.supportedVersions.join(", ") || "none listed"}{m.modVersion ? ` · mod v${m.modVersion}` : ""}</dd>
         <dt>Size</dt><dd class="num">{formatBytes(m.contents.sizeBytes)}</dd>
-        <dt>Contains</dt><dd>{[m.contents.assemblies ? `${m.contents.assemblies} assembl${m.contents.assemblies === 1 ? "y" : "ies"}` : null, m.contents.defs ? `${m.contents.defs} def files` : null, m.contents.patches ? `${m.contents.patches} patches` : null, m.contents.textures + m.contents.dds ? `${(m.contents.textures + m.contents.dds).toLocaleString()} textures` : null].filter(Boolean).join(", ") || "nothing loadable"}</dd>
-        <dt>On disk</dt><dd>{m.modified ? new Date(m.modified * 1000).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—"}</dd>
+        <dt>Contains</dt><dd>{[m.contents.assemblies ? `${m.contents.assemblies} code file${m.contents.assemblies === 1 ? "" : "s"}` : null, m.contents.defs ? `${m.contents.defs} def files` : null, m.contents.patches ? `${m.contents.patches} patch files` : null, m.contents.textures + m.contents.dds ? `${(m.contents.textures + m.contents.dds).toLocaleString()} textures` : null].filter(Boolean).join(", ") || "nothing the game loads"}</dd>
+        <dt>Last changed</dt><dd>{m.modified ? new Date(m.modified * 1000).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "unknown"}</dd>
         {#if m.contents.textures + m.contents.dds > 0 || dds}
           <dt>Textures</dt>
           <dd>{m.contents.textures.toLocaleString()} PNG{m.contents.dds ? ` · ${m.contents.dds.toLocaleString()} DDS` : ""}{dds ? ` (${dds.count.toLocaleString()} by Circinus, ${formatBytes(dds.ddsBytes)})` : ""}{ddsExcluded ? " · excluded" : ""}</dd>
@@ -88,7 +88,7 @@
       <section class="card changed">
         <h3>{change ? "Changed since last launch" : "Newer on the Workshop"}</h3>
         {#if change}<div class="chg"><span class="flag chg">{@html change.kind === "added" ? I.plus : I.change}</span><span>{describeChange(change)}</span></div>{/if}
-        {#if update}<div class="chg"><span class="flag note">{@html I.up}</span><span>Workshop version from {new Date(update.remoteUpdated * 1000).toLocaleDateString()}; yours is from {new Date(update.localModified * 1000).toLocaleDateString()}{update.source === "workshop" ? " — Steam updates it when the game next starts" : ""}</span></div>{/if}
+        {#if update}<div class="chg"><span class="flag note">{@html I.up}</span><span>Workshop version from {new Date(update.remoteUpdated * 1000).toLocaleDateString()}; yours is from {new Date(update.localModified * 1000).toLocaleDateString()}.{update.source === "workshop" ? " Steam updates it when the game next starts." : ""}</span></div>{/if}
         <div class="acts two">
           {#if m.publishedFileId}<button class="btn" onclick={() => openUrl(`https://steamcommunity.com/sharedfiles/filedetails/changelog/${m.publishedFileId}`)}>Changelog</button>{/if}
           {#if canRedownload}<button class="btn" onclick={() => store.queueIds([m.publishedFileId!])}>{@html I.download}Re-download</button>{/if}
@@ -97,11 +97,12 @@
     {/if}
 
     <section class="card halo">
-      <h3>HALO placement</h3>
+      <h3>Where HALO puts it</h3>
       {#if placement}
-        <div class="ph2"><span class="dot c-{store.phaseInfo(placement.phase).color}"></span>{store.phaseInfo(placement.phase).name}<span class="why">{placement.reason}</span></div>
+        <div class="ph2"><span class="dot c-{store.phaseInfo(placement.phase).color}"></span><b>{store.phaseInfo(placement.phase).name}</b></div>
+        <div class="why">{placement.reason}</div>
       {:else}
-        <div class="ph2">Not active</div>
+        <div class="ph2">Not in the active list</div>
       {/if}
       <div class="move">
         {#if delta}
@@ -109,40 +110,41 @@
         {:else if store.preview}
           Already where HALO would put it.
         {:else}
-          Preview with <b>Sort with HALO</b> to see where it would go.
+          Press <b>Sort with HALO</b> to see where it would go.
         {/if}
       </div>
       <div class="ctl">
-        <label class="switch"><input type="checkbox" checked={store.pinned.has(m.uid)} onchange={() => store.togglePin(m.uid)} />Pin position</label>
-        <select class="sel" value={store.snap?.user.phaseOverrides[m.uid] ?? ""} onchange={(e) => store.setPhaseOverride(m.uid, ((e.currentTarget as HTMLSelectElement).value || null) as Phase | null)} title="Force a phase for this mod">
-          <option value="">Phase: automatic</option>
-          {#each PHASES as p}<option value={p.id}>Phase: {p.name}</option>{/each}
-        </select>
+        <label class="switch"><input type="checkbox" checked={store.pinned.has(m.uid)} onchange={() => store.togglePin(m.uid)} />Keep its position when sorting</label>
+        <label class="fld"><span>Sort it as</span>
+          <select class="sel" value={store.snap?.user.phaseOverrides[m.uid] ?? ""} onchange={(e) => store.setPhaseOverride(m.uid, ((e.currentTarget as HTMLSelectElement).value || null) as Phase | null)}>
+            <option value="">Let HALO decide</option>
+            {#each PHASES as p}<option value={p.id}>{p.name}</option>{/each}
+          </select>
+        </label>
       </div>
     </section>
 
     {#if store.showWeight}
       <section class="card">
-        <h3>Circinus weight <span class="aside">{weight?.origin === "local" ? "your runs" : weight ? "circinus.sh" : ""}</span></h3>
+        <h3>Performance cost <span class="aside">{weight?.origin === "local" ? "from your runs" : weight ? "from circinus.sh" : ""}</span></h3>
         {#if weight}
-          <div class="wrow">
-            <span class="band {weight.band}">{BAND_LABEL[weight.band]}</span>
-            <b class="num">{weight.share != null ? `${weight.share.toFixed(2)}%` : "—"}</b>
-            <span class="wcap">of measured frame time{weight.ranked ? "" : " · not ranked yet"}</span>
-          </div>
-          <div class="wmeta">
-            {#if weight.measured != null}{weight.measured} measured runs{/if}{#if weight.installs != null} · {weight.installs} installs{/if}{#if weight.withheld} · figures withheld by author{/if}
-            {#if weight.netLow != null && weight.netHigh != null}<br />Net {weight.netLow.toFixed(2)}–{weight.netHigh.toFixed(2)}% (skip-capable patches){/if}
-          </div>
+          <dl class="kv wkv">
+            <dt>Share of frame time</dt><dd class="num"><b>{weight.share != null ? `${weight.share.toFixed(2)} %` : "under 0.01 %"}</b> <span class="band {weight.band}">{BAND_LABEL[weight.band]}</span></dd>
+            {#if weight.measured != null}<dt>Runs measured</dt><dd class="num">{weight.measured.toLocaleString()}</dd>{/if}
+            {#if weight.installs != null}<dt>Players measured</dt><dd class="num">{weight.installs.toLocaleString()}</dd>{/if}
+            <dt>Ranked</dt><dd>{weight.ranked ? "yes" : "not yet: needs 25 runs from 10 players"}</dd>
+            {#if weight.netLow != null && weight.netHigh != null}<dt>Net cost</dt><dd class="num">{weight.netLow.toFixed(2)} to {weight.netHigh.toFixed(2)} %</dd>{/if}
+            {#if weight.withheld}<dt>Note</dt><dd>The author asked for figures to be hidden</dd>{/if}
+          </dl>
           <button class="lnk" onclick={() => openUrl(`https://circinus.sh/mods/${encodeURIComponent(m.packageId)}`)}>Open on circinus.sh</button>
         {:else}
-          <div class="wmeta">No figures for this mod yet. Circinus ranks a mod after 25 clean runs from 10 installs.</div>
+          <div class="wmeta">No figures for this mod yet. A mod gets a figure after 25 clean runs from 10 players.</div>
         {/if}
       </section>
     {/if}
 
     <section class="card">
-      <h3>Rules <span class="aside">{rules.filter((r) => ruleLine(r).ok).length} of {rules.length} met</span></h3>
+      <h3>Load order rules <span class="aside">{rules.filter((r) => ruleLine(r).ok).length} of {rules.length} met</span></h3>
       {#if rules.length}
         <div class="rules">
           {#each rules as r}
@@ -156,7 +158,7 @@
           {/each}
         </div>
       {:else}
-        <div class="muted">No ordering rules mention this mod.</div>
+        <div class="muted">No load order rules mention this mod.</div>
       {/if}
     </section>
 
@@ -166,38 +168,40 @@
         {#each issues.slice(0, 12) as i}
           <div class="it"><span class="flag {severityOf(i)}">{@html sevIcon[severityOf(i)]}</span><span>{describe(i, store.byUid, m.uid)}</span></div>
         {/each}
-        {#if issues.length > 12}<div class="muted">and {issues.length - 12} more in the Analyzer</div>{/if}
+        {#if issues.length > 12}<div class="muted">and {issues.length - 12} more, see the Analyzer</div>{/if}
       </section>
     {/if}
 
     <section class="card">
       <h3>Actions</h3>
       <div class="acts">
-        <button class="btn" onclick={() => revealPath(m.path)}>Open folder</button>
+        <button class="btn" onclick={() => revealPath(m.path)}>{@html I.folder}Open folder</button>
         <button class="btn" disabled={!workshopUrl()} onclick={() => openUrl(workshopUrl()!)}>Workshop page</button>
-        {#if canRedownload && !change && !update}<button class="btn" title="Fetch a fresh copy from the Workshop with SteamCMD (into your Mods folder)" onclick={() => store.queueIds([m.publishedFileId!])}>{@html I.download}Re-download</button>{/if}
-        {#if m.contents.textures > 0 && !ddsExcluded && m.source !== "ludeon"}<button class="btn" title="Convert this mod's PNG textures to DDS" disabled={store.tex?.running} onclick={() => store.optimizeTextures([m.uid])}>{@html I.image}Optimise textures</button>{/if}
+        {#if canRedownload && !change && !update}<button class="btn" title="Fetch a fresh copy from the Workshop with SteamCMD, into your Mods folder" onclick={() => store.queueIds([m.publishedFileId!])}>{@html I.download}Re-download</button>{/if}
+        {#if m.contents.textures > 0 && !ddsExcluded && m.source !== "ludeon"}<button class="btn" title="Convert this mod's PNG textures to DDS" disabled={store.tex?.running} onclick={() => store.optimizeTextures([m.uid])}>{@html I.image}Make DDS</button>{/if}
         {#if dds}<button class="btn" title="Delete the DDS files Circinus made for this mod" disabled={store.tex?.running} onclick={() => store.revertTextures([m.uid])}>Remove DDS</button>{/if}
         {#if isActive}
           <button class="btn" onclick={() => store.moveSelected(-1)}>Move up</button>
           <button class="btn" onclick={() => store.moveSelected(1)}>Move down</button>
           <button class="btn danger" onclick={() => store.deactivate(store.selected.length > 1 ? store.selected : [m.uid])}>Deactivate</button>
         {:else}
-          <button class="btn primary" onclick={() => store.activate(store.selected.length > 1 ? store.selected : [m.uid])}>Activate</button>
+          <button class="btn primary" onclick={() => store.activate(store.selected.length > 1 ? store.selected : [m.uid])}>{@html I.plus}Activate</button>
         {/if}
       </div>
       {#if description}<details class="desc"><summary>Description</summary><p>{description.replace(/<[^>]+>/g, "")}</p></details>{/if}
     </section>
   {:else}
     <section class="card empty-card">
-      <div class="label">Inspector</div>
-      <p>Select a mod to see its rules, HALO placement and what needs attention. Shift-click selects a range, Ctrl-click adds to the selection. Alt ↑/↓ moves the selection, Delete deactivates it.</p>
+      <div class="label">Mod details</div>
+      <p>Click a mod to see its rules, where HALO puts it, and what needs attention.</p>
+      <p>Shift-click selects a range. Ctrl-click adds to the selection. Alt + Up or Down moves the selection. Delete deactivates it.</p>
     </section>
   {/if}
 </aside>
 
 <style>
-  .inspector { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: auto; padding-bottom: 4px; }
+  .inspector { display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; overflow: hidden auto; }
+  .inspector .card { flex: none; min-width: 0; }
   .hero { display: flex; gap: 12px; align-items: flex-start; }
   .thumb { width: 64px; height: 64px; border-radius: 12px; flex: none; object-fit: cover; box-shadow: var(--shadow-card); }
   .mono-tile { display: grid; place-items: center; font: 800 18px var(--font); color: #fff; letter-spacing: -0.02em; background: linear-gradient(150deg, var(--c1), var(--c2)); }
@@ -206,26 +210,27 @@
   .hero .t span { display: block; color: var(--text-2); font-size: 12.5px; margin-top: 2px; }
   .hero .t .mono { margin-top: 6px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 12.5px; margin: 12px 0 0; }
-  .kv dt { color: var(--text-3); margin: 0; } .kv dd { margin: 0; text-align: right; color: var(--text-2); min-width: 0; }
+  .kv dt { color: var(--text-3); margin: 0; white-space: nowrap; } .kv dd { margin: 0; text-align: right; color: var(--text-2); min-width: 0; overflow-wrap: anywhere; }
+  .wkv { margin-top: 0; }
+  .wkv b { color: var(--text); font-size: 14px; }
+  .wkv .band { margin-left: 6px; vertical-align: middle; }
   .lnk { color: var(--blue); font-weight: 600; }
   .lnk:hover { text-decoration: underline; }
-  .sel { height: 26px; border: 0; border-radius: 7px; background: var(--surface-3); color: var(--text); font-size: 12px; padding: 0 8px; max-width: 100%; }
-  .halo .ph2 { display: flex; align-items: center; gap: 8px; font-weight: 600; flex-wrap: wrap; }
-  .halo .why { color: var(--text-3); font-weight: 500; font-size: 12px; margin-left: auto; text-align: right; }
+  .sel { height: 28px; border: 0; border-radius: 7px; background: var(--surface-3); color: var(--text); font-size: 12.5px; padding: 0 8px; max-width: 100%; min-width: 0; width: 100%; }
+  .kv .sel { width: auto; max-width: 180px; }
+  .halo .ph2 { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .halo .why { color: var(--text-3); font-size: 12px; margin-top: 4px; line-height: 1.4; }
   .halo .move { margin-top: 10px; background: var(--surface-2); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; color: var(--text-2); }
   .halo .move b { color: var(--text); }
-  .ctl { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 10px; font-size: 12.5px; }
-  .ctl .switch { font-size: 12.5px; white-space: nowrap; }
-  .wrow { display: flex; align-items: baseline; gap: 10px; }
-  .wrow b { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
-  .wcap { font-size: 12px; color: var(--text-3); }
+  .ctl { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; font-size: 12.5px; }
+  .ctl .switch { font-size: 12.5px; }
+  .ctl .fld { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; font-size: 12.5px; color: var(--text-2); font-weight: 600; }
   .wmeta { font-size: 12px; color: var(--text-3); margin: 8px 0; line-height: 1.5; }
   .rules { display: flex; flex-direction: column; gap: 2px; }
   .rule { display: grid; grid-template-columns: 16px 44px minmax(0, 1fr) auto; gap: 7px; align-items: center; height: 30px; padding: 0 6px; border-radius: 8px; font-size: 12.5px; }
   .rule:hover { background: var(--surface-2); }
-  .st { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; }
-  .st :global(svg) { width: 9px; height: 9px; }
-  .st.ok { background: var(--green-soft); color: var(--green); } .st.bad { background: var(--red-soft); color: var(--red); }
+  .st { width: 16px; height: 16px; display: grid; place-items: center; }
+  .st :global(svg) { width: 15px; height: 15px; }
   .ty { font: 600 10.5px var(--mono); color: var(--text-3); text-transform: uppercase; }
   .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .srcb { font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; padding: 2px 6px; border-radius: 5px; background: var(--surface-3); color: var(--text-3); }

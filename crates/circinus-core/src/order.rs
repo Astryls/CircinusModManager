@@ -71,40 +71,40 @@ pub fn classify(m: &ModInfo, ctx: &Context, dependents: usize, texture_collides:
     let id = m.package_id.as_str();
     let c = &m.contents;
     if is_official(m) {
-        return Placement { uid, phase: Phase::Core, reason: "Official content, pinned by RimWorld".into() };
+        return Placement { uid, phase: Phase::Core, reason: "The game itself".into() };
     }
     if PREPATCH_IDS.contains(&id) {
-        return Placement { uid, phase: Phase::Prepatch, reason: "Patches the game before other mods load".into() };
+        return Placement { uid, phase: Phase::Prepatch, reason: "Changes the game before other mods load".into() };
     }
     if top {
-        return Placement { uid, phase: Phase::Prepatch, reason: "Declares it loads before official content and ships no Defs".into() };
+        return Placement { uid, phase: Phase::Prepatch, reason: "Asks to load before the game and has no Defs, so that is safe".into() };
     }
     if ctx.rules.iter().any(|r| r.kind == RuleKind::LoadTop && r.subject == id) {
-        return Placement { uid, phase: Phase::Framework, reason: "Rule: load at the top".into() };
+        return Placement { uid, phase: Phase::Framework, reason: "A rule says: load near the top".into() };
     }
     if ctx.rules.iter().any(|r| r.kind == RuleKind::LoadBottom && r.subject == id) {
-        return Placement { uid, phase: Phase::Optimization, reason: "Rule: load at the bottom".into() };
+        return Placement { uid, phase: Phase::Optimization, reason: "A rule says: load near the bottom".into() };
     }
     if OPTIMIZATION_IDS.contains(&id) || (c.assemblies > 0 && c.defs == 0 && name_matches(&m.name, &["performance", "optimiz", "optimis", "rocketman", "fps boost"])) {
-        return Placement { uid, phase: Phase::Optimization, reason: "Optimizes other mods, so it must see them all".into() };
+        return Placement { uid, phase: Phase::Optimization, reason: "Speeds up other mods, so it has to load after them".into() };
     }
     if FRAMEWORK_IDS.contains(&id) {
-        return Placement { uid, phase: Phase::Framework, reason: "Known framework".into() };
+        return Placement { uid, phase: Phase::Framework, reason: "A library many mods use".into() };
     }
     if c.assemblies > 0 && dependents >= 3 {
-        return Placement { uid, phase: Phase::Framework, reason: format!("{dependents} active mods depend on it") };
+        return Placement { uid, phase: Phase::Framework, reason: format!("{dependents} active mods need it") };
     }
     if c.assemblies > 0 && name_matches(&m.name, &["framework", "library", " lib", "api"]) && !name_matches(&m.name, &["patch"]) {
-        return Placement { uid, phase: Phase::Framework, reason: "Named like a framework and ships code".into() };
+        return Placement { uid, phase: Phase::Framework, reason: "Named like a library and has code".into() };
     }
     if m.kind == ModKind::Textures || (c.textures + c.dds > 0 && c.assemblies == 0 && c.defs == 0 && (texture_collides || name_matches(&m.name, &["retexture", "texture", "textures"]))) {
-        return Placement { uid, phase: Phase::Texture, reason: if texture_collides { "Replaces textures other mods also provide".into() } else { "Textures only".into() } };
+        return Placement { uid, phase: Phase::Texture, reason: if texture_collides { "Replaces textures that other mods also replace".into() } else { "Only textures".into() } };
     }
     if c.patches > 0 && c.defs == 0 && c.assemblies == 0 {
-        return Placement { uid, phase: Phase::Patch, reason: "XML patches only; must see its targets first".into() };
+        return Placement { uid, phase: Phase::Patch, reason: "Only patches, so it loads after what it changes".into() };
     }
     if name_matches(&m.name, &["patch", "compat"]) && (c.assemblies == 0 || m.rules.dependencies.len() >= 2) {
-        return Placement { uid, phase: Phase::Patch, reason: "Compatibility patch".into() };
+        return Placement { uid, phase: Phase::Patch, reason: "A patch that joins two mods".into() };
     }
     Placement { uid, phase: Phase::Content, reason: "Adds content".into() }
 }
@@ -115,8 +115,8 @@ struct Edge {
     rule: Rule,
 }
 
-const OFFICIAL_ORDER: &str = "Official content loads in release order";
-const AFTER_OFFICIAL: &str = "Loads after official content: RimWorld resolves a def's ParentName only against mods above it";
+const OFFICIAL_ORDER: &str = "The game and its DLC load in release order";
+const AFTER_OFFICIAL: &str = "Loads after the game and its DLC: a def can only inherit from mods above it";
 
 fn is_official(m: &ModInfo) -> bool {
     m.source == Source::Ludeon || official_rank(&m.package_id).is_some()
@@ -278,7 +278,7 @@ fn build_graph(order: &[&ModInfo], ctx: &Context) -> (DiGraph<usize, Rule>, Vec<
                     let earlier = order[g[loser.0]].uid.clone();
                     let later = order[g[loser.1]].uid.clone();
                     let (uid, target_uid) = if lost.kind == RuleKind::LoadBefore { (earlier, later) } else { (later, earlier) };
-                    issues.push(Issue::RuleIgnored { uid, target_uid, rule: lost.kind, source: lost.source, reason: "it ships Defs, and RimWorld cannot resolve their parents above official content".into() });
+                    issues.push(Issue::RuleIgnored { uid, target_uid, rule: lost.kind, source: lost.source, reason: "it has Defs, and their parents cannot be found above the game's own content".into() });
                 }
             }
         }

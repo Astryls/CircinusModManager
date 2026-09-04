@@ -221,13 +221,13 @@ impl Phase {
     ];
     pub fn label(self) -> &'static str {
         match self {
-            Phase::Core => "Core & DLC",
-            Phase::Prepatch => "Prepatch & Harmony",
-            Phase::Framework => "Frameworks",
+            Phase::Core => "Game and DLC",
+            Phase::Prepatch => "Before the game",
+            Phase::Framework => "Libraries",
             Phase::Content => "Content",
-            Phase::Patch => "Patches & compat",
-            Phase::Texture => "Texture overrides",
-            Phase::Optimization => "Optimization",
+            Phase::Patch => "Patches",
+            Phase::Texture => "Texture packs",
+            Phase::Optimization => "Performance",
         }
     }
 }

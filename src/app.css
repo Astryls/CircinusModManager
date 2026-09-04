@@ -56,11 +56,12 @@ a { color: var(--blue); text-decoration: none; }
 .btn.save { color: var(--amber); }
 .btn.save i { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); }
 .btn.sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
-.btn svg { width: 15px; height: 15px; }
+.btn svg { width: 16px; height: 16px; flex: none; }
 .pill { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--text-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
 .pill .dot { width: 6px; height: 6px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { height: 26px; padding: 0 10px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--text-2); font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.chip svg { width: 14px; height: 14px; flex: none; }
 .chip:hover { background: var(--surface-3); color: var(--text); }
 .chip.on { background: var(--amber-soft); color: var(--amber); }
 .chip.on.err { background: var(--red-soft); color: var(--red); }
@@ -70,12 +71,9 @@ a { color: var(--blue); text-decoration: none; }
 .seg button .num { color: var(--text-3); font-size: 12px; }
 .seg button.on { background: var(--surface-3); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
 .seg button.on .num { color: var(--text-2); }
-.flag { width: 18px; height: 18px; border-radius: 6px; display: inline-grid; place-items: center; flex: none; }
-.flag svg { width: 11px; height: 11px; }
-.flag.warning { background: var(--amber-soft); color: var(--amber); }
-.flag.error { background: var(--red-soft); color: var(--red); }
-.flag.note { background: var(--blue-soft); color: #8fb8ff; }
-.flag.pin { color: var(--text-2); background: var(--surface-4); }
+.flag { width: 18px; height: 18px; display: inline-grid; place-items: center; flex: none; }
+.flag svg { width: 16px; height: 16px; }
+.flag.pin { color: var(--text-2); }
 .src { width: 22px; height: 22px; border-radius: 6px; display: inline-grid; place-items: center; font: 700 10.5px var(--mono); color: var(--text-2); background: var(--surface-3); flex: none; }
 .src.workshop { color: #8fb8ff; background: var(--blue-soft); }
 .src.ludeon { color: var(--text); background: var(--surface-4); }

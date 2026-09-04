@@ -40,11 +40,11 @@ const SEED: Seed[] = [
   ["RIMMSqol", "Razuhl", "razuhl.rimmsqol", "1084452457", "workshop", "content", "qol", ["1.5", "1.6"], 3.2e6, "cs"],
   ["Camera+", "Brrainz", "brrainz.cameraplus", "867467808", "workshop", "content", "visual", ["1.5", "1.6"], 0.4e6, "cs"],
   ["Dubs Mint Menus", "Dubwise", "dubwise.dubsmintmenus", "1446523594", "workshop", "content", "qol", ["1.5", "1.6"], 1.7e6, "cs"],
-  ["Alpha Animals — CE Patch", "Community", "community.alphaanimals.ce", "2979912040", "workshop", "patch", "qol", ["1.5", "1.6"], 0.2e6, "xml"],
+  ["Alpha Animals - CE Patch", "Community", "community.alphaanimals.ce", "2979912040", "workshop", "patch", "qol", ["1.5", "1.6"], 0.2e6, "xml"],
   ["Bad Hygiene × VFE Patch", "Community", "community.dbh.vfe", "2814471152", "workshop", "patch", "qol", ["1.6"], 0.1e6, "xml"],
-  ["Hospitality — Casino Patch", "Community", "community.hospitality.casino", "2881264430", "git", "patch", "qol", ["1.5"], 0.1e6, "xml"],
+  ["Hospitality - Casino Patch", "Community", "community.hospitality.casino", "2881264430", "git", "patch", "qol", ["1.5"], 0.1e6, "xml"],
   ["Vanilla Textures Expanded", "Oskar Potocki", "vanillaexpanded.vtexe", "2032492919", "workshop", "texture", "visual", ["1.5", "1.6"], 168e6, "tex"],
-  ["Vanilla Textures Expanded — Variations", "Oskar Potocki", "vanillaexpanded.vtexe.variations", "2035869776", "workshop", "texture", "visual", ["1.5", "1.6"], 41e6, "tex"],
+  ["Vanilla Textures Expanded - Variations", "Oskar Potocki", "vanillaexpanded.vtexe.variations", "2035869776", "workshop", "texture", "visual", ["1.5", "1.6"], 41e6, "tex"],
   ["Retro Wall Textures", "Nyx", "nyx.retrowalls", "3187722041", "workshop", "texture", "visual", ["1.5", "1.6"], 6e6, "tex"],
   ["Pawn Textures Redux", "Kaeri", "kaeri.pawntexturesredux", "2760111925", "workshop", "texture", "visual", ["1.4", "1.5"], 88e6, "tex"],
   ["Performance Fish", "bs", "bs.performance", "3105420219", "workshop", "optimization", "performance", ["1.5", "1.6"], 2.4e6, "cs"],
@@ -73,7 +73,7 @@ function mod(s: Seed): ModInfo {
     packageId: pkg,
     name,
     authors: author.split(",").map((a) => a.trim()),
-    description: `${name} — example description. Real descriptions come from About.xml.`,
+    description: `${name}: example description. Real descriptions come from About.xml.`,
     supportedVersions: ver,
     publishedFileId: pfid ? Number(pfid) : undefined,
     source: src,
@@ -130,7 +130,7 @@ let settings: Settings = {
 const rules: Rule[] = [
   { kind: "loadAfter", subject: "voult.betterpawncontrol", target: "oskarpotocki.vanillafactionsexpanded.core", source: "community", comment: "BPC patches VEF work tabs" },
   { kind: "loadBefore", subject: "voult.betterpawncontrol", target: "krkr.rocketman", source: "community" },
-  { kind: "loadAfter", subject: "voult.betterpawncontrol", target: "dubwise.dubsbadhygiene", source: "user", comment: "my own — BPC bathing policy" },
+  { kind: "loadAfter", subject: "voult.betterpawncontrol", target: "dubwise.dubsbadhygiene", source: "user", comment: "my own: BPC bathing policy" },
   { kind: "incompatible", subject: "bs.performance", target: "razuhl.rimmsqol", source: "about" },
   { kind: "loadBottom", subject: "krkr.rocketman", source: "community", comment: "RocketMan must load last" },
   ...mods.filter((m) => m.source !== "ludeon").map((m): Rule => ({ kind: "loadAfter", subject: m.packageId, target: "brrainz.harmony", source: "about" }))
@@ -149,7 +149,7 @@ const weights: Record<string, Weight> = Object.fromEntries(
 );
 
 function placements(order: string[]): Placement[] {
-  const reason: Record<Phase, string> = { core: "Official content, pinned by RimWorld", prepatch: "Patches the game before other mods load", framework: "Known framework", content: "Adds content", patch: "XML patches only; must see its targets first", texture: "Textures only", optimization: "Optimizes other mods, so it must see them all" };
+  const reason: Record<Phase, string> = { core: "The game itself", prepatch: "Changes the game before other mods load", framework: "A library many mods use", content: "Adds content", patch: "Only patches, so it loads after what it changes", texture: "Only textures", optimization: "Speeds up other mods, so it has to load after them" };
   return order.map((uid) => {
     const phase = user.phaseOverrides[uid] ?? user.groups.find((g) => g.id === user.modGroups[uid])?.phase ?? phaseOfSeed[uid] ?? "content";
     return { uid, phase, reason: user.phaseOverrides[uid] ? "Set by you" : reason[phase] };

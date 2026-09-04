@@ -6,7 +6,7 @@
 
   const groups = $derived.by(() => {
     const order: { kind: ChangeKind; title: string; hint: string }[] = [
-      { kind: "updated", title: "Updated", hint: "Newer files than last time — Workshop updates Steam applied, new versions, edited folders" },
+      { kind: "updated", title: "Updated", hint: "Newer files than last time: Workshop updates from Steam, new versions, edited folders" },
       { kind: "added", title: "New", hint: "Folders that were not there before" },
       { kind: "removed", title: "Removed", hint: "Folders that are gone; mods still in your list show as missing" }
     ];
