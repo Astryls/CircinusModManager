@@ -7,6 +7,7 @@
 pub mod about;
 pub mod cache;
 pub mod changes;
+pub mod dds;
 pub mod game;
 pub mod import;
 pub mod model;

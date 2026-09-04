@@ -14,6 +14,7 @@
     { id: "order", label: "Load order", icon: I.list, count: () => store.active.length },
     { id: "library", label: "Library", icon: I.library, count: () => store.mods.length },
     { id: "downloads", label: "Downloads", icon: I.download, count: () => store.queueCounts.queued || (store.downloads && !store.downloads.steamcmdInstalled && !store.downloads.installing ? "set up" : ""), att: true },
+    { id: "textures", label: "Textures", icon: I.image, count: () => (store.tex?.running ? (store.tex.phase === "converting" && store.tex.progress.total ? `${Math.round((store.tex.progress.done / store.tex.progress.total) * 100)}%` : "…") : store.ddsTotals.mods || ""), att: false },
     { id: "analyzer", label: "Analyzer", icon: I.layers, count: () => store.stats.errors + store.stats.warnings, att: true },
     { id: "settings", label: "Settings", icon: I.sliders }
   ];

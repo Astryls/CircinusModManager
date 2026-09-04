@@ -1,7 +1,7 @@
 // Browser-only stand-in for the Rust backend: lets `npm run dev` show the UI with example data.
 // Nothing here ships in the Tauri build path (api.ts only imports it outside Tauri).
 
-import type { Issue, ModChange, ModInfo, Phase, Placement, QueueState, Rule, Snapshot, SortResult, Source, UserData, Weight, Settings } from "./types";
+import type { Issue, ModChange, ModInfo, Phase, Placement, QueueState, Rule, Snapshot, SortResult, Source, TexState, UserData, Weight, Settings } from "./types";
 import { PHASES } from "./types";
 
 type Seed = [name: string, author: string, pkg: string, pfid: string | null, src: Source, phase: Phase, group: string, ver: string[], size: number, flags?: string];
@@ -102,7 +102,8 @@ let user: UserData = {
   pinned: [],
   phaseOverrides: {},
   notes: {},
-  muted: []
+  muted: [],
+  ddsExcluded: []
 };
 
 let settings: Settings = {
@@ -116,7 +117,8 @@ let settings: Settings = {
   showWeight: true,
   includeLocalRuns: true,
   alphabeticalWithinPhase: false,
-  updateDatabasesOnStart: false
+  updateDatabasesOnStart: false,
+  dds: { alphaFormat: "bc7", quality: "balanced", mipmaps: true, threads: 0, auto: false }
 };
 
 const rules: Rule[] = [
@@ -191,9 +193,20 @@ function snapshot(): Snapshot {
     updatesCheckedAt: 1_757_000_000,
     changes: acknowledged ? [] : changes(),
     listChange: acknowledged ? null : { added: ["voult.betterpawncontrol"], removed: ["some.missing.mod"], reordered: false },
-    changesSince: 1_756_900_000
+    changesSince: 1_756_900_000,
+    dds: ddsIndex
   };
 }
+
+/** Mock manifest: a few mods already converted. */
+let ddsIndex: Record<string, Snapshot["dds"][string]> = Object.fromEntries(
+  ["oskarpotocki.vanillafactionsexpanded.core", "vanillaexpanded.vtexe", "ceteam.combatextended"].map((pkg, i) => {
+    const m = mods.find((x) => x.packageId === pkg)!;
+    const n = Math.max(1, Math.round(m.contents.textures * 0.9));
+    return [m.uid, { count: n, ddsBytes: n * 42_000 + i, pngBytes: n * 60_000, vramBefore: n * 350_000, newest: 1_756_800_000 }];
+  })
+);
+let tex: TexState = { running: false, phase: "idle", progress: { total: 0, done: 0, converted: 0, failed: 0, pngBytes: 0, ddsBytes: 0, current: "" }, startedAt: 0, finishedAt: 0, errors: [], report: null };
 
 let acknowledged = false;
 function changes(): ModChange[] {
@@ -330,6 +343,28 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
     case "acknowledge_changes":
       acknowledged = true;
       return snapshot() as T;
+    case "dds_state":
+      return structuredClone(tex) as T;
+    case "dds_overview":
+      return mods.filter((m) => m.source !== "ludeon" && m.contents.textures + m.contents.dds > 0).map((m) => ({ uid: m.uid, name: m.name, active: active.includes(m.uid), pngs: m.contents.textures, dds: m.contents.dds + (ddsIndex[m.uid]?.count ?? 0), converted: ddsIndex[m.uid]?.count ?? 0, ddsBytes: ddsIndex[m.uid]?.ddsBytes ?? 0, pngBytes: ddsIndex[m.uid]?.pngBytes ?? 0, excluded: user.ddsExcluded.includes(m.uid) })).sort((a, b) => b.pngs - a.pngs) as T;
+    case "dds_start": {
+      // Simulate a short job: mark the mods converted after a moment.
+      const uids = A.uids as string[];
+      const total = uids.reduce((n, u) => n + (mods.find((m) => m.uid === u)?.contents.textures ?? 0), 0);
+      tex = { ...tex, running: true, phase: "converting", startedAt: Math.floor(Date.now() / 1000), progress: { total, done: Math.floor(total / 3), converted: Math.floor(total / 3), failed: 0, pngBytes: total * 20_000, ddsBytes: total * 14_000, current: "Textures/Things/Building/Wall_Atlas.png" }, errors: [] };
+      setTimeout(() => {
+        for (const u of uids) { const m = mods.find((x) => x.uid === u); if (m) ddsIndex[u] = { count: m.contents.textures, ddsBytes: m.contents.textures * 42_000, pngBytes: m.contents.textures * 60_000, vramBefore: m.contents.textures * 350_000, newest: Math.floor(Date.now() / 1000) }; }
+        tex = { ...tex, running: false, phase: "idle", finishedAt: Math.floor(Date.now() / 1000), report: { mods: uids.length, converted: total, failed: 0, current: 0, shipped: 2, pngBytes: total * 60_000, ddsBytes: total * 42_000, seconds: 3, cancelled: false, reverted: 0, bytesFreed: 0 } };
+      }, 1500);
+      return undefined as T;
+    }
+    case "dds_cancel":
+      return undefined as T;
+    case "dds_revert": {
+      let n = 0, b = 0;
+      for (const u of A.uids as string[]) { if (ddsIndex[u]) { n += ddsIndex[u].count; b += ddsIndex[u].ddsBytes; delete ddsIndex[u]; } }
+      return { mods: (A.uids as string[]).length, converted: 0, failed: 0, current: 0, shipped: 0, pngBytes: 0, ddsBytes: 0, seconds: 1, cancelled: false, reverted: n, bytesFreed: b } as T;
+    }
     case "import_collection":
       return { ids: [2009463077, 818773962, 999], installed: [[2009463077, uidOf("brrainz.harmony")], [818773962, uidOf("unlimitedhugs.hugslib")]], missing: [999], names: { "2009463077": "Harmony", "818773962": "HugsLib", "999": "Some Missing Mod" } } as T;
     case "import_rentry":

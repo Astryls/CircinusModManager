@@ -113,6 +113,20 @@ export interface DbSource {
   enabled: boolean;
 }
 
+export type DdsFormat = "bc1" | "bc3" | "bc7";
+export type DdsQuality = "quick" | "balanced" | "high" | "max";
+
+export interface DdsSettings {
+  /** Format for textures with alpha; opaque ones are always BC1. */
+  alphaFormat: DdsFormat;
+  quality: DdsQuality;
+  mipmaps: boolean;
+  /** 0 = all cores but one. */
+  threads: number;
+  /** Convert new and updated mods on their own. */
+  auto: boolean;
+}
+
 export interface Settings {
   locations: Locations;
   dbSources: DbSource[];
@@ -120,6 +134,7 @@ export interface Settings {
   includeLocalRuns: boolean;
   alphabeticalWithinPhase: boolean;
   updateDatabasesOnStart: boolean;
+  dds: DdsSettings;
 }
 
 export interface Group {
@@ -136,6 +151,8 @@ export interface UserData {
   phaseOverrides: Record<string, Phase>;
   notes: Record<string, string>;
   muted: string[];
+  /** Mods whose textures must not be converted. */
+  ddsExcluded: string[];
 }
 
 export interface Weight {
@@ -182,6 +199,64 @@ export interface Snapshot {
   listChange: ListChange | null;
   /** Unix seconds of the baseline the changes are measured from (0 = first run). */
   changesSince: number;
+  /** uid → what Circinus has converted for it. */
+  dds: Record<string, DdsSummary>;
+}
+
+export interface DdsSummary {
+  count: number;
+  ddsBytes: number;
+  pngBytes: number;
+  /** Bytes the GPU would hold for these textures uncompressed (RGBA8 with mips). */
+  vramBefore: number;
+  newest: number;
+}
+
+// ---- textures ----
+export interface DdsProgress {
+  total: number;
+  done: number;
+  converted: number;
+  failed: number;
+  pngBytes: number;
+  ddsBytes: number;
+  current: string;
+}
+
+export interface DdsReport {
+  mods: number;
+  converted: number;
+  failed: number;
+  current: number;
+  shipped: number;
+  pngBytes: number;
+  ddsBytes: number;
+  seconds: number;
+  cancelled: boolean;
+  reverted: number;
+  bytesFreed: number;
+}
+
+export interface TexState {
+  running: boolean;
+  phase: "idle" | "scanning" | "converting" | "reverting";
+  progress: DdsProgress;
+  startedAt: number;
+  finishedAt: number;
+  errors: [string, string, string][];
+  report: DdsReport | null;
+}
+
+export interface ModTextures {
+  uid: string;
+  name: string;
+  active: boolean;
+  pngs: number;
+  dds: number;
+  converted: number;
+  ddsBytes: number;
+  pngBytes: number;
+  excluded: boolean;
 }
 
 export type ChangeKind = "added" | "removed" | "updated";

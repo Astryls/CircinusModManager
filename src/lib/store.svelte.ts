@@ -2,10 +2,10 @@
 // indexes for fast lookups, and the actions the components call.
 
 import { api, listen } from "./api";
-import type { CollectionPreview, Group, ImportPreview, Issue, ModChange, ModInfo, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamCmdStatus, UserData, Weight } from "./types";
+import type { CollectionPreview, Group, ImportPreview, Issue, ModChange, ModInfo, ModTextures, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamCmdStatus, TexState, UserData, Weight } from "./types";
 import { PHASES, primaryUid, severityOf } from "./types";
 
-export type View = "order" | "library" | "downloads" | "analyzer" | "settings";
+export type View = "order" | "library" | "downloads" | "textures" | "analyzer" | "settings";
 export type Tab = "active" | "inactive" | "all";
 export type ShowOnly = "warning" | "error" | "note" | null;
 
@@ -39,6 +39,9 @@ class Store {
   /** Why the download manager could not be reached, when it could not. */
   downloadsError = $state<string | null>(null);
   steamcmd = $state<SteamCmdStatus | null>(null);
+  /** Texture optimisation job state (from `dds-progress`). */
+  tex = $state<TexState | null>(null);
+  texOverview = $state<ModTextures[]>([]);
   /** Notices closed for this session (they come back next launch if still true). */
   dismissed = $state<string[]>([]);
   /** uid → the list should scroll to it on the next render. */
@@ -90,6 +93,12 @@ class Store {
     return [c.updated ? `${c.updated} updated` : "", c.added ? `${c.added} new` : "", c.removed ? `${c.removed} removed` : ""].filter(Boolean).join(", ");
   });
   steamcmdReady = $derived(this.downloads?.steamcmdInstalled ?? false);
+  ddsOf = (uid: string) => this.snap?.dds?.[uid];
+  ddsTotals = $derived.by(() => {
+    let mods = 0, files = 0, ddsBytes = 0, pngBytes = 0, vramBefore = 0;
+    for (const s of Object.values(this.snap?.dds ?? {})) { mods++; files += s.count; ddsBytes += s.ddsBytes; pngBytes += s.pngBytes; vramBefore += s.vramBefore; }
+    return { mods, files, ddsBytes, pngBytes, vramBefore };
+  });
   queueCounts = $derived.by(() => {
     const items = this.downloads?.items ?? [];
     return { queued: items.filter((i) => i.status === "queued" || i.status === "downloading").length, failed: items.filter((i) => i.status === "failed").length, done: items.filter((i) => i.status === "done").length };
@@ -166,6 +175,7 @@ class Store {
       await listen("state-changed", () => this.refresh());
       await listen<string>("scan-error", (e) => this.say(e, "err"));
       await listen<QueueState>("download-progress", (q) => (this.downloads = q));
+      await listen<TexState>("dds-progress", (t) => this.onTex(t));
       log("event listeners ready");
     } catch (e) {
       log(`event listeners failed: ${e}`);
@@ -191,6 +201,50 @@ class Store {
       else if (snap.listChange) setTimeout(() => this.say("Your active list was changed outside Circinus", "warn"), 400);
     }
     this.refreshDownloads();
+    this.refreshTextures();
+  }
+
+  private onTex(t: TexState) {
+    const was = this.tex;
+    this.tex = t;
+    if (was?.running && !t.running && t.report) {
+      const r = t.report;
+      if (r.reverted || r.bytesFreed) this.say(`Removed ${r.reverted} DDS file${r.reverted === 1 ? "" : "s"} (${(r.bytesFreed / 1e6).toFixed(0)} MB)`);
+      else this.say(r.cancelled ? `Stopped after ${r.converted} textures` : `${r.converted} texture${r.converted === 1 ? "" : "s"} converted${r.failed ? `, ${r.failed} failed` : ""}${r.current ? `, ${r.current} already current` : ""} in ${r.seconds}s`, r.failed ? "warn" : "ok");
+      this.refreshTextures();
+    }
+  }
+  refreshTextures() {
+    api.ddsState().then((t) => (this.tex = t)).catch(() => {});
+    api.ddsOverview().then((o) => (this.texOverview = o)).catch((e) => console.warn("[circinus] dds_overview failed", e));
+  }
+  optimizeTextures(uids: string[]) {
+    if (!uids.length) return;
+    return this.run("Starting texture job…", async () => {
+      await api.ddsStart(uids);
+      this.tex = await api.ddsState();
+      this.view = "textures";
+    });
+  }
+  revertTextures(uids: string[]) {
+    if (!uids.length) return;
+    return this.run("Removing DDS files…", async () => {
+      await api.ddsRevert(uids);
+      await this.refresh();
+      this.refreshTextures();
+    });
+  }
+  cancelTextures() {
+    api.ddsCancel().catch(() => {});
+  }
+  setDdsExcluded(uid: string, excluded: boolean) {
+    return this.updateUser((u) => {
+      const set = new Set(u.ddsExcluded ?? []);
+      if (excluded) set.add(uid);
+      else set.delete(uid);
+      u.ddsExcluded = [...set];
+      return u;
+    });
   }
 
   refreshDownloads() {
@@ -205,6 +259,7 @@ class Store {
     const before = new Set(this.changes.map((c) => `${c.kind}:${c.uid}`));
     const beforeList = JSON.stringify(this.listChange);
     this.snap = await api.snapshot();
+    api.ddsOverview().then((o) => (this.texOverview = o)).catch(() => {});
     if (!had) return;
     // Something changed while we were open (Steam updated a mod, the game rewrote the list).
     const fresh = this.changes.filter((c) => !before.has(`${c.kind}:${c.uid}`));

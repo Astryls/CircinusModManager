@@ -16,6 +16,8 @@
   const change = $derived(m ? store.changeByUid.get(m.uid) : undefined);
   const update = $derived(m ? store.updateByUid.get(m.uid) : undefined);
   const canRedownload = $derived(!!m?.publishedFileId && m.source !== "ludeon");
+  const dds = $derived(m ? store.ddsOf(m.uid) : undefined);
+  const ddsExcluded = $derived(m ? (store.snap?.user.ddsExcluded ?? []).includes(m.uid) : false);
   const GRAD: Record<Phase, [string, string]> = { core: ["#3b5fd9", "#1b2a5c"], prepatch: ["#8b6cf0", "#3a2a6e"], framework: ["#2ea59e", "#12403e"], content: ["#3fb865", "#173f24"], patch: ["#d9508f", "#5a1f3c"], texture: ["#e39b3a", "#5d3a0f"], optimization: ["#f07a4d", "#5d2a17"] };
   let preview = $state<string>("");
   let description = $state<string>("");
@@ -68,6 +70,10 @@
         <dt>Size</dt><dd class="num">{formatBytes(m.contents.sizeBytes)}</dd>
         <dt>Contains</dt><dd>{[m.contents.assemblies ? `${m.contents.assemblies} assembl${m.contents.assemblies === 1 ? "y" : "ies"}` : null, m.contents.defs ? `${m.contents.defs} def files` : null, m.contents.patches ? `${m.contents.patches} patches` : null, m.contents.textures + m.contents.dds ? `${(m.contents.textures + m.contents.dds).toLocaleString()} textures` : null].filter(Boolean).join(", ") || "nothing loadable"}</dd>
         <dt>On disk</dt><dd>{m.modified ? new Date(m.modified * 1000).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—"}</dd>
+        {#if m.contents.textures + m.contents.dds > 0 || dds}
+          <dt>Textures</dt>
+          <dd>{m.contents.textures.toLocaleString()} PNG{m.contents.dds ? ` · ${m.contents.dds.toLocaleString()} DDS` : ""}{dds ? ` (${dds.count.toLocaleString()} by Circinus, ${formatBytes(dds.ddsBytes)})` : ""}{ddsExcluded ? " · excluded" : ""}</dd>
+        {/if}
         <dt>Group</dt>
         <dd>
           <select class="sel" value={group?.id ?? ""} onchange={(e) => store.setGroup(store.selected.length > 1 ? store.selected : [m.uid], (e.currentTarget as HTMLSelectElement).value || null)}>
@@ -170,6 +176,8 @@
         <button class="btn" onclick={() => revealPath(m.path)}>Open folder</button>
         <button class="btn" disabled={!workshopUrl()} onclick={() => openUrl(workshopUrl()!)}>Workshop page</button>
         {#if canRedownload && !change && !update}<button class="btn" title="Fetch a fresh copy from the Workshop with SteamCMD (into your Mods folder)" onclick={() => store.queueIds([m.publishedFileId!])}>{@html I.download}Re-download</button>{/if}
+        {#if m.contents.textures > 0 && !ddsExcluded && m.source !== "ludeon"}<button class="btn" title="Convert this mod's PNG textures to DDS" disabled={store.tex?.running} onclick={() => store.optimizeTextures([m.uid])}>{@html I.image}Optimise textures</button>{/if}
+        {#if dds}<button class="btn" title="Delete the DDS files Circinus made for this mod" disabled={store.tex?.running} onclick={() => store.revertTextures([m.uid])}>Remove DDS</button>{/if}
         {#if isActive}
           <button class="btn" onclick={() => store.moveSelected(-1)}>Move up</button>
           <button class="btn" onclick={() => store.moveSelected(1)}>Move down</button>

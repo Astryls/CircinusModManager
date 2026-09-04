@@ -1,6 +1,6 @@
 // Thin wrapper over Tauri's invoke, with a browser mock so the UI can run outside Tauri.
 
-import type { AddResult, CollectionPreview, ImportPreview, Issue, Locations, ModFiles, QueueState, RentryPreview, Rule, RulesFile, Settings, Snapshot, SortResult, SteamCmdStatus, TestOutcome, UserData } from "./types";
+import type { AddResult, CollectionPreview, DdsReport, ImportPreview, Issue, Locations, ModFiles, ModTextures, QueueState, RentryPreview, Rule, RulesFile, Settings, Snapshot, SortResult, SteamCmdStatus, TestOutcome, TexState, UserData } from "./types";
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -56,6 +56,12 @@ export const api = {
   steamcmdStatus: () => invoke<SteamCmdStatus>("steamcmd_status"),
   steamcmdTest: () => invoke<TestOutcome>("steamcmd_test"),
   acknowledgeChanges: () => invoke<Snapshot>("acknowledge_changes"),
+  // textures
+  ddsState: () => invoke<TexState>("dds_state"),
+  ddsOverview: () => invoke<ModTextures[]>("dds_overview"),
+  ddsStart: (uids: string[]) => invoke<void>("dds_start", { uids }),
+  ddsCancel: () => invoke<void>("dds_cancel"),
+  ddsRevert: (uids: string[]) => invoke<DdsReport>("dds_revert", { uids }),
   importCollection: (text: string) => invoke<CollectionPreview>("import_collection", { text }),
   importRentry: (url: string) => invoke<RentryPreview>("import_rentry", { url }),
   checkUpdates: () => invoke<number>("check_updates")

@@ -1,6 +1,7 @@
 //! The command surface the Svelte UI calls with `invoke`.
 
 use crate::downloads::{AddResult, Downloads, SteamCmdStatus};
+use crate::textures::{self, ModTextures, Report, TexState, Textures};
 use crate::state::{App, Settings, Snapshot, UserData};
 use circinus_core::steam::steamcmd::QueueState;
 use circinus_core::steam::webapi;
@@ -441,6 +442,46 @@ pub async fn import_rentry(state: State<'_, Shared>, url: String) -> CmdResult<R
         Ok(RentryPreview { preview: ImportPreview { list, uids, missing }, missing_workshop_ids })
     })
     .await
+}
+
+// ---------------------------------------------------------------- textures
+
+type Tex<'a> = State<'a, Arc<Textures>>;
+
+#[tauri::command]
+pub fn dds_state(tex: Tex<'_>) -> TexState {
+    tex.snapshot()
+}
+
+#[tauri::command]
+pub async fn dds_overview(state: State<'_, Shared>) -> CmdResult<Vec<ModTextures>> {
+    with_app(&state, |app| Ok(textures::overview(app))).await
+}
+
+/// Convert the textures of these mods in the background; progress arrives as `dds-progress`.
+#[tauri::command]
+pub async fn dds_start(tex: Tex<'_>, uids: Vec<String>) -> CmdResult<()> {
+    if tex.snapshot().running {
+        return Err("A texture job is already running".into());
+    }
+    let t = tex.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Err(e) = t.convert(uids) {
+            tracing::warn!("dds convert: {e}");
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+pub fn dds_cancel(tex: Tex<'_>) {
+    tex.cancel();
+}
+
+#[tauri::command]
+pub async fn dds_revert(tex: Tex<'_>, uids: Vec<String>) -> CmdResult<Report> {
+    let t = tex.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || t.revert(uids)).await.map_err(err)?
 }
 
 /// Ask the Workshop for the current update time of every installed workshop mod.

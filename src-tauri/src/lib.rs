@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod downloads;
 pub mod state;
+pub mod textures;
 pub mod watch;
 
 use commands::{ScanProgress, Shared};
@@ -62,10 +63,13 @@ pub fn inspect_phase(handle: &AppHandle, st: &Shared, shallow: Vec<circinus_core
     }
 }
 
-/// Both phases back to back (startup).
+/// Both phases back to back (startup, watcher, downloads), then the texture re-check.
 pub fn run_scan(handle: AppHandle, st: Shared, full: bool) {
     if let Ok(shallow) = scan_quick_phase(&handle, &st, full) {
         inspect_phase(&handle, &st, shallow);
+        if let Some(tex) = handle.try_state::<Arc<textures::Textures>>() {
+            tex.inner().after_scan();
+        }
     }
 }
 
@@ -87,6 +91,7 @@ pub fn run() {
             // The download manager needs the app handle for events; created here.
             let dl = downloads::Downloads::start(app.handle().clone(), shared.clone());
             app.manage(dl);
+            app.manage(textures::Textures::new(app.handle().clone(), shared.clone()));
             // First scan in the background so the window appears immediately.
             let handle = app.handle().clone();
             let st = shared.clone();
@@ -130,6 +135,11 @@ pub fn run() {
             commands::steamcmd_status,
             commands::steamcmd_test,
             commands::acknowledge_changes,
+            commands::dds_state,
+            commands::dds_overview,
+            commands::dds_start,
+            commands::dds_cancel,
+            commands::dds_revert,
             commands::import_collection,
             commands::import_rentry,
             commands::check_updates,

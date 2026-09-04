@@ -13,6 +13,7 @@
   import SettingsView from "./components/SettingsView.svelte";
   import AnalyzerView from "./components/AnalyzerView.svelte";
   import DownloadsView from "./components/DownloadsView.svelte";
+  import TexturesView from "./components/TexturesView.svelte";
   import Toast from "./components/Toast.svelte";
   import Panel from "./components/Panel.svelte";
 
@@ -47,6 +48,8 @@
     <div class="frame two"><Panel name="Sidebar"><Rail /></Panel><Panel name="Analyzer"><AnalyzerView /></Panel></div>
   {:else if store.view === "downloads"}
     <div class="frame two"><Panel name="Sidebar"><Rail /></Panel><Panel name="Downloads"><DownloadsView /></Panel></div>
+  {:else if store.view === "textures"}
+    <div class="frame two"><Panel name="Sidebar"><Rail /></Panel><Panel name="Textures"><TexturesView /></Panel></div>
   {:else}
     <div class="frame">
       <Panel name="Sidebar"><Rail /></Panel>

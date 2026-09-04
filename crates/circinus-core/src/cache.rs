@@ -22,7 +22,8 @@ impl Cache {
             "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;
              CREATE TABLE IF NOT EXISTS mod_cache(uid TEXT PRIMARY KEY, stamp TEXT NOT NULL, json TEXT NOT NULL);
              CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, json TEXT NOT NULL);
-             CREATE TABLE IF NOT EXISTS weights(package_id TEXT PRIMARY KEY, json TEXT NOT NULL, fetched_at INTEGER NOT NULL);",
+             CREATE TABLE IF NOT EXISTS weights(package_id TEXT PRIMARY KEY, json TEXT NOT NULL, fetched_at INTEGER NOT NULL);
+             CREATE TABLE IF NOT EXISTS dds_files(uid TEXT NOT NULL, rel TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY(uid, rel));",
         )?;
         Ok(Cache { conn: Mutex::new(conn) })
     }
@@ -32,9 +33,86 @@ impl Cache {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS mod_cache(uid TEXT PRIMARY KEY, stamp TEXT NOT NULL, json TEXT NOT NULL);
              CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, json TEXT NOT NULL);
-             CREATE TABLE IF NOT EXISTS weights(package_id TEXT PRIMARY KEY, json TEXT NOT NULL, fetched_at INTEGER NOT NULL);",
+             CREATE TABLE IF NOT EXISTS weights(package_id TEXT PRIMARY KEY, json TEXT NOT NULL, fetched_at INTEGER NOT NULL);
+             CREATE TABLE IF NOT EXISTS dds_files(uid TEXT NOT NULL, rel TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY(uid, rel));",
         )?;
         Ok(Cache { conn: Mutex::new(conn) })
+    }
+
+    /// Forget specific mods so the next scan re-reads them (their folder contents changed
+    /// in a way the stamp cannot see, e.g. DDS files written next to the PNGs).
+    pub fn forget_mod_entries(&self, uids: &[String]) -> Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        for uid in uids {
+            tx.execute("DELETE FROM mod_cache WHERE uid = ?1", params![uid])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    // ---- DDS manifest: every texture Circinus converted, per mod ----
+
+    /// uid → entries.
+    pub fn dds_all<T: DeserializeOwned>(&self) -> Result<HashMap<String, Vec<T>>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT uid, json FROM dds_files")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        let mut map: HashMap<String, Vec<T>> = HashMap::new();
+        for row in rows {
+            let (uid, json) = row?;
+            if let Ok(v) = serde_json::from_str::<T>(&json) {
+                map.entry(uid).or_default().push(v);
+            }
+        }
+        Ok(map)
+    }
+
+    pub fn dds_entries<T: DeserializeOwned>(&self, uid: &str) -> Result<Vec<T>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT json FROM dds_files WHERE uid = ?1")?;
+        let rows = stmt.query_map(params![uid], |r| r.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for row in rows {
+            if let Ok(v) = serde_json::from_str::<T>(&row?) {
+                out.push(v);
+            }
+        }
+        Ok(out)
+    }
+
+    /// (uid, rel, entry) upserts.
+    pub fn dds_store<T: Serialize>(&self, entries: &[(String, String, T)]) -> Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        {
+            let mut stmt = tx.prepare("INSERT OR REPLACE INTO dds_files(uid, rel, json) VALUES (?1, ?2, ?3)")?;
+            for (uid, rel, e) in entries {
+                stmt.execute(params![uid, rel, serde_json::to_string(e)?])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Remove specific (uid, rel) rows.
+    pub fn dds_delete(&self, uid: &str, rels: &[String]) -> Result<()> {
+        if rels.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        for rel in rels {
+            tx.execute("DELETE FROM dds_files WHERE uid = ?1 AND rel = ?2", params![uid, rel])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Forget every converted texture of a mod (after a revert).
+    pub fn dds_delete_all(&self, uid: &str) -> Result<()> {
+        self.conn.lock().unwrap().execute("DELETE FROM dds_files WHERE uid = ?1", params![uid])?;
+        Ok(())
     }
 
     /// uid → (stamp, json)

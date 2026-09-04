@@ -3,6 +3,7 @@
 
 use circinus_core::cache::Cache;
 use circinus_core::changes::{self, Baseline, ListChange, ModChange};
+use circinus_core::dds;
 use circinus_core::game::GameVersion;
 use circinus_core::import::ImportedList;
 use circinus_core::model::*;
@@ -28,12 +29,45 @@ pub struct Settings {
     pub include_local_runs: bool,
     pub alphabetical_within_phase: bool,
     pub update_databases_on_start: bool,
+    pub dds: DdsSettings,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { locations: Locations::default(), db_sources: rules::default_sources(), show_weight: false, include_local_runs: true, alphabetical_within_phase: false, update_databases_on_start: false }
+        Settings { locations: Locations::default(), db_sources: rules::default_sources(), show_weight: false, include_local_runs: true, alphabetical_within_phase: false, update_databases_on_start: false, dds: DdsSettings::default() }
     }
+}
+
+/// Texture optimisation preferences.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DdsSettings {
+    /// Format for textures with alpha; opaque ones are always BC1.
+    pub alpha_format: dds::Format,
+    pub quality: dds::Quality,
+    pub mipmaps: bool,
+    /// 0 = all cores but one.
+    pub threads: usize,
+    /// Convert new and updated mods on their own once anything has been converted.
+    pub auto: bool,
+}
+
+impl Default for DdsSettings {
+    fn default() -> Self {
+        DdsSettings { alpha_format: dds::Format::Bc7, quality: dds::Quality::Balanced, mipmaps: true, threads: 0, auto: false }
+    }
+}
+
+/// What the manifest says about one mod, kept in memory for the UI.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DdsSummary {
+    pub count: usize,
+    pub dds_bytes: u64,
+    pub png_bytes: u64,
+    /// Bytes the GPU would hold for these textures uncompressed (RGBA8 with mips).
+    pub vram_before: u64,
+    pub newest: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -56,6 +90,8 @@ pub struct UserData {
     pub phase_overrides: HashMap<String, Phase>,
     pub notes: HashMap<String, String>,
     pub muted: HashSet<String>,
+    /// Mods whose textures must not be converted.
+    pub dds_excluded: HashSet<String>,
 }
 
 fn default_groups() -> Vec<Group> {
@@ -101,6 +137,8 @@ pub struct Snapshot {
     pub list_change: Option<ListChange>,
     /// Unix seconds of the baseline the changes are measured from (0 = first run).
     pub changes_since: i64,
+    /// uid → what Circinus has converted for it.
+    pub dds: HashMap<String, DdsSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -148,6 +186,8 @@ pub struct App {
     pub workshop_updated: HashMap<u64, u64>,
     /// The active list exactly as ModsConfig.xml has it (package ids, lowercase).
     pub file_active: Vec<String>,
+    /// uid → converted-texture summary, from the manifest.
+    pub dds_index: HashMap<String, DdsSummary>,
 }
 
 const BASELINE_KEY: &str = "mod_baseline";
@@ -201,11 +241,31 @@ impl App {
             list_change: None,
             workshop_updated: HashMap::new(),
             file_active: Vec::new(),
+            dds_index: HashMap::new(),
         };
         app.resolve_locations();
         app.load_databases();
         app.load_cached_weights()?;
+        app.reload_dds_index();
         Ok(app)
+    }
+
+    /// Rebuild the per-mod summary from the manifest table.
+    pub fn reload_dds_index(&mut self) {
+        let all: HashMap<String, Vec<dds::Entry>> = self.cache.dds_all().unwrap_or_default();
+        self.dds_index = all
+            .into_iter()
+            .map(|(uid, entries)| {
+                let s = DdsSummary {
+                    count: entries.len(),
+                    dds_bytes: entries.iter().map(|e| e.dds_len).sum(),
+                    png_bytes: entries.iter().map(|e| e.src_len).sum(),
+                    vram_before: entries.iter().map(|e| (e.width as u64 * e.height as u64 * 4) * 4 / 3).sum(),
+                    newest: entries.iter().map(|e| e.created_at).max().unwrap_or(0),
+                };
+                (uid, s)
+            })
+            .collect();
     }
 
     /// Autodetect, then apply user overrides on top.
@@ -407,6 +467,7 @@ impl App {
             changes: self.changes.clone(),
             list_change: self.list_change.clone(),
             changes_since: self.baseline.as_ref().map(|b| b.taken_at).unwrap_or(0),
+            dds: self.dds_index.clone(),
         }
     }
 

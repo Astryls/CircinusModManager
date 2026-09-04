@@ -68,10 +68,18 @@ Single self-contained binaries; SteamCMD is downloaded on first use rather than 
 - While Circinus is open a watcher polls four mtimes every 8 s (the ACF, ModsConfig.xml, Mods/, the Workshop folder); a change triggers a cached re-read (about 150 ms for 2,000 mods), a toast, and a desktop notification via `tauri-plugin-notification` — so an update Steam applies while the game is starting is not missed.
 - SteamCMD is now visible from everywhere: a status chip in the title bar (not set up / ready / downloading / cooling down / failed), a **set up** hint in the sidebar, a Settings section with paths, **Test SteamCMD** (`+login anonymous +quit`, output in the log — on Windows this also proves the console-log tail works) and **Reinstall**, a first-run banner when the list has mods that are not installed, and **Re-download** on every Workshop mod in the Inspector and in the change list.
 
+## Milestone 4a (texture optimisation)
+
+- Native DDS pipeline in `circinus-core::dds`, no external tool: PNG → BC1 (opaque) or BC7/BC3 (alpha) with a full mip chain to 1×1, dimensions rounded up to multiples of four by resizing (never padding), colour bled into transparent texels at every level so neither the mips nor the GPU's bilinear filter pick up dark fringes. Encoding is Intel's ISPC texture compressor (`intel_tex_2`, MIT/Apache, prebuilt kernels for x86_64 and aarch64 on Windows, macOS and Linux); quality presets map to its very-fast/fast/basic/slow BC7 modes.
+- Every file is validated before it is put in place: header, flags, mip count, exact length, then the top level is decoded (`bcdec_rs`) and compared with the source — PSNR in premultiplied space and alpha coverage. Failures leave the PNG alone. Writes are temp-file-then-rename.
+- A manifest in the cache (`dds_files`) records every file Circinus wrote: source size/mtime/xxh3, DDS size/hash, format, dimensions. Re-runs skip unchanged sources; a DDS an author ships is never touched; **Revert** deletes only files whose hash still matches what Circinus wrote. When the change detector sees a mod update, its converted files are re-checked and stale DDS removed before the game can load old art; with the auto option, changed and new mods are converted again.
+- Textures view: totals (files, disk, VRAM saving), Optimise active / everything / Remove all, live progress with rate and ETA, per-mod table with exclude/optimise/revert; Inspector shows per-mod counts with the same actions. Official content (Data/) is left as shipped.
+- `cargo run -p circinus-core --example dds_convert -- in.png` converts one file; `cargo run -p circinus --example dds_job -- <game> <data> convert|revalidate|revert <mod folder>…` runs the job headless.
+
 ## Next milestones
 
 3b. Def/patch flattening (who wins each XML value) and a .NET NativeAOT sidecar that lists Harmony patch targets per assembly.
-4. Instances/profiles, native DDS pipeline (BC1/BC7 with full mip chains, manifest-tracked so it is reversible, incremental by content hash), auto-update, Steam-client subscribe/unsubscribe.
+4b. Instances/profiles, auto-update, Steam-client subscribe/unsubscribe.
 
 ## Data locations
 
