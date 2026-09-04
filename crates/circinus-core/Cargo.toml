@@ -1,0 +1,32 @@
+[package]
+name = "circinus-core"
+description = "RimWorld mod discovery, rules, HALO load ordering and analysis for Circinus Mod Manager"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+roxmltree = "0.20"
+rayon = "1"
+walkdir = "2"
+petgraph = "0.8"
+rusqlite = { version = "0.37", features = ["bundled"] }
+steamlocate = "2"
+dirs = "6"
+flate2 = "1"
+zstd = "0.13"
+regex = "1"
+indexmap = { version = "2", features = ["serde"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "gzip"] }
+sha2 = "0.10"
+hex = "0.4"
+
+[dev-dependencies]
+tempfile = "3"

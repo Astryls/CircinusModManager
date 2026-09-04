@@ -1,0 +1,316 @@
+//! Circinus weight: how much of the measured frame a mod costs, from circinus.sh
+//! (public API, no key) and from local runs the Circinus profiler mod writes beside the saves.
+//!
+//! The site publishes cost as a *share of measured frame time* (median across clean runs),
+//! bands it, and only ranks a mod past 25 clean runs and 10 independent installs.
+//! `-1` anywhere means "not known" and is never treated as zero.
+
+use crate::Result;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
+pub const API_BASE: &str = "https://circinus.sh/api/v1";
+pub const USER_AGENT: &str = concat!("CircinusModManager/", env!("CARGO_PKG_VERSION"));
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Band {
+    Negligible,
+    Light,
+    Moderate,
+    Heavy,
+    #[serde(rename = "veryheavy")]
+    VeryHeavy,
+    /// Measured, but below the ranking floors.
+    Insufficient,
+    Unknown,
+}
+
+impl Band {
+    /// Absolute tiers of typical share (percent of frame), independent of mod count.
+    pub fn for_share(share_pct: f64) -> Band {
+        if share_pct < 0.5 {
+            Band::Negligible
+        } else if share_pct <= 2.0 {
+            Band::Light
+        } else if share_pct <= 5.0 {
+            Band::Moderate
+        } else if share_pct <= 15.0 {
+            Band::Heavy
+        } else {
+            Band::VeryHeavy
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Band::Negligible => "Negligible",
+            Band::Light => "Light",
+            Band::Moderate => "Moderate",
+            Band::Heavy => "Heavy",
+            Band::VeryHeavy => "Very heavy",
+            Band::Insufficient => "Not enough runs",
+            Band::Unknown => "Not measured",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Weight {
+    pub package_id: String,
+    /// Median share of measured frame time, percent. None = not known.
+    pub share: Option<f64>,
+    pub band: Band,
+    pub ranked: bool,
+    /// Runs the mod was loaded in / profiled in / that produced rankable data.
+    pub seen: Option<i64>,
+    pub measured: Option<i64>,
+    pub ranked_runs: Option<i64>,
+    pub installs: Option<i64>,
+    /// Net cost range for skip-capable patches: [gross − vanilla, gross].
+    pub net_low: Option<f64>,
+    pub net_high: Option<f64>,
+    /// Author-restricted figures.
+    pub withheld: bool,
+    /// "api" or "local".
+    pub origin: String,
+}
+
+fn num(v: Option<&Value>) -> Option<f64> {
+    match v {
+        Some(Value::Number(n)) => n.as_f64().filter(|x| *x >= 0.0),
+        Some(Value::String(s)) => s.trim().trim_end_matches('%').parse::<f64>().ok().filter(|x| *x >= 0.0),
+        _ => None,
+    }
+}
+
+fn int(v: Option<&Value>) -> Option<i64> {
+    num(v).map(|x| x.round() as i64)
+}
+
+fn first<'a>(obj: &'a Value, keys: &[&str]) -> Option<&'a Value> {
+    keys.iter().find_map(|k| obj.get(*k)).filter(|v| !v.is_null())
+}
+
+/// Read a share of frame (percent) out of an API object. The API reports shares in percent
+/// ("share = mod_ms / total_measured_frame_ms * 100"); a fraction ≤ 1 with a `fraction` hint is
+/// scaled. Field names are tried in order so a schema tweak on the server only needs an edit here.
+fn share_of(obj: &Value) -> Option<f64> {
+    let direct = first(obj, &["share", "medianShare", "shareOfFrame", "frameShare", "median", "cost", "typicalShare", "sharePct", "percent"]);
+    if let Some(v) = direct {
+        if let Some(x) = num(Some(v)) {
+            return Some(x);
+        }
+        if let Some(o) = v.as_object() {
+            return num(o.get("median").or_else(|| o.get("value")).or_else(|| o.get("share")));
+        }
+    }
+    None
+}
+
+fn band_of(obj: &Value, share: Option<f64>, ranked: bool) -> Band {
+    if let Some(b) = first(obj, &["band"]).and_then(|b| b.as_str()) {
+        let b = b.to_ascii_lowercase().replace([' ', '_', '-'], "");
+        return match b.as_str() {
+            "negligible" => Band::Negligible,
+            "light" => Band::Light,
+            "moderate" => Band::Moderate,
+            "heavy" => Band::Heavy,
+            "veryheavy" => Band::VeryHeavy,
+            "insufficient" | "unranked" | "unknown" => Band::Insufficient,
+            _ => share.map(Band::for_share).unwrap_or(Band::Unknown),
+        };
+    }
+    match share {
+        Some(s) if ranked => Band::for_share(s),
+        Some(_) => Band::Insufficient,
+        None => Band::Unknown,
+    }
+}
+
+/// Parse one mod object from `/api/v1/mods` or `/api/v1/mods/{packageId}`.
+pub fn parse_mod(obj: &Value, origin: &str) -> Option<Weight> {
+    let package_id = first(obj, &["packageId", "package_id", "id"])?.as_str()?.trim().to_ascii_lowercase();
+    if package_id.is_empty() {
+        return None;
+    }
+    let share = share_of(obj);
+    let ranked = first(obj, &["ranked"]).and_then(|r| r.as_bool()).unwrap_or(false);
+    let runs = obj.get("runs").filter(|r| r.is_object());
+    let seen = runs.and_then(|r| int(r.get("seen"))).or_else(|| int(first(obj, &["seen", "runsSeen"])));
+    let measured = runs.and_then(|r| int(r.get("measured"))).or_else(|| int(first(obj, &["measured", "runsMeasured", "runCount"])));
+    let ranked_runs = runs.and_then(|r| int(r.get("ranked"))).or_else(|| int(first(obj, &["rankedRuns", "runsRanked"])));
+    let installs = int(first(obj, &["installs", "installCount", "independentInstalls"]));
+    let (net_low, net_high) = match first(obj, &["net", "netShare", "netCost"]) {
+        Some(Value::Array(a)) if a.len() >= 2 => (num(a.first()), num(a.get(1))),
+        Some(Value::Object(o)) => (num(o.get("low").or_else(|| o.get("min"))), num(o.get("high").or_else(|| o.get("max")))),
+        _ => (None, None),
+    };
+    let withheld = first(obj, &["withheld"]).and_then(|w| w.as_bool()).unwrap_or(false);
+    Some(Weight { band: band_of(obj, share, ranked), package_id, share, ranked, seen, measured, ranked_runs, installs, net_low, net_high, withheld, origin: origin.into() })
+}
+
+/// Parse a list response: a bare array, or an object whose first array-valued field holds mods.
+pub fn parse_list(v: &Value) -> Vec<Weight> {
+    let arr: Vec<&Value> = match v {
+        Value::Array(a) => a.iter().collect(),
+        Value::Object(o) => o
+            .get("mods")
+            .or_else(|| o.get("items"))
+            .or_else(|| o.get("data"))
+            .or_else(|| o.get("results"))
+            .or_else(|| o.values().find(|x| x.is_array()))
+            .and_then(|x| x.as_array())
+            .map(|a| a.iter().collect())
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    arr.iter().filter_map(|m| parse_mod(m, "api")).collect()
+}
+
+/// Fetch every mod the site has figures for, paging through the list endpoint.
+pub async fn fetch_all(client: &reqwest::Client) -> Result<Vec<Weight>> {
+    let mut out: Vec<Weight> = Vec::new();
+    let limit = 500usize;
+    let mut offset = 0usize;
+    for _ in 0..200 {
+        let url = format!("{API_BASE}/mods?limit={limit}&offset={offset}");
+        let v: Value = client.get(&url).header(reqwest::header::USER_AGENT, USER_AGENT).send().await?.error_for_status()?.json().await?;
+        let page = parse_list(&v);
+        let n = page.len();
+        out.extend(page);
+        if n < limit {
+            break;
+        }
+        offset += n;
+    }
+    Ok(out)
+}
+
+/// Fetch one mod in full (per-patch medians are ignored here; the summary is what we show).
+pub async fn fetch_one(client: &reqwest::Client, package_id: &str) -> Result<Option<Weight>> {
+    let url = format!("{API_BASE}/mods/{}", package_id.to_ascii_lowercase());
+    let resp = client.get(&url).header(reqwest::header::USER_AGENT, USER_AGENT).send().await?;
+    if resp.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    let v: Value = resp.error_for_status()?.json().await?;
+    Ok(parse_mod(v.get("mod").unwrap_or(&v), "api"))
+}
+
+/// Where the Circinus profiler mod writes runs: beside the game's config folder.
+pub fn local_runs_dir(config_dir: &Path) -> PathBuf {
+    config_dir.parent().map(|p| p.join("Circinus").join("Runs")).unwrap_or_else(|| config_dir.join("Circinus").join("Runs"))
+}
+
+/// Median share per packageId across local runs. Each run file is scanned for a per-mod cost
+/// table (objects carrying a packageId and a ms or share figure) and normalized by the run's
+/// `profilerWindowMs` when only milliseconds are given.
+pub fn read_local_runs(dir: &Path) -> Result<HashMap<String, Weight>> {
+    let mut samples: HashMap<String, Vec<f64>> = HashMap::new();
+    let mut seen: HashMap<String, i64> = HashMap::new();
+    let Ok(rd) = std::fs::read_dir(dir) else { return Ok(HashMap::new()) };
+    for entry in rd.filter_map(|e| e.ok()) {
+        let p = entry.path();
+        if p.extension().map(|e| e != "json").unwrap_or(true) || p.file_name().map(|n| n == "index.json").unwrap_or(false) {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&p) else { continue };
+        let Ok(v) = serde_json::from_str::<Value>(&text) else { continue };
+        let window_ms = v.pointer("/env/profilerWindowMs").and_then(|x| x.as_f64()).or_else(|| v.get("profilerWindowMs").and_then(|x| x.as_f64()));
+        let mut stack: Vec<&Value> = vec![&v];
+        while let Some(cur) = stack.pop() {
+            match cur {
+                Value::Array(a) => stack.extend(a.iter()),
+                Value::Object(o) => {
+                    if let Some(id) = o.get("packageId").and_then(|x| x.as_str()) {
+                        let id = id.to_ascii_lowercase();
+                        let share = share_of(cur).or_else(|| {
+                            let ms = num(first(cur, &["ms", "medianMs", "msPerFrame", "cost_ms", "costMs"]))?;
+                            let w = window_ms?;
+                            if w > 0.0 { Some(ms / w * 100.0) } else { None }
+                        });
+                        if let Some(s) = share {
+                            samples.entry(id.clone()).or_default().push(s);
+                        }
+                        *seen.entry(id).or_default() += 1;
+                    }
+                    stack.extend(o.values().filter(|x| x.is_array() || x.is_object()));
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut out = HashMap::new();
+    for (id, mut xs) in samples {
+        xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let median = xs[xs.len() / 2];
+        let n = xs.len() as i64;
+        out.insert(
+            id.clone(),
+            Weight {
+                package_id: id.clone(),
+                share: Some(median),
+                band: Band::for_share(median),
+                ranked: false,
+                seen: seen.get(&id).copied(),
+                measured: Some(n),
+                ranked_runs: None,
+                installs: Some(1),
+                net_low: None,
+                net_high: None,
+                withheld: false,
+                origin: "local".into(),
+            },
+        );
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bands() {
+        assert_eq!(Band::for_share(0.2), Band::Negligible);
+        assert_eq!(Band::for_share(1.9), Band::Light);
+        assert_eq!(Band::for_share(4.0), Band::Moderate);
+        assert_eq!(Band::for_share(10.0), Band::Heavy);
+        assert_eq!(Band::for_share(30.0), Band::VeryHeavy);
+    }
+
+    #[test]
+    fn parses_plausible_shapes() {
+        let list = serde_json::json!({"mods": [
+            {"packageId": "Krkr.RocketMan", "share": 3.4, "band": "moderate", "ranked": true, "runs": {"seen": 120, "measured": 100, "ranked": 80}, "installs": 40},
+            {"packageId": "a.b", "share": -1, "ranked": false, "band": "insufficient"},
+            {"packageId": "c.d", "median": {"share": 0.1}}
+        ]});
+        let w = parse_list(&list);
+        assert_eq!(w.len(), 3);
+        assert_eq!(w[0].package_id, "krkr.rocketman");
+        assert_eq!(w[0].band, Band::Moderate);
+        assert_eq!(w[0].measured, Some(100));
+        assert_eq!(w[1].share, None);
+        assert_eq!(w[1].band, Band::Insufficient);
+        assert_eq!(w[2].share, Some(0.1));
+        assert_eq!(w[2].band, Band::Insufficient);
+    }
+
+    #[test]
+    fn local_runs_median() {
+        let dir = tempfile::tempdir().unwrap();
+        for (i, ms) in [2.0, 3.0, 10.0].iter().enumerate() {
+            let run = serde_json::json!({"env": {"profilerWindowMs": 100.0}, "modCosts": [{"packageId": "x.y", "ms": ms}]});
+            std::fs::write(dir.path().join(format!("run{i}.json")), run.to_string()).unwrap();
+        }
+        std::fs::write(dir.path().join("index.json"), "{}").unwrap();
+        let w = read_local_runs(dir.path()).unwrap();
+        assert_eq!(w["x.y"].share, Some(3.0));
+        assert_eq!(w["x.y"].measured, Some(3));
+        assert_eq!(w["x.y"].band, Band::Moderate);
+    }
+}
