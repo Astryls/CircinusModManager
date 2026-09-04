@@ -13,6 +13,7 @@
   import AnalyzerView from "./components/AnalyzerView.svelte";
   import DownloadsView from "./components/DownloadsView.svelte";
   import Toast from "./components/Toast.svelte";
+  import Panel from "./components/Panel.svelte";
 
   onMount(() => {
     store.load();
@@ -39,19 +40,19 @@
 <div class="app">
   <TitleBar />
   {#if store.view === "settings"}
-    <SettingsView />
+    <Panel name="Settings"><SettingsView /></Panel>
   {:else if store.view === "analyzer"}
-    <div class="frame two"><Rail /><AnalyzerView /></div>
+    <div class="frame two"><Panel name="Sidebar"><Rail /></Panel><Panel name="Analyzer"><AnalyzerView /></Panel></div>
   {:else if store.view === "downloads"}
-    <div class="frame two"><Rail /><DownloadsView /></div>
+    <div class="frame two"><Panel name="Sidebar"><Rail /></Panel><Panel name="Downloads"><DownloadsView /></Panel></div>
   {:else}
     <div class="frame">
-      <Rail />
+      <Panel name="Sidebar"><Rail /></Panel>
       <main class="center">
-        <Stats />
-        <Banner />
-        <Toolbar />
-        <ModList />
+        <Panel name="Summary"><Stats /></Panel>
+        <Panel name="Attention banner"><Banner /></Panel>
+        <Panel name="Toolbar"><Toolbar /></Panel>
+        <Panel name="Mod list"><ModList /></Panel>
         <div class="foot">
           {#if store.snap}
             {store.snap.mods.length} installed · {store.active.length} active · {store.snap.inspecting ? `inspecting ${store.snap.inspecting} folders in the background · ` : ""}{store.snap.missing.length ? `${store.snap.missing.length} in ModsConfig.xml but not installed · ` : ""}
@@ -59,7 +60,7 @@
           {/if}
         </div>
       </main>
-      <Inspector />
+      <Panel name="Inspector"><Inspector /></Panel>
     </div>
   {/if}
   {#if store.showImport}<ImportDialog />{/if}

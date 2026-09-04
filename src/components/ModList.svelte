@@ -111,16 +111,16 @@
         >
           <span class="idx num">{(store.indexOf.get(m.uid) ?? 0) + 1}</span>
           <span class="grip">{@html I.grip}</span>
-          <span class="src {m.source}" title={SOURCE_LABEL[m.source]}>{SOURCE_GLYPH[m.source]}</span>
-          <span class="name"><b>{m.name}</b><span>{m.authors.join(", ")}</span></span>
+          <span class="src {m.source}" title={SOURCE_LABEL[m.source] ?? m.source}>{SOURCE_GLYPH[m.source] ?? "?"}</span>
+          <span class="name"><b>{m.name ?? m.uid}</b><span>{(m.authors ?? []).join(", ")}</span></span>
           <span class="pkg">{m.packageId}</span>
           {#if store.showWeight}
             <span class="wt">{#if w && w.share != null}<span class="band {w.band}" title="{BAND_LABEL[w.band]} · median {w.share.toFixed(2)}% of frame · {w.measured ?? '?'} runs · {w.origin === 'local' ? 'your runs' : 'circinus.sh'}">{w.share.toFixed(1)}%</span>{:else if w}<span class="band {w.band}" title={BAND_LABEL[w.band]}>—</span>{/if}</span>
           {/if}
-          <span class="vers">{#each versions as v}<span class:off={!m.supportedVersions.includes(v)}>{v}</span>{/each}</span>
+          <span class="vers">{#each versions as v}<span class:off={!(m.supportedVersions ?? []).includes(v)}>{v}</span>{/each}</span>
           <span class="g">{#if store.groupOf(m.uid)}<span class="dot c-{store.groupOf(m.uid)?.color}" title={store.groupOf(m.uid)?.name}></span>{/if}</span>
           <span class="flags">
-            {#each issues.slice(0, 3) as i}<span class="flag {severityOf(i)}" title={describe(i, store.byUid, m.uid)}>{@html sevIcon[severityOf(i)]}</span>{/each}
+            {#each issues.slice(0, 3) as i}<span class="flag {severityOf(i)}" title={describe(i, store.byUid, m.uid)}>{@html sevIcon[severityOf(i)] ?? sevIcon.warning}</span>{/each}
             {#if store.pinned.has(m.uid)}<span class="flag pin" title="Pinned: keeps this position">{@html I.pin}</span>{/if}
           </span>
           <span class="delta num" class:down={delta && delta > 0} class:up={delta && delta < 0}>{#if delta}{delta > 0 ? "+" : ""}{delta}{/if}</span>
@@ -137,11 +137,11 @@
         onclick={(e) => click(e, m)} ondblclick={() => toggle(m)} onkeydown={(e) => key(e, m)} ondragstart={(e) => dragStart(e, m)}>
         <span class="idx"></span>
         <span class="grip">{@html I.grip}</span>
-        <span class="src {m.source}" title={SOURCE_LABEL[m.source]}>{SOURCE_GLYPH[m.source]}</span>
-        <span class="name"><b>{m.name}</b><span>{m.invalid ?? m.authors.join(", ")}</span></span>
+        <span class="src {m.source}" title={SOURCE_LABEL[m.source] ?? m.source}>{SOURCE_GLYPH[m.source] ?? "?"}</span>
+        <span class="name"><b>{m.name ?? m.uid}</b><span>{m.invalid ?? (m.authors ?? []).join(", ")}</span></span>
         <span class="pkg">{m.packageId}</span>
         {#if store.showWeight}<span class="wt">{#if w && w.share != null}<span class="band {w.band}">{w.share.toFixed(1)}%</span>{/if}</span>{/if}
-        <span class="vers">{#each versions as v}<span class:off={!m.supportedVersions.includes(v)}>{v}</span>{/each}</span>
+        <span class="vers">{#each versions as v}<span class:off={!(m.supportedVersions ?? []).includes(v)}>{v}</span>{/each}</span>
         <span class="g">{#if store.groupOf(m.uid)}<span class="dot c-{store.groupOf(m.uid)?.color}"></span>{/if}</span>
         <span class="flags">{#if m.invalid}<span class="flag error" title={m.invalid}>{@html I.error}</span>{/if}</span>
         <span class="delta"></span>

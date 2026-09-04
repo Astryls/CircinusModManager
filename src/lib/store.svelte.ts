@@ -34,10 +34,17 @@ class Store {
   showImport = $state(false);
 
   // ---- derived indexes ----
-  mods = $derived(this.snap?.mods ?? []);
+  mods = $derived.by(() => {
+    // Defensive: a repeated uid would break keyed lists, so keep the first of any duplicate.
+    const seen = new Set<string>();
+    return (this.snap?.mods ?? []).filter((m) => (seen.has(m.uid) ? false : (seen.add(m.uid), true)));
+  });
   byUid = $derived(new Map(this.mods.map((m) => [m.uid, m])));
   byPackage = $derived(new Map(this.mods.filter((m) => m.packageId).map((m) => [m.packageId, m])));
-  active = $derived(this.snap?.active ?? []);
+  active = $derived.by(() => {
+    const seen = new Set<string>();
+    return (this.snap?.active ?? []).filter((u) => (seen.has(u) ? false : (seen.add(u), true)));
+  });
   activeSet = $derived(new Set(this.active));
   indexOf = $derived(new Map(this.active.map((u, i) => [u, i])));
   placementByUid = $derived(new Map((this.snap?.placements ?? []).map((p) => [p.uid, p])));
@@ -96,10 +103,10 @@ class Store {
   // ---- filtering ----
   matches(m: ModInfo): boolean {
     const q = this.query.trim().toLowerCase();
-    if (q && !(m.name.toLowerCase().includes(q) || m.packageId.includes(q) || m.authors.some((a) => a.toLowerCase().includes(q)) || String(m.publishedFileId ?? "").includes(q))) return false;
+    if (q && !((m.name ?? "").toLowerCase().includes(q) || (m.packageId ?? "").includes(q) || (m.authors ?? []).some((a) => a.toLowerCase().includes(q)) || String(m.publishedFileId ?? "").includes(q))) return false;
     if (this.group && this.snap?.user.modGroups[m.uid] !== this.group) return false;
     if (!this.sources.includes(m.source)) return false;
-    if (this.onlyCurrentVersion && m.source !== "ludeon" && !m.supportedVersions.includes(this.snap?.gameVersion.majorMinor ?? "")) return false;
+    if (this.onlyCurrentVersion && m.source !== "ludeon" && !(m.supportedVersions ?? []).includes(this.snap?.gameVersion.majorMinor ?? "")) return false;
     if (this.showOnly) {
       const list = this.issuesByUid.get(m.uid) ?? [];
       if (!list.some((i) => severityOf(i) === this.showOnly)) return false;
@@ -107,7 +114,7 @@ class Store {
     return true;
   }
   visibleActive = $derived(this.active.map((u) => this.byUid.get(u)!).filter((m) => m && this.matches(m)));
-  inactive = $derived(this.mods.filter((m) => !this.activeSet.has(m.uid)).sort((a, b) => a.name.localeCompare(b.name)));
+  inactive = $derived(this.mods.filter((m) => !this.activeSet.has(m.uid)).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "")));
   visibleInactive = $derived(this.inactive.filter((m) => this.matches(m)));
   sections = $derived.by(() => {
     const out: { phase: (typeof PHASES)[number]; mods: ModInfo[] }[] = [];
@@ -135,15 +142,21 @@ class Store {
       this.error = `Could not connect to the app's event system: ${e}`;
     }
     this.step = "Reading your mods";
+    let snap: Snapshot | null = null;
     try {
-      this.snap = await api.snapshot();
-      log(`snapshot received: ${this.snap.mods.length} mods, ${this.snap.issues.length} issues`);
+      snap = await api.snapshot();
+      log(`snapshot received: ${snap.mods.length} mods, ${snap.active.length} active, ${snap.issues.length} issues`);
       this.error = null;
     } catch (e) {
       log(`snapshot failed: ${e}`);
       this.error = String(e);
-    } finally {
-      this.loading = false;
+    }
+    // Drop the overlay first, then apply the data: even if a panel throws while rendering,
+    // its boundary shows the error and the rest of the app stays usable.
+    this.loading = false;
+    if (snap) {
+      this.snap = snap;
+      queueMicrotask(() => log("first render scheduled"));
     }
   }
 

@@ -7,3 +7,5 @@ src-tauri/gen/
 .DS_Store
 Thumbs.db
 app-icon.png
+tools/loadtest/*.json
+tools/loadtest/*.png

@@ -205,10 +205,12 @@ function haloSort(): SortResult {
 export async function invoke<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
   await new Promise((r) => setTimeout(r, 30));
   const A = args as Record<string, any>;
+  // Load testing: a page may provide a full backend snapshot (see src-tauri/examples/dump_snapshot.rs).
+  const fixture = (globalThis as any).__CIRCINUS_FIXTURE__ as Snapshot | undefined;
   switch (cmd) {
     case "get_snapshot":
     case "rescan":
-      return snapshot() as T;
+      return (fixture ?? snapshot()) as T;
     case "set_active":
       active = (A.uids as string[]).filter((u, i, arr) => arr.indexOf(u) === i && mods.some((m) => m.uid === u));
       dirty = true;

@@ -1,5 +1,5 @@
-mod commands;
-mod state;
+pub mod commands;
+pub mod state;
 
 use commands::{ScanProgress, Shared};
 use std::sync::atomic::{AtomicU64, Ordering};

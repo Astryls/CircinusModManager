@@ -123,10 +123,17 @@ fn now() -> i64 {
 
 impl App {
     pub fn open() -> Result<App> {
-        let data_dir = app_data_dir();
+        App::open_at(app_data_dir(), None)
+    }
+
+    /// Open with an explicit data folder and (for tests and tools) explicit settings.
+    pub fn open_at(data_dir: PathBuf, settings_override: Option<Settings>) -> Result<App> {
         std::fs::create_dir_all(data_dir.join("dbs"))?;
         let cache = Cache::open(&data_dir.join("cache.sqlite"))?;
-        let settings: Settings = cache.get("settings")?.unwrap_or_default();
+        let settings: Settings = match settings_override {
+            Some(s) => s,
+            None => cache.get("settings")?.unwrap_or_default(),
+        };
         let mut user: UserData = cache.get("user")?.unwrap_or_default();
         if user.groups.is_empty() {
             user.groups = default_groups();

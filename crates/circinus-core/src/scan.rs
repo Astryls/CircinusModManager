@@ -409,6 +409,10 @@ pub fn scan(opts: &ScanOptions, cache: Option<&Cache>, deep: bool, progress: &(d
         let live: Vec<&str> = out.mods.iter().map(|m| m.uid.as_str()).collect();
         c.prune_mod_entries(&live)?;
     }
+    // A folder can only be one mod; if two roots overlap (junctions, a Mods folder pointed at
+    // the Workshop), keep the first sighting so every uid is unique.
+    let mut seen_uids = std::collections::HashSet::new();
+    out.mods.retain(|m| seen_uids.insert(m.uid.clone()));
     out.mods.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     tracing::info!(mods = out.mods.len(), from_cache = out.from_cache, parsed = out.parsed, shallow = out.shallow.len(), ms = started.elapsed().as_millis() as u64, "scan");
     Ok(out)

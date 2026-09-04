@@ -35,6 +35,8 @@ export function describe(i: Issue, byUid: Map<string, ModInfo>, viewer?: string)
       return "About.xml has no packageId, so rules cannot refer to it.";
     case "invalid":
       return i.reason;
+    default:
+      return `Needs attention (${(i as { kind: string }).kind}).`;
   }
 }
 
