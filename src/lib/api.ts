@@ -23,6 +23,7 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
 
 export const api = {
   snapshot: () => invoke<Snapshot>("get_snapshot"),
+  description: (uid: string) => invoke<string>("get_description", { uid }),
   rescan: (full = false) => invoke<Snapshot>("rescan", { full }),
   setActive: (uids: string[]) => invoke<Snapshot>("set_active", { uids }),
   activate: (uids: string[], at?: number) => invoke<Snapshot>("activate", { uids, at: at ?? null }),

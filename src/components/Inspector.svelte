@@ -2,7 +2,7 @@
   import { store } from "$lib/store.svelte";
   import { I, sevIcon } from "$lib/icons";
   import { describe } from "$lib/describe";
-  import { assetUrl, openUrl, revealPath } from "$lib/api";
+  import { api, assetUrl, openUrl, revealPath } from "$lib/api";
   import { BAND_LABEL, PHASES, SOURCE_LABEL, formatBytes, initials, severityOf, type Phase, type Rule } from "$lib/types";
 
   const m = $derived(store.selectedMod);
@@ -15,10 +15,16 @@
   const isActive = $derived(m ? store.activeSet.has(m.uid) : false);
   const GRAD: Record<Phase, [string, string]> = { core: ["#3b5fd9", "#1b2a5c"], prepatch: ["#8b6cf0", "#3a2a6e"], framework: ["#2ea59e", "#12403e"], content: ["#3fb865", "#173f24"], patch: ["#d9508f", "#5a1f3c"], texture: ["#e39b3a", "#5d3a0f"], optimization: ["#f07a4d", "#5d2a17"] };
   let preview = $state<string>("");
+  let description = $state<string>("");
   $effect(() => {
     const p = m?.preview;
     preview = "";
     if (p) assetUrl(p).then((u) => (preview = u));
+  });
+  $effect(() => {
+    const uid = m?.uid;
+    description = "";
+    if (uid) api.description(uid).then((d) => { if (m?.uid === uid) description = d; }).catch(() => {});
   });
 
   function ruleLine(r: Rule): { type: string; name: string; ok: boolean } {
@@ -155,7 +161,7 @@
           <button class="btn primary" onclick={() => store.activate(store.selected.length > 1 ? store.selected : [m.uid])}>Activate</button>
         {/if}
       </div>
-      {#if m.description}<details class="desc"><summary>Description</summary><p>{m.description.replace(/<[^>]+>/g, "")}</p></details>{/if}
+      {#if description}<details class="desc"><summary>Description</summary><p>{description.replace(/<[^>]+>/g, "")}</p></details>{/if}
     </section>
   {:else}
     <section class="card empty-card">

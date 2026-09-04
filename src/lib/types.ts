@@ -171,6 +171,8 @@ export interface Snapshot {
   scannedAt: number;
   /** Mods whose folders are still being inspected in the background. */
   inspecting: number;
+  /** Texture collisions left out of `issues` to keep the payload small. */
+  issuesTruncated: number;
 }
 
 export interface ImportedList {

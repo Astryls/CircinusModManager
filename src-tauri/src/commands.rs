@@ -41,7 +41,17 @@ pub struct ScanProgress {
 
 #[tauri::command]
 pub async fn get_snapshot(state: State<'_, Shared>) -> CmdResult<Snapshot> {
-    with_app(&state, |app| Ok(app.snapshot())).await
+    let snap = with_app(&state, |app| Ok(app.snapshot())).await?;
+    if cfg!(debug_assertions) {
+        let bytes = serde_json::to_vec(&snap).map(|v| v.len()).unwrap_or(0);
+        tracing::info!(bytes, "get_snapshot serialized");
+    }
+    Ok(snap)
+}
+
+#[tauri::command]
+pub async fn get_description(state: State<'_, Shared>, uid: String) -> CmdResult<String> {
+    with_app(&state, move |app| Ok(app.description(&uid))).await
 }
 
 /// Re-read the mod folders. Returns as soon as the quick phase is done; the contents

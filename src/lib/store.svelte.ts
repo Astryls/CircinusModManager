@@ -17,6 +17,8 @@ class Store {
   busy = $state<string | null>(null);
   progress = $state<{ phase: "read" | "inspect"; done: number; total: number } | null>(null);
   error = $state<string | null>(null);
+  /** What the loader is doing right now, shown on the startup overlay. */
+  step = $state("Connecting to the app");
   toast = $state<{ msg: string; kind: "ok" | "warn" | "err" } | null>(null);
 
   view = $state<View>("order");
@@ -120,14 +122,25 @@ class Store {
   // ---- lifecycle ----
   async load() {
     this.loading = true;
+    const t0 = performance.now();
+    const log = (msg: string) => console.info(`[circinus] ${msg} (+${Math.round(performance.now() - t0)} ms)`);
     // Listeners first: the first snapshot waits for the quick scan, and progress must show meanwhile.
-    await listen<{ phase: "read" | "inspect"; done: number; total: number }>("scan-progress", (p) => (this.progress = p.done >= p.total ? null : p));
-    await listen("state-changed", () => this.refresh());
-    await listen<string>("scan-error", (e) => this.say(e, "err"));
+    try {
+      await listen<{ phase: "read" | "inspect"; done: number; total: number }>("scan-progress", (p) => (this.progress = p.done >= p.total ? null : p));
+      await listen("state-changed", () => this.refresh());
+      await listen<string>("scan-error", (e) => this.say(e, "err"));
+      log("event listeners ready");
+    } catch (e) {
+      log(`event listeners failed: ${e}`);
+      this.error = `Could not connect to the app's event system: ${e}`;
+    }
+    this.step = "Reading your mods";
     try {
       this.snap = await api.snapshot();
+      log(`snapshot received: ${this.snap.mods.length} mods, ${this.snap.issues.length} issues`);
       this.error = null;
     } catch (e) {
+      log(`snapshot failed: ${e}`);
       this.error = String(e);
     } finally {
       this.loading = false;

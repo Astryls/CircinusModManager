@@ -89,6 +89,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_snapshot,
+            commands::get_description,
             commands::rescan,
             commands::set_active,
             commands::activate,

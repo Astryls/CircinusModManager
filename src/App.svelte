@@ -65,7 +65,9 @@
   {#if store.showImport}<ImportDialog />{/if}
   <Toast />
   {#if store.loading}
-    <div class="loading"><div class="spin"></div><span>{store.progress ? `Reading your mods… ${store.progress.done.toLocaleString()} of ${store.progress.total.toLocaleString()}` : store.error ? store.error : "Finding RimWorld…"}</span></div>
+    <div class="loading"><div class="spin"></div><span>{store.progress ? `Reading your mods… ${store.progress.done.toLocaleString()} of ${store.progress.total.toLocaleString()}` : store.error ? store.error : `${store.step}…`}</span></div>
+  {:else if store.error && !store.snap}
+    <div class="loading"><span class="err">{store.error}<br /><button class="btn" onclick={() => store.load()}>Try again</button></span></div>
   {/if}
 </div>
 
@@ -77,7 +79,9 @@
   .foot { font-size: 11px; color: var(--text-4); text-align: right; padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .loading { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(11, 11, 13, 0.7); backdrop-filter: blur(4px); z-index: 50; color: var(--text-2); font-weight: 600; }
   .loading > * { grid-area: 1 / 1; }
-  .loading span { margin-top: 70px; }
+  .loading span { margin-top: 70px; max-width: 60ch; text-align: center; line-height: 1.5; user-select: text; }
+  .loading .err { color: #ffb4ae; margin-top: 0; }
+  .loading .err .btn { margin-top: 12px; }
   .spin { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--surface-4); border-top-color: var(--amber); animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (max-width: 1240px) { .frame { grid-template-columns: 220px minmax(0, 1fr); } .frame :global(.inspector) { display: none; } }

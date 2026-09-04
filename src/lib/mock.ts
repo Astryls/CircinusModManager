@@ -185,7 +185,8 @@ function snapshot(): Snapshot {
     dirty,
     dbLoaded: ["communityRules.json (7,412 rules)", "steamDB.json (31,988 items)"],
     scannedAt: 1_757_000_000,
-    inspecting: 0
+    inspecting: 0,
+    issuesTruncated: 0
   };
 }
 
@@ -267,6 +268,8 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
       return { timestamp: 0, rules: rules.filter((r) => r.source === "user"), ignore: [] } as T;
     case "edit_user_rule":
       return snapshot() as T;
+    case "get_description":
+      return (mods.find((m) => m.uid === A.uid)?.description ?? "") as T;
     case "app_data_dir":
       return "C:\\Users\\Astryl\\AppData\\Local\\Circinus" as T;
     default:

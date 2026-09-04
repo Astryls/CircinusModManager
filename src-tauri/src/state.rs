@@ -87,7 +87,12 @@ pub struct Snapshot {
     pub scanned_at: i64,
     /// Mods whose folders are still being inspected in the background.
     pub inspecting: usize,
+    /// Texture-collision issues left out of `issues` to keep the payload small (0 = none).
+    pub issues_truncated: usize,
 }
+
+/// Texture collisions kept in a snapshot; the rest are available through the analyzer commands.
+const MAX_COLLISIONS: usize = 3000;
 
 pub struct App {
     pub data_dir: PathBuf,
@@ -262,14 +267,35 @@ impl App {
     }
 
     pub fn snapshot(&self) -> Snapshot {
+        let started = std::time::Instant::now();
+        // Descriptions are the bulk of the payload and only one is ever shown at a time:
+        // the UI fetches them with `get_description`.
+        let mods: Vec<ModInfo> = self.mods.iter().map(|m| ModInfo { description: String::new(), ..m.clone() }).collect();
+        let mut issues = self.issues();
+        let collisions = issues.iter().filter(|i| matches!(i, Issue::TextureCollision { .. })).count();
+        let mut issues_truncated = 0;
+        if collisions > MAX_COLLISIONS {
+            let mut kept = 0;
+            issues.retain(|i| {
+                if matches!(i, Issue::TextureCollision { .. }) {
+                    kept += 1;
+                    kept <= MAX_COLLISIONS
+                } else {
+                    true
+                }
+            });
+            issues_truncated = collisions - MAX_COLLISIONS;
+        }
+        let placements = self.placements();
+        tracing::info!(mods = mods.len(), active = self.active.len(), issues = issues.len(), rules = self.rules.len(), ms = started.elapsed().as_millis() as u64, "snapshot");
         Snapshot {
             locations: self.locations.clone(),
             game_version: self.game_version.clone(),
-            mods: self.mods.clone(),
+            mods,
             active: self.active.clone(),
             missing: self.missing.clone(),
-            issues: self.issues(),
-            placements: self.placements(),
+            issues,
+            placements,
             rules: self.rules.clone(),
             user: self.user.clone(),
             settings: self.settings.clone(),
@@ -279,7 +305,12 @@ impl App {
             db_loaded: self.db.loaded.clone(),
             scanned_at: self.scanned_at,
             inspecting: self.shallow.len(),
+            issues_truncated,
         }
+    }
+
+    pub fn description(&self, uid: &str) -> String {
+        self.mods.iter().find(|m| m.uid == uid).map(|m| m.description.clone()).unwrap_or_default()
     }
 
     pub fn set_active(&mut self, uids: Vec<String>) {
