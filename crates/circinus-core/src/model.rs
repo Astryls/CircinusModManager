@@ -280,7 +280,7 @@ pub enum Severity {
 
 /// Something the validator wants a person to see.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "kind")]
 pub enum Issue {
     MissingDependency {
         uid: String,
@@ -383,4 +383,25 @@ pub struct SortResult {
     /// (uid, from index, to index) for every mod whose position changed.
     pub moves: Vec<(String, usize, usize)>,
     pub issues: Vec<Issue>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The UI reads camelCase; variant fields must follow (rename_all alone does not cover them).
+    #[test]
+    fn issue_fields_are_camel_case_on_the_wire() {
+        let i = Issue::MisplacedOptimization { uid: "a".into(), after_uids: vec!["b".into()] };
+        let json = serde_json::to_string(&i).unwrap();
+        assert!(json.contains("\"afterUids\""), "{json}");
+        let i = Issue::OrderViolation { uid: "a".into(), target_uid: "b".into(), rule: RuleKind::LoadAfter, source: RuleSource::Community, comment: None };
+        let json = serde_json::to_string(&i).unwrap();
+        assert!(json.contains("\"targetUid\"") && json.contains("\"loadAfter\"") && json.contains("\"community\""), "{json}");
+        let i = Issue::MissingDependency { uid: "a".into(), dependency: "d".into(), display_name: Some("D".into()), installed_uid: None, workshop_url: None };
+        let json = serde_json::to_string(&i).unwrap();
+        assert!(json.contains("\"displayName\"") && !json.contains("installed_uid"), "{json}");
+        let back: Issue = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, i);
+    }
 }
