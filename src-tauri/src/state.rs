@@ -152,6 +152,9 @@ pub struct Snapshot {
     pub settings: Settings,
     pub weights: HashMap<String, Weight>,
     pub weights_fetched_at: i64,
+    /// One raw record as circinus.sh sent it, for checking the field names when figures look off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weights_sample: Option<String>,
     pub dirty: bool,
     pub db_loaded: Vec<String>,
     pub scanned_at: i64,
@@ -216,6 +219,7 @@ pub struct App {
     pub rules: Vec<Rule>,
     pub weights: HashMap<String, Weight>,
     pub weights_fetched_at: i64,
+    pub weights_sample: Option<String>,
     pub dirty: bool,
     pub scanned_at: i64,
     /// uids not yet inspected, and the cache stamps to write once they are.
@@ -279,6 +283,7 @@ impl App {
             rules: Vec::new(),
             weights: HashMap::new(),
             weights_fetched_at: 0,
+            weights_sample: None,
             dirty: false,
             scanned_at: 0,
             shallow: Vec::new(),
@@ -547,6 +552,7 @@ impl App {
             settings: self.settings.clone(),
             weights: self.weights.clone(),
             weights_fetched_at: self.weights_fetched_at,
+            weights_sample: self.weights_sample.clone(),
             dirty: self.dirty,
             db_loaded: self.db.loaded.clone(),
             scanned_at: self.scanned_at,
@@ -681,6 +687,7 @@ impl App {
     }
 
     fn load_cached_weights(&mut self) -> Result<()> {
+        self.weights_sample = self.cache.get("weights_sample").unwrap_or(None);
         let all: HashMap<String, (Weight, i64)> = self.cache.weights_all()?;
         let mut newest = 0;
         for (id, (w, at)) in all {
@@ -689,6 +696,15 @@ impl App {
         }
         self.weights_fetched_at = newest;
         Ok(())
+    }
+
+    /// Remember what one record from the API looks like.
+    pub fn store_weights_sample(&mut self, sample: Option<serde_json::Value>) {
+        let text = sample.map(|v| serde_json::to_string_pretty(&v).unwrap_or_default()).map(|t| if t.len() > 6000 { format!("{}\n...", &t[..6000]) } else { t });
+        if let Some(t) = &text {
+            let _ = self.cache.set("weights_sample", t);
+        }
+        self.weights_sample = text;
     }
 
     /// Merge freshly fetched API weights (and local runs) into the cache.

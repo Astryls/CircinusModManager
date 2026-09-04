@@ -205,6 +205,8 @@ export interface Snapshot {
   settings: Settings;
   weights: Record<string, Weight>;
   weightsFetchedAt: number;
+  /** One raw record as circinus.sh sent it, pretty printed. */
+  weightsSample?: string;
   dirty: boolean;
   dbLoaded: string[];
   scannedAt: number;

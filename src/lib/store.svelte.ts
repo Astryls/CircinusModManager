@@ -7,7 +7,8 @@ import { PHASES, primaryUid, severityOf } from "./types";
 
 export type View = "order" | "library" | "downloads" | "textures" | "analyzer" | "settings";
 export type Tab = "active" | "inactive" | "all";
-export type ShowOnly = "warning" | "error" | "note" | null;
+/** What the list is narrowed to: mods with errors, warnings, HALO notes, conflicts, changes, or moves. */
+export type ShowOnly = "attention" | "error" | "warning" | "note" | "conflict" | "changed" | "moved" | null;
 
 const ALL_SOURCES: Source[] = ["ludeon", "workshop", "local", "steamcmd", "git"];
 
@@ -134,13 +135,16 @@ class Store {
     const orderRules = (this.snap?.rules ?? []).filter((r) => (r.kind === "loadAfter" || r.kind === "loadBefore") && this.byPackage.has(r.subject) && r.target && this.byPackage.has(r.target) && this.activeSet.has(this.byPackage.get(r.subject)!.uid) && this.activeSet.has(this.byPackage.get(r.target)!.uid)).length;
     const violations = this.issues.filter((i) => i.kind === "orderViolation").length;
     const satisfied = orderRules ? Math.max(0, orderRules - violations) : 0;
-    let share = 0, measured = 0;
+    // Figures: a mod "has figures" when the site knows it at all (a band), and contributes to the
+    // total when it has a number.
+    let share = 0, measured = 0, withShare = 0;
     for (const uid of this.active) {
       const m = this.byUid.get(uid);
       const w = m && this.weightOf(m);
-      if (w?.share != null) { share += w.share; measured++; }
+      if (w && w.band !== "unknown") measured++;
+      if (w?.share != null) { share += w.share; withShare++; }
     }
-    return { errors, warnings, collisions: collisions.length, collidingMods, orderRules, violations, satisfied, pct: orderRules ? Math.floor((satisfied / orderRules) * 1000) / 10 : 100, share, measured };
+    return { errors, warnings, collisions: collisions.length, collidingMods, orderRules, violations, satisfied, pct: orderRules ? Math.floor((satisfied / orderRules) * 1000) / 10 : 100, share, measured, withShare };
   });
 
   // ---- filtering ----
@@ -150,12 +154,28 @@ class Store {
     if (this.group && this.snap?.user.modGroups[m.uid] !== this.group) return false;
     if (!this.sources.includes(m.source)) return false;
     if (this.onlyCurrentVersion && m.source !== "ludeon" && !(m.supportedVersions ?? []).includes(this.snap?.gameVersion.majorMinor ?? "")) return false;
-    if (this.showOnly) {
-      const list = this.issuesByUid.get(m.uid) ?? [];
-      if (!list.some((i) => severityOf(i) === this.showOnly)) return false;
-    }
+    if (this.showOnly && !this.passesShowOnly(m.uid, this.showOnly)) return false;
     return true;
   }
+  /** Whether a mod belongs to a "show only" set. */
+  passesShowOnly(uid: string, what: Exclude<ShowOnly, null>): boolean {
+    const list = this.issuesByUid.get(uid) ?? [];
+    switch (what) {
+      case "attention": return list.some((i) => severityOf(i) !== "note");
+      case "error": return list.some((i) => severityOf(i) === "error");
+      case "warning": return list.some((i) => severityOf(i) === "warning");
+      case "note": return list.some((i) => severityOf(i) === "note");
+      case "conflict": return list.some((i) => i.kind === "incompatible" || i.kind === "orderViolation" || i.kind === "cycle" || i.kind === "aboveOfficial");
+      case "changed": return this.changeByUid.has(uid);
+      case "moved": return this.moveOf.has(uid);
+    }
+  }
+  /** How many mods each "show only" choice would keep, for the menu. */
+  showOnlyCounts = $derived.by(() => {
+    const out: Record<Exclude<ShowOnly, null>, number> = { attention: 0, error: 0, warning: 0, note: 0, conflict: 0, changed: 0, moved: 0 };
+    for (const m of this.mods) for (const k of Object.keys(out) as (keyof typeof out)[]) if (this.passesShowOnly(m.uid, k)) out[k]++;
+    return out;
+  });
   visibleActive = $derived(this.active.map((u) => this.byUid.get(u)!).filter((m) => m && this.matches(m)));
   inactive = $derived(this.mods.filter((m) => !this.activeSet.has(m.uid)).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "")));
   visibleInactive = $derived(this.inactive.filter((m) => this.matches(m)));

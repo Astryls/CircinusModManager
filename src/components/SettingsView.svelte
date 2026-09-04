@@ -54,6 +54,7 @@
     if (!s) return;
     await store.updateSettings({ dbSources: s.dbSources.map((d) => (d.id === id ? { ...d, enabled: !d.enabled } : d)) });
   }
+  const withNumber = $derived(Object.values(store.snap?.weights ?? {}).filter((w) => w.share != null).length);
   const fetchedAgo = $derived.by(() => {
     const at = store.snap?.weightsFetchedAt ?? 0;
     if (!at) return "never";
@@ -158,8 +159,14 @@
       <label class="switch"><input type="checkbox" checked={s?.includeLocalRuns ?? true} onchange={(e) => store.updateSettings({ includeLocalRuns: e.currentTarget.checked })} />Include my own runs (the Circinus/Runs folder next to the config folder)</label>
       <div class="row">
         <button class="btn" onclick={() => store.refreshWeights()}>{@html I.gauge}Fetch from circinus.sh</button>
-        <span class="hint">{Object.keys(store.snap?.weights ?? {}).length.toLocaleString()} mods have figures · fetched {fetchedAgo}</span>
+        <span class="hint">{Object.keys(store.snap?.weights ?? {}).length.toLocaleString()} mods have figures ({withNumber.toLocaleString()} with a number) · fetched {fetchedAgo}</span>
       </div>
+      {#if store.snap?.weightsSample}
+        <details class="sample">
+          <summary>One record as circinus.sh sends it</summary>
+          <pre class="mono">{store.snap.weightsSample}</pre>
+        </details>
+      {/if}
     </section>
 
     <section class="card">
@@ -195,6 +202,9 @@
   .switch { margin: 6px 0; align-items: center; display: flex; }
   .lnk { color: var(--blue); font-weight: 600; }
   .hint.bad { color: var(--red); }
+  .sample { margin-top: 8px; font-size: 12.5px; color: var(--text-3); }
+  .sample summary { cursor: pointer; font-weight: 600; }
+  .sample pre { margin: 6px 0 0; max-height: 240px; overflow: auto; background: var(--surface-2); border-radius: 8px; padding: 8px 10px; font-size: 11px; line-height: 1.4; user-select: text; white-space: pre-wrap; word-break: break-all; }
   .path.bad { color: var(--red); }
   .opt { display: flex; align-items: center; gap: 10px; margin: 6px 0 10px; font-size: 13px; }
   .opt .l { width: 100px; color: var(--text-2); }

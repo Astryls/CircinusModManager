@@ -204,8 +204,9 @@ pub async fn update_databases(state: State<'_, Shared>) -> CmdResult<Vec<String>
 #[tauri::command]
 pub async fn refresh_weights(state: State<'_, Shared>) -> CmdResult<usize> {
     let client = reqwest::Client::builder().user_agent(circinus_core::weight::USER_AGENT).build().map_err(err)?;
-    let fetched = circinus_core::weight::fetch_all(&client).await.map_err(err)?;
+    let (fetched, sample) = circinus_core::weight::fetch_all(&client).await.map_err(err)?;
     with_app(&state, move |app| {
+        app.store_weights_sample(sample);
         let n = app.store_weights(fetched).map_err(err)?;
         let local = if app.settings.include_local_runs { app.merge_local_weights() } else { 0 };
         Ok(n + local)

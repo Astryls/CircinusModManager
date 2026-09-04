@@ -1,8 +1,6 @@
 <script lang="ts">
   import { store, type View } from "$lib/store.svelte";
   import { I } from "$lib/icons";
-  import type { Source } from "$lib/types";
-  import { SOURCE_LABEL } from "$lib/types";
 
   const snap = $derived(store.snap);
   const groupCounts = $derived.by(() => {
@@ -18,10 +16,6 @@
     { id: "analyzer", label: "Analyzer", icon: I.analyze, count: () => store.stats.errors + store.stats.warnings, att: true },
     { id: "settings", label: "Settings", icon: I.gear }
   ];
-  const sources: Source[] = ["workshop", "local", "steamcmd", "git", "ludeon"];
-  function toggleSource(s: Source) {
-    store.sources = store.sources.includes(s) ? store.sources.filter((x) => x !== s) : [...store.sources, s];
-  }
   let newGroup = $state(false);
   let newName = $state("");
   const palette = ["blue", "teal", "green", "pink", "amber", "coral", "violet"];
@@ -72,19 +66,6 @@
     {#if store.group}<button class="clear" onclick={() => (store.group = null)}>Show all groups</button>{/if}
   </section>
 
-  <section class="card filters">
-    <div class="label">Show mods from</div>
-    <div class="chips">
-      {#each sources as s}<button class="chip" class:on={store.sources.includes(s)} onclick={() => toggleSource(s)}>{SOURCE_LABEL[s]}</button>{/each}
-    </div>
-    <div class="label">Show only</div>
-    <div class="chips">
-      <button class="chip" class:on={store.onlyCurrentVersion} onclick={() => (store.onlyCurrentVersion = !store.onlyCurrentVersion)}>Made for {snap?.gameVersion.majorMinor ?? "this version"}</button>
-      <button class="chip err" class:on={store.showOnly === "error"} onclick={() => (store.showOnly = store.showOnly === "error" ? null : "error")}>{@html I.error}Errors</button>
-      <button class="chip" class:on={store.showOnly === "warning"} onclick={() => (store.showOnly = store.showOnly === "warning" ? null : "warning")}>{@html I.warn}Warnings</button>
-      <button class="chip note" class:on={store.showOnly === "note"} onclick={() => (store.showOnly = store.showOnly === "note" ? null : "note")}>{@html I.note}Notes</button>
-    </div>
-  </section>
 </aside>
 
 <style>
@@ -116,8 +97,4 @@
   .groups .g .ov :global(svg) { width: 13px; height: 13px; }
   .clear { margin-top: 6px; font-size: 12px; color: var(--text-3); font-weight: 600; }
   .clear:hover { color: var(--text); }
-  .filters .label { margin: 10px 0 6px; }
-  .filters .label:first-child { margin-top: 0; }
-  .filters .chip { height: 24px; padding: 0 8px; font-size: 11.5px; gap: 5px; }
-  .filters .chip :global(svg) { width: 13px; height: 13px; }
 </style>

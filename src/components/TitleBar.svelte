@@ -47,7 +47,7 @@
       <button class="chip warn" title="{changesN} mods changed since you last opened Circinus. Click to see what changed." onclick={() => (store.showChanges = true)}>{@html I.bell}<span>{changesN} changed</span></button>
     {/if}
     <button class="chip" class:on={store.view === "downloads"} title={dl.title} aria-label="Downloads (Ctrl D)" onclick={() => (store.view = store.view === "downloads" ? "order" : "downloads")}>
-      <span class="dot" class:pulse={dl.pulse} style="--c: {dl.color}"></span>{@html I.cloud}<span>{dl.label}</span>
+      <span class="dot" class:pulse={dl.pulse} style="--c: {dl.color}"></span>{@html I.cloud}<span class="lbl">{dl.label}</span>
     </button>
     <button class="ib" class:on={store.view === "settings"} aria-label="Settings" title="Settings" onclick={() => (store.view = store.view === "settings" ? "order" : "settings")}>{@html I.gear}</button>
     <button class="btn" class:save={store.snap?.dirty} disabled={!store.snap?.dirty} onclick={() => store.save()} title="Write ModsConfig.xml (Ctrl S)">{@html I.save}Save</button>
@@ -56,17 +56,18 @@
 </header>
 
 <style>
-  .title { display: grid; grid-template-columns: 1fr minmax(320px, 520px) 1fr; align-items: center; gap: 16px; padding: 0 18px; background: var(--bg); }
-  .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .title { display: flex; align-items: center; gap: 16px; padding: 0 18px; background: var(--bg); min-width: 0; }
+  .brand { display: flex; align-items: center; gap: 10px; flex: 1 1 0; min-width: 0; }
   .mark { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(160deg, #2a2a30, #161619); box-shadow: var(--shadow-card); display: grid; place-items: center; }
   .mark i { width: 12px; height: 12px; border-radius: 50%; border: 3px solid var(--amber); box-sizing: border-box; display: block; }
   .brand b { font-weight: 800; font-size: 15px; letter-spacing: -0.01em; }
-  .search { position: relative; }
+  .search { position: relative; flex: 1 1 520px; max-width: 520px; min-width: 160px; }
   .search input { width: 100%; height: 34px; border: 0; border-radius: 10px; background: var(--surface); color: var(--text); padding: 0 64px 0 36px; font-size: 13.5px; box-shadow: var(--shadow-card); }
   .search input::placeholder { color: var(--text-3); }
   .search :global(svg) { position: absolute; left: 11px; top: 8px; width: 18px; height: 18px; pointer-events: none; opacity: 0.9; }
   .search kbd { position: absolute; right: 10px; top: 8px; font: 600 11px var(--mono); color: var(--text-3); background: var(--surface-3); border-radius: 5px; padding: 2px 6px; }
-  .actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+  .actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; flex: 1 1 0; min-width: max-content; }
+  @media (max-width: 1500px) { .chip .lbl { display: none; } .chip { padding-right: 10px; } .busy { display: none; } }
   .busy { font-size: 12px; color: var(--text-3); font-weight: 600; margin-right: 6px; white-space: nowrap; }
   .ib { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; color: var(--text-2); }
   .ib:hover, .ib.on { background: var(--surface-2); color: var(--text); }

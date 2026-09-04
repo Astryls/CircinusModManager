@@ -3,7 +3,7 @@
   import { store } from "$lib/store.svelte";
   import { I, sevIcon } from "$lib/icons";
   import { describe } from "$lib/describe";
-  import { BAND_LABEL, SOURCE_GLYPH, SOURCE_LABEL, describeChange, severityOf, type ModInfo } from "$lib/types";
+  import { BAND_LABEL, describeChange, severityOf, type ModInfo } from "$lib/types";
 
   // ---- virtualization: only the rows in view exist in the DOM ----
   const ROW = 40;
@@ -14,7 +14,7 @@
   let scroller = $state<HTMLDivElement | null>(null);
   let scrollTop = $state(0);
   let viewport = $state(600);
-  let dragUids: string[] = [];
+  let dragUids = $state<string[]>([]);
   let dropAt = $state<{ uid: string; after: boolean } | null>(null);
   let dropEnd = $state(false);
 
@@ -114,26 +114,76 @@
       }
     }
   }
-  function dragStart(e: DragEvent, m: ModInfo) {
-    if (!store.selected.includes(m.uid)) store.select(m.uid);
-    dragUids = store.selected.filter((u) => store.byUid.has(u));
-    e.dataTransfer?.setData("text/plain", dragUids.join("\n"));
-    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+  // ---- drag to reorder, driven by pointer events so it behaves the same in a browser and in
+  // the Tauri webview (HTML5 drag and drop is unreliable there on Windows) ----
+  let press: { x: number; y: number; uid: string; pointerId: number } | null = null;
+  let dragging = $state(false);
+  let dragCount = $state(0);
+  let ghost = $state({ x: 0, y: 0 });
+  let suppressClick = false;
+  let autoScroll = 0;
+
+  function pointerDown(e: PointerEvent, m: ModInfo) {
+    if (e.button !== 0 || (e.target as HTMLElement).closest("button, a, input, select")) return;
+    press = { x: e.clientX, y: e.clientY, uid: m.uid, pointerId: e.pointerId };
   }
-  function dragOver(e: DragEvent, m: ModInfo) {
-    if (!store.activeSet.has(m.uid) || !dragUids.length) return;
-    e.preventDefault();
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    dropAt = { uid: m.uid, after: e.clientY > r.top + r.height / 2 };
-    dropEnd = false;
+  function pointerMove(e: PointerEvent) {
+    if (!press) return;
+    if (!dragging) {
+      if (Math.hypot(e.clientX - press.x, e.clientY - press.y) < 6) return;
+      // Drag whatever is selected when the pressed row is part of it, else just that row.
+      if (!store.selected.includes(press.uid)) store.select(press.uid);
+      dragUids = store.selected.filter((u) => store.byUid.has(u));
+      dragCount = dragUids.length;
+      dragging = true;
+      suppressClick = true;
+      document.body.style.cursor = "grabbing";
+    }
+    ghost = { x: e.clientX, y: e.clientY };
+    updateDrop(e.clientX, e.clientY);
+    edgeScroll(e.clientY);
   }
-  function dragOverEnd(e: DragEvent) {
-    if (!dragUids.length) return;
-    e.preventDefault();
-    if (!dropAt) dropEnd = true;
+  function updateDrop(x: number, y: number) {
+    if (!scroller) return;
+    const el = document.elementFromPoint(x, y) as HTMLElement | null;
+    const row = el?.closest(".row[data-uid]") as HTMLElement | null;
+    if (row) {
+      const uid = row.dataset.uid ?? "";
+      if (!store.activeSet.has(uid)) { dropAt = null; dropEnd = false; return; }
+      const r = row.getBoundingClientRect();
+      dropAt = { uid, after: y > r.top + r.height / 2 };
+      dropEnd = false;
+      return;
+    }
+    const box = scroller.getBoundingClientRect();
+    const inside = x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+    dropAt = null;
+    dropEnd = inside && store.tab !== "inactive" && y > box.top + (offsets[items.length] ?? 0) - scrollTop;
   }
-  async function drop(e: DragEvent) {
-    e.preventDefault();
+  /** Scroll the list while the pointer sits near its top or bottom edge. */
+  function edgeScroll(y: number) {
+    if (!scroller) return;
+    const box = scroller.getBoundingClientRect();
+    const zone = 48;
+    autoScroll = y < box.top + zone ? -Math.ceil((box.top + zone - y) / 6) : y > box.bottom - zone ? Math.ceil((y - (box.bottom - zone)) / 6) : 0;
+    if (autoScroll && !scrollTimer) scrollTimer = setInterval(() => {
+      if (!scroller || !autoScroll) return;
+      scroller.scrollTop += autoScroll;
+      scrollTop = scroller.scrollTop;
+      updateDrop(ghost.x, ghost.y);
+    }, 16);
+    if (!autoScroll && scrollTimer) { clearInterval(scrollTimer); scrollTimer = 0; }
+  }
+  let scrollTimer = 0;
+  async function pointerUp(e: PointerEvent) {
+    const wasDragging = dragging;
+    press = null;
+    if (scrollTimer) { clearInterval(scrollTimer); scrollTimer = 0; }
+    autoScroll = 0;
+    document.body.style.cursor = "";
+    if (!wasDragging) return;
+    dragging = false;
+    updateDrop(e.clientX, e.clientY);
     const uids = dragUids, target = dropAt, end = dropEnd;
     dragUids = []; dropAt = null; dropEnd = false;
     if (!uids.length) return;
@@ -148,11 +198,22 @@
     if (moving.length) await store.moveTo(moving, index);
     if (fresh.length) await store.activate(fresh, moving.length ? undefined : index);
   }
-  function dragEnd() { dragUids = []; dropAt = null; dropEnd = false; }
-  function dragLeaveRow() { dropAt = null; }
+  function pointerCancel() {
+    press = null;
+    dragging = false;
+    dragUids = []; dropAt = null; dropEnd = false;
+    if (scrollTimer) { clearInterval(scrollTimer); scrollTimer = 0; }
+    document.body.style.cursor = "";
+  }
+  function rowClick(e: MouseEvent, m: ModInfo) {
+    if (suppressClick) { suppressClick = false; return; }
+    click(e, m);
+  }
 </script>
 
-<div class="card list" bind:this={scroller} bind:clientHeight={viewport} onscroll={onScroll} ondragover={dragOverEnd} ondrop={drop} ondragend={dragEnd} role="listbox" aria-label="Load order" aria-multiselectable="true" tabindex="-1">
+<svelte:window onpointermove={pointerMove} onpointerup={pointerUp} onpointercancel={pointerCancel} onblur={pointerCancel} />
+
+<div class="card list" class:dragging bind:this={scroller} bind:clientHeight={viewport} onscroll={onScroll} role="listbox" aria-label="Load order" aria-multiselectable="true" tabindex="-1">
   {#if floating}
     <div class="ph floating"><span class="dot c-{floating.color}"></span><span class="n">{floating.name}</span><span class="c num">{floating.count}</span><span class="note">{floating.note}</span></div>
   {/if}
@@ -178,17 +239,13 @@
           role="option"
           aria-selected={store.selected.includes(m.uid)}
           tabindex="0"
-          draggable="true"
-          onclick={(e) => click(e, m)}
+          onclick={(e) => rowClick(e, m)}
           ondblclick={() => toggle(m)}
           onkeydown={(e) => key(e, m)}
-          ondragstart={(e) => dragStart(e, m)}
-          ondragover={(e) => dragOver(e, m)}
-          ondragleave={dragLeaveRow}
+          onpointerdown={(e) => pointerDown(e, m)}
         >
           <span class="idx num">{it.inactive ? "" : (store.indexOf.get(m.uid) ?? 0) + 1}</span>
           <span class="grip">{@html I.grip}</span>
-          <span class="src {m.source}" title={SOURCE_LABEL[m.source] ?? m.source}>{SOURCE_GLYPH[m.source] ?? "?"}</span>
           <span class="name"><b>{m.name ?? m.uid}</b><span>{m.invalid ?? (m.authors ?? []).join(", ")}</span></span>
           <span class="pkg">{m.packageId}</span>
           {#if store.showWeight}
@@ -209,6 +266,9 @@
     {/each}
     {#if dropEnd}<div class="drop-line" style="transform: translateY({total}px)"></div>{/if}
   </div>
+  {#if dragging}
+    <div class="ghost" style="left: {ghost.x + 14}px; top: {ghost.y + 10}px">{dragCount === 1 ? store.byUid.get(dragUids[0])?.name ?? "1 mod" : `${dragCount} mods`}</div>
+  {/if}
   {#if !items.length}
     <div class="empty">{store.active.length || store.tab !== "active" ? "No mod matches the search or filters." : "No active mods. Import a list, or activate mods from the Inactive tab."}</div>
   {/if}
@@ -216,6 +276,9 @@
 
 <style>
   .list { flex: 1; min-height: 0; overflow: auto; padding: 0 6px 10px; position: relative; }
+  .list.dragging { cursor: grabbing; }
+  .list.dragging .row { cursor: grabbing; }
+  .ghost { position: fixed; z-index: 30; pointer-events: none; background: var(--surface-4); color: var(--text); font-size: 12.5px; font-weight: 600; padding: 6px 10px; border-radius: 8px; box-shadow: var(--shadow-float); max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .spacer { position: relative; }
   .ph { position: absolute; left: 0; right: 0; height: 44px; display: flex; align-items: center; gap: 10px; padding: 14px 10px 6px; background: var(--surface); }
   /* Sticky overlay of the current section; the negative bottom margin keeps it out of the flow so row offsets stay exact. */
@@ -224,7 +287,7 @@
   .ph .n { font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-2); }
   .ph .c { font-size: 11px; color: var(--text-3); font-weight: 600; }
   .ph .note { margin-left: auto; font-size: 11.5px; color: var(--text-3); }
-  .row { position: absolute; left: 0; right: 0; height: 40px; display: grid; grid-template-columns: 34px 18px 22px minmax(0, 1fr) 150px auto 64px 14px 82px 40px; align-items: center; gap: 10px; padding: 0 8px 0 4px; border-radius: var(--r-row); cursor: default; }
+  .row { position: absolute; left: 0; right: 0; height: 40px; display: grid; grid-template-columns: 34px 18px minmax(0, 1fr) 150px auto 64px 14px 82px 40px; align-items: center; gap: 10px; padding: 0 8px 0 4px; border-radius: var(--r-row); cursor: default; }
   .row:hover { background: var(--surface-2); }
   .row.sel { background: var(--surface-3); }
   .row.off { opacity: 0.72; }
@@ -234,7 +297,7 @@
   .row.drop-after::after { bottom: -1px; }
   .drop-line { position: absolute; left: 8px; right: 8px; height: 2px; background: var(--amber); border-radius: 1px; }
   .idx { font-family: var(--mono); font-size: 11.5px; color: var(--text-3); text-align: right; }
-  .grip { color: var(--text-4); opacity: 0; display: grid; place-items: center; cursor: grab; }
+  .grip { color: var(--text-4); opacity: 0; display: grid; place-items: center; cursor: grab; touch-action: none; }
   .row:hover .grip, .row.sel .grip { opacity: 1; }
   .grip :global(svg) { width: 12px; height: 12px; }
   .name { min-width: 0; display: flex; flex-direction: column; justify-content: center; line-height: 1.2; }
@@ -251,5 +314,5 @@
   .delta.down { color: var(--amber); }
   .delta.up { color: var(--blue); }
   .empty { padding: 40px; text-align: center; color: var(--text-3); }
-  @media (max-width: 1240px) { .row { grid-template-columns: 34px 18px 22px minmax(0, 1fr) auto 64px 14px 78px 40px; } .pkg { display: none; } }
+  @media (max-width: 1240px) { .row { grid-template-columns: 34px 18px minmax(0, 1fr) auto 64px 14px 82px 40px; } .pkg { display: none; } }
 </style>

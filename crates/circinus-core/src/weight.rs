@@ -104,7 +104,43 @@ fn share_of(obj: &Value) -> Option<f64> {
             return Some(x);
         }
         if let Some(o) = v.as_object() {
-            return num(o.get("median").or_else(|| o.get("value")).or_else(|| o.get("share")));
+            if let Some(x) = num(o.get("median").or_else(|| o.get("p50")).or_else(|| o.get("value")).or_else(|| o.get("share")).or_else(|| o.get("percent"))) {
+                return Some(x);
+            }
+        }
+    }
+    // The schema may nest the figure ("stats.share.median", "cost.frameShare.p50", "summary.share_pct"):
+    // look a few levels down for the first number under a share-like key.
+    share_deep(obj, 0)
+}
+
+fn share_deep(v: &Value, depth: usize) -> Option<f64> {
+    let obj = v.as_object()?;
+    for (k, val) in obj {
+        let key = k.to_ascii_lowercase();
+        let share_like = key.contains("share") || key.contains("pct") || key == "percent";
+        if share_like {
+            if let Some(x) = num(Some(val)) {
+                return Some(if key.contains("fraction") { x * 100.0 } else { x });
+            }
+            if let Some(o) = val.as_object() {
+                for pick in ["median", "p50", "value", "typical", "mean"] {
+                    if let Some(x) = num(o.get(pick)) {
+                        return Some(x);
+                    }
+                }
+            }
+        }
+    }
+    if depth >= 3 {
+        return None;
+    }
+    for (k, val) in obj {
+        let key = k.to_ascii_lowercase();
+        if val.is_object() && (key.contains("share") || key.contains("cost") || key.contains("frame") || key.contains("stat") || key.contains("summary") || key.contains("median") || key.contains("figure")) {
+            if let Some(x) = share_deep(val, depth + 1) {
+                return Some(x);
+            }
         }
     }
     None
@@ -152,9 +188,10 @@ pub fn parse_mod(obj: &Value, origin: &str) -> Option<Weight> {
     Some(Weight { band: band_of(obj, share, ranked), package_id, share, ranked, seen, measured, ranked_runs, installs, net_low, net_high, withheld, origin: origin.into() })
 }
 
-/// Parse a list response: a bare array, or an object whose first array-valued field holds mods.
-pub fn parse_list(v: &Value) -> Vec<Weight> {
-    let arr: Vec<&Value> = match v {
+/// The mod objects of a list response: a bare array, or an object whose first array-valued
+/// field holds mods.
+fn list_items(v: &Value) -> Vec<&Value> {
+    match v {
         Value::Array(a) => a.iter().collect(),
         Value::Object(o) => o
             .get("mods")
@@ -166,18 +203,27 @@ pub fn parse_list(v: &Value) -> Vec<Weight> {
             .map(|a| a.iter().collect())
             .unwrap_or_default(),
         _ => Vec::new(),
-    };
-    arr.iter().filter_map(|m| parse_mod(m, "api")).collect()
+    }
 }
 
-/// Fetch every mod the site has figures for, paging through the list endpoint.
-pub async fn fetch_all(client: &reqwest::Client) -> Result<Vec<Weight>> {
+/// Parse a list response.
+pub fn parse_list(v: &Value) -> Vec<Weight> {
+    list_items(v).iter().filter_map(|m| parse_mod(m, "api")).collect()
+}
+
+/// Fetch every mod the site has figures for, paging through the list endpoint. Also returns the
+/// first raw record, so what the server actually sends can be shown when the figures look off.
+pub async fn fetch_all(client: &reqwest::Client) -> Result<(Vec<Weight>, Option<Value>)> {
     let mut out: Vec<Weight> = Vec::new();
+    let mut sample: Option<Value> = None;
     let limit = 500usize;
     let mut offset = 0usize;
     for _ in 0..200 {
         let url = format!("{API_BASE}/mods?limit={limit}&offset={offset}");
         let v: Value = client.get(&url).header(reqwest::header::USER_AGENT, USER_AGENT).send().await?.error_for_status()?.json().await?;
+        if sample.is_none() {
+            sample = list_items(&v).into_iter().find(|m| share_of(m).is_some()).or_else(|| list_items(&v).into_iter().next()).cloned();
+        }
         let page = parse_list(&v);
         let n = page.len();
         out.extend(page);
@@ -186,7 +232,7 @@ pub async fn fetch_all(client: &reqwest::Client) -> Result<Vec<Weight>> {
         }
         offset += n;
     }
-    Ok(out)
+    Ok((out, sample))
 }
 
 /// Fetch one mod in full (per-patch medians are ignored here; the summary is what we show).
@@ -287,10 +333,15 @@ mod tests {
         let list = serde_json::json!({"mods": [
             {"packageId": "Krkr.RocketMan", "share": 3.4, "band": "moderate", "ranked": true, "runs": {"seen": 120, "measured": 100, "ranked": 80}, "installs": 40},
             {"packageId": "a.b", "share": -1, "ranked": false, "band": "insufficient"},
-            {"packageId": "c.d", "median": {"share": 0.1}}
+            {"packageId": "c.d", "median": {"share": 0.1}},
+            {"packageId": "e.f", "band": "negligible", "ranked": true, "stats": {"frameShare": {"p50": 0.04, "p90": 0.2}}},
+            {"packageId": "g.h", "ranked": true, "summary": {"share_pct": "0.75"}}
         ]});
         let w = parse_list(&list);
-        assert_eq!(w.len(), 3);
+        assert_eq!(w.len(), 5);
+        assert_eq!(w[3].share, Some(0.04), "nested share under stats.frameShare.p50");
+        assert_eq!(w[3].band, Band::Negligible);
+        assert_eq!(w[4].share, Some(0.75), "share_pct as a string two levels down");
         assert_eq!(w[0].package_id, "krkr.rocketman");
         assert_eq!(w[0].band, Band::Moderate);
         assert_eq!(w[0].measured, Some(100));
