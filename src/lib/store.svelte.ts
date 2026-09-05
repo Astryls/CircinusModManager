@@ -513,7 +513,7 @@ class Store {
     if (!was || s.running) return;
     if (s.error) this.say(s.error, "err");
     else if (s.stopped) this.say("Stopped. Nothing was merged", "warn");
-    else if (s.report) this.say(`${s.report.defs.toLocaleString()} defs merged · ${s.report.overwrites.length.toLocaleString()} contested values · ${(s.report.elapsedMs / 1000).toFixed(1)}s`);
+    else if (s.report) this.say(`${s.report.defs.toLocaleString()} defs merged · ${s.report.chains.length.toLocaleString()} contested values · ${(s.report.elapsedMs / 1000).toFixed(1)}s`);
   }
   /** Show one def's merged contents, optionally pointing at a path inside it. */
   openDef(defType: string, defName: string, path?: string) {

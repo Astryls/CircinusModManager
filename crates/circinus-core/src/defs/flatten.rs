@@ -36,13 +36,50 @@ pub struct Origin {
 pub struct Overwrite {
     /// `ThingDef/Wall`, or `ThingDef/#3` for a def with no defName.
     pub def: String,
-    /// `statBases/MaxHitPoints`, relative to the def.
+    /// `statBases/MaxHitPoints`, relative to the def, as it was when the change happened.
     pub path: String,
     pub from: u32,
     pub to: u32,
     pub old_value: String,
     pub new_value: String,
     /// The operation that did it (`PatchOperationReplace`), or `Defs` for a plain duplicate def.
+    pub how: String,
+    /// The node that was changed. A path is not an identity — twenty mods each removing
+    /// `comps/li[3]` removed twenty different things — so chains are followed by node.
+    #[serde(default)]
+    pub node: u32,
+    /// The node that took its place (`Replace`), the node itself (an attribute set, a rename),
+    /// or `NONE` when it is simply gone (`Remove`).
+    #[serde(default = "none")]
+    pub next: u32,
+}
+
+fn none() -> u32 {
+    super::tree::NONE
+}
+
+/// One value's history: the mod that shipped it, then every mod that changed it, in load order.
+/// The last step is what the game sees.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Chain {
+    pub def: String,
+    pub def_type: String,
+    pub def_name: String,
+    pub path: String,
+    pub steps: Vec<ChainStep>,
+    /// When several list items under one parent were removed by the same mod, they are one row:
+    /// this holds the values that went, and `path` names the list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removed: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChainStep {
+    pub origin: u32,
+    pub value: String,
+    /// `Defs` for the value as shipped, else the operation.
     pub how: String,
 }
 
@@ -93,6 +130,9 @@ pub struct Report {
     pub values: usize,
     pub operations: usize,
     pub overwrites: Vec<Overwrite>,
+    /// `overwrites` followed by node into the histories the view shows.
+    #[serde(default)]
+    pub chains: Vec<Chain>,
     pub problems: Vec<PatchProblem>,
     pub duplicates: Vec<Duplicate>,
     pub per_mod: Vec<ModStats>,
@@ -370,7 +410,9 @@ impl Flattener {
                     }
                 }
                 "PatchOperationRemove" => {
-                    self.note_change(t, origin, "PatchOperationRemove", String::new(), m);
+                    if let Some(i) = self.note_change(t, origin, "PatchOperationRemove", String::new(), m) {
+                        self.report.overwrites[i].next = super::tree::NONE;
+                    }
                     match t {
                         Item::Node(n) => self.doc.remove(n),
                         Item::Attr { node, index } => {
@@ -382,12 +424,17 @@ impl Flattener {
                 "PatchOperationReplace" => match t {
                     Item::Node(target) => {
                         let after = value_nodes.first().map(|v| self.doc.string_value(*v).trim().to_string()).unwrap_or_default();
-                        self.note_change(t, origin, "PatchOperationReplace", after, m);
+                        let noted = self.note_change(t, origin, "PatchOperationReplace", after, m);
                         let mut anchor = target;
+                        let mut first: Option<NodeId> = None;
                         for v in &value_nodes {
                             let copy = self.doc.clone_subtree(*v, Some(origin), 0);
                             self.doc.insert_after(anchor, copy);
                             anchor = copy;
+                            first.get_or_insert(copy);
+                        }
+                        if let Some(i) = noted {
+                            self.report.overwrites[i].next = first.unwrap_or(super::tree::NONE);
                         }
                         self.doc.remove(target);
                     }
@@ -455,28 +502,33 @@ impl Flattener {
     }
 
     /// Record that a patch took a value over from whoever owned it.
-    fn note_change(&mut self, target: Item, origin: u32, how: &str, new_value: String, m: &ModInfo) {
+    /// Returns the journal index, so a Replace can record the node that took over.
+    fn note_change(&mut self, target: Item, origin: u32, how: &str, new_value: String, m: &ModInfo) -> Option<usize> {
         let owner = target.owner();
         let old_origin = match target {
             Item::Node(n) => self.doc.nodes[n as usize].origin,
             Item::Attr { node, .. } => self.doc.nodes[node as usize].origin,
         };
         if old_origin == origin || old_origin == 0 {
-            return;
+            return None;
         }
-        let Some((def, path)) = self.locate(owner) else { return };
+        // A mod patching its own defs is not two mods disagreeing; nobody needs to read about it.
+        if self.origins[old_origin as usize].uid == m.uid {
+            return None;
+        }
+        let Some((def, path)) = self.locate(owner) else { return None };
         let old_value = match target {
             Item::Node(n) => self.doc.string_value(n).trim().to_string(),
             Item::Attr { index, .. } => self.doc.attr_value_at(index).to_string(),
         };
-        let (from_uid, to_uid) = (self.origins[old_origin as usize].uid.clone(), m.uid.clone());
-        self.report.overwrites.push(Overwrite { def, path, from: old_origin, to: origin, old_value, new_value, how: how.to_string() });
-        if from_uid != to_uid {
-            self.stats_for(m).wins += 1;
-            if let Some(s) = self.stats.get_mut(&from_uid) {
-                s.losses += 1;
-            }
+        let from_uid = self.origins[old_origin as usize].uid.clone();
+        // Until told otherwise the node is changed in place; Remove and Replace say so after.
+        self.report.overwrites.push(Overwrite { def, path, from: old_origin, to: origin, old_value, new_value, how: how.to_string(), node: owner, next: owner });
+        self.stats_for(m).wins += 1;
+        if let Some(s) = self.stats.get_mut(&from_uid) {
+            s.losses += 1;
         }
+        Some(self.report.overwrites.len() - 1)
     }
 
     /// The def a node belongs to, and the node's path inside it.
@@ -598,6 +650,7 @@ impl Flattener {
     pub fn finish(mut self, elapsed_ms: u64) -> Flattened {
         let defs: Vec<NodeId> = self.doc.element_children(self.root).collect();
         self.report.defs = defs.len();
+        self.report.chains = build_chains(&self.report.overwrites);
 
         // Duplicates: the same type and defName from more than one origin.
         let mut by_key: HashMap<(String, String), Vec<(NodeId, u32)>> = HashMap::new();
@@ -679,6 +732,95 @@ pub fn flatten(order: &[&ModInfo], folders_for: &dyn Fn(&ModInfo) -> Vec<String>
     }
     f.resolve_inheritance();
     f.finish(started.elapsed().as_millis() as u64)
+}
+
+// ---------------------------------------------------------------------------------------------
+// Histories
+// ---------------------------------------------------------------------------------------------
+
+/// Follow the journal by node: an entry whose `node` is an earlier entry's `next` continues that
+/// history. Twenty mods each removing `comps/li[3]` are twenty histories of one step, not one of
+/// twenty — and then, because twenty one-line rows saying "removed" are their own kind of noise,
+/// removals of sibling list items by the same mod fold into one row that lists what went.
+pub fn build_chains(overwrites: &[Overwrite]) -> Vec<Chain> {
+    let none = super::tree::NONE;
+    // Which journal entry continues from which node.
+    let mut continues_at: HashMap<u32, usize> = HashMap::new();
+    for (i, o) in overwrites.iter().enumerate() {
+        continues_at.entry(o.node).or_insert(i);
+    }
+    let mut taken = vec![false; overwrites.len()];
+    let mut chains: Vec<Chain> = Vec::new();
+    for (i, first) in overwrites.iter().enumerate() {
+        if taken[i] {
+            continue;
+        }
+        taken[i] = true;
+        let (def_type, def_name) = split_def(&first.def);
+        let mut steps = vec![ChainStep { origin: first.from, value: first.old_value.clone(), how: "Defs".into() }, ChainStep { origin: first.to, value: first.new_value.clone(), how: first.how.clone() }];
+        let mut cur = first;
+        loop {
+            if cur.next == none {
+                break;
+            }
+            // The next entry on this node — or on the node that replaced it — must come later in
+            // the journal, since the journal is in load order.
+            let Some(&j) = continues_at.get(&cur.next).filter(|&&j| j > i && !taken[j]) else { break };
+            taken[j] = true;
+            cur = &overwrites[j];
+            steps.push(ChainStep { origin: cur.to, value: cur.new_value.clone(), how: cur.how.clone() });
+        }
+        chains.push(Chain { def: first.def.clone(), def_type, def_name, path: first.path.clone(), steps, removed: Vec::new() });
+    }
+
+    // Fold "the same mod removed several items of the same list" into one row.
+    let mut folded: Vec<Chain> = Vec::with_capacity(chains.len());
+    let mut groups: HashMap<(String, String, u32, u32), Vec<usize>> = HashMap::new();
+    for (i, c) in chains.iter().enumerate() {
+        let is_removal = c.steps.len() == 2 && c.steps[1].how == "PatchOperationRemove";
+        let Some(list) = list_of(&c.path).filter(|_| is_removal) else { continue };
+        groups.entry((c.def.clone(), list.to_string(), c.steps[0].origin, c.steps[1].origin)).or_default().push(i);
+    }
+    let mut absorbed = vec![false; chains.len()];
+    for ((def, list, from, to), members) in groups {
+        if members.len() < 2 {
+            continue;
+        }
+        let removed: Vec<String> = members.iter().map(|&i| chains[i].steps[0].value.clone()).collect();
+        for &i in &members {
+            absorbed[i] = true;
+        }
+        let (def_type, def_name) = split_def(&def);
+        folded.push(Chain {
+            def,
+            def_type,
+            def_name,
+            path: list,
+            steps: vec![ChainStep { origin: from, value: format!("{} items", removed.len()), how: "Defs".into() }, ChainStep { origin: to, value: String::new(), how: "PatchOperationRemove".into() }],
+            removed,
+        });
+    }
+    for (i, c) in chains.into_iter().enumerate() {
+        if !absorbed[i] {
+            folded.push(c);
+        }
+    }
+    // Longest histories first: those are the values worth a look.
+    folded.sort_by(|a, b| b.steps.len().cmp(&a.steps.len()).then(b.removed.len().cmp(&a.removed.len())).then(a.def.cmp(&b.def)).then(a.path.cmp(&b.path)));
+    folded
+}
+
+fn split_def(def: &str) -> (String, String) {
+    match def.split_once('/') {
+        Some((t, n)) => (t.to_string(), n.to_string()),
+        None => (def.to_string(), String::new()),
+    }
+}
+
+/// `comps/li[3]` → `comps`: the list an item belongs to, when the path ends in a list item.
+fn list_of(path: &str) -> Option<&str> {
+    let (parent, last) = path.rsplit_once('/')?;
+    (last == "li" || last.starts_with("li[")).then_some(parent)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -930,6 +1072,73 @@ mod tests {
         let unknown: Vec<&PatchProblem> = f.report.problems.iter().filter(|p| p.class.starts_with("XmlExtensions")).collect();
         assert_eq!(unknown.len(), 1);
         assert!(unknown[0].tolerated);
+    }
+
+    /// The screenshot case: a list where every mod removes a different item. Those are separate
+    /// histories, not one value changing hands twenty times, and they fold into one readable
+    /// row per mod. A real chain — Base → Tweak → Late on one node — stays one chain.
+    #[test]
+    fn histories_follow_the_node_not_the_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let r = dir.path();
+        write(
+            &r.join("base/Defs/a.xml"),
+            r#"<Defs><ThingDef><defName>Wall</defName><statBases><MaxHitPoints>100</MaxHitPoints></statBases>
+                 <comps><li>one</li><li>two</li><li>three</li><li>four</li></comps></ThingDef></Defs>"#,
+        );
+        // Removing li[1] three times removes three different items; the path is the same each time.
+        write(
+            &r.join("cull/Patches/p.xml"),
+            r#"<Patch>
+                <Operation Class="PatchOperationRemove"><xpath>Defs/ThingDef[defName="Wall"]/comps/li[1]</xpath></Operation>
+                <Operation Class="PatchOperationRemove"><xpath>Defs/ThingDef[defName="Wall"]/comps/li[1]</xpath></Operation>
+                <Operation Class="PatchOperationRemove"><xpath>Defs/ThingDef[defName="Wall"]/comps/li[1]</xpath></Operation>
+                <Operation Class="PatchOperationReplace"><xpath>Defs/ThingDef[defName="Wall"]/statBases/MaxHitPoints</xpath><value><MaxHitPoints>500</MaxHitPoints></value></Operation>
+              </Patch>"#,
+        );
+        write(
+            &r.join("late/Patches/p.xml"),
+            r#"<Patch>
+                <Operation Class="PatchOperationReplace"><xpath>Defs/ThingDef[defName="Wall"]/statBases/MaxHitPoints</xpath><value><MaxHitPoints>900</MaxHitPoints></value></Operation>
+                <Operation Class="PatchOperationRemove"><xpath>Defs/ThingDef[defName="Wall"]/comps/li[1]</xpath></Operation>
+              </Patch>"#,
+        );
+        let mods = vec![a_mod(r, "base", "a.base", "Base"), a_mod(r, "cull", "b.cull", "Cull"), a_mod(r, "late", "c.late", "Late")];
+        let f = run(&mods);
+        let name = |o: u32| f.report.origins[o as usize].name.as_str();
+        let chains = &f.report.chains;
+        // The MaxHitPoints history is one chain of three steps, and the longest so it is first.
+        let hp = chains.iter().find(|c| c.path == "statBases/MaxHitPoints").unwrap();
+        let steps: Vec<(&str, &str)> = hp.steps.iter().map(|s| (name(s.origin), s.value.as_str())).collect();
+        assert_eq!(steps, [("Base", "100"), ("Cull", "500"), ("Late", "900")]);
+        assert_eq!(chains[0].path, "statBases/MaxHitPoints");
+        // Cull's three removals from one list are one row naming what went …
+        let cull = chains.iter().find(|c| c.path == "comps" && name(c.steps[1].origin) == "Cull").unwrap();
+        assert_eq!(cull.removed, ["one", "two", "three"]);
+        assert_eq!(cull.steps[0].value, "3 items");
+        // … and Late's single removal stays its own row, on the item it actually removed.
+        let late = chains.iter().find(|c| name(c.steps[1].origin) == "Late" && c.steps[1].how == "PatchOperationRemove").unwrap();
+        // by then it is the only item left, so the path carries no index
+        assert_eq!(late.path, "comps/li");
+        assert_eq!(late.steps[0].value, "four");
+        assert!(late.removed.is_empty());
+        assert_eq!(chains.len(), 3, "{:?}", chains.iter().map(|c| (&c.path, c.steps.len())).collect::<Vec<_>>());
+        // and every journal entry knows its node; a Remove says nothing follows
+        assert!(f.report.overwrites.iter().all(|o| o.node != 0));
+        assert!(f.report.overwrites.iter().filter(|o| o.how == "PatchOperationRemove").all(|o| o.next == super::super::tree::NONE));
+    }
+
+    /// A mod changing its own def is not a disagreement and never shows as one.
+    #[test]
+    fn a_mod_patching_itself_is_not_contested() {
+        let dir = tempfile::tempdir().unwrap();
+        let r = dir.path();
+        write(&r.join("one/Defs/a.xml"), r#"<Defs><ThingDef><defName>Wall</defName><label>wall</label></ThingDef></Defs>"#);
+        write(&r.join("one/Patches/p.xml"), r#"<Patch><Operation Class="PatchOperationReplace"><xpath>Defs/ThingDef[defName="Wall"]/label</xpath><value><label>better wall</label></value></Operation></Patch>"#);
+        let f = run(&[a_mod(r, "one", "a.one", "One")]);
+        assert!(f.report.overwrites.is_empty());
+        assert!(f.report.chains.is_empty());
+        assert_eq!(f.report.per_mod[0].wins, 0);
     }
 
     #[test]

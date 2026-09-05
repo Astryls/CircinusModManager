@@ -1,7 +1,7 @@
 // Browser-only stand-in for the Rust backend: lets `npm run dev` show the UI with example data.
 // Nothing here ships in the Tauri build path (api.ts only imports it outside Tauri).
 
-import type { BuiltinRule, Instance, Issue, LaunchSettings, Locations, ModChange, ModInfo, ModPatchDetail, ModPatches, Patcher, PatchJob, PatchReport, PatchSummary, PatchTarget, Phase, Placement, QueueState, Rule, Settings, Snapshot, SortResult, Source, TargetGroup, TexState, UserData, Weight } from "./types";
+import type { BuiltinRule, Chain, ChainStep, Instance, Issue, LaunchSettings, Locations, ModChange, ModInfo, ModPatchDetail, ModPatches, Patcher, PatchJob, PatchReport, PatchSummary, PatchTarget, Phase, Placement, QueueState, Rule, Settings, Snapshot, SortResult, Source, TargetGroup, TexState, UserData, Weight } from "./types";
 import { patchTargetName, PHASES } from "./types";
 
 type Seed = [name: string, author: string, pkg: string, pfid: string | null, src: Source, phase: Phase, group: string, ver: string[], size: number, flags?: string];
@@ -603,8 +603,68 @@ const OVERWRITES = [
   { def: "ThingDef/Bed", path: "costList/Steel", from: VFE, to: DBH, oldValue: "30", newValue: "35", how: "PatchOperationReplace" },
   { def: "ThingDef/AA_Xenoloxodon", path: "statBases/MoveSpeed", from: ALPHA, to: AACE, oldValue: "4.2", newValue: "3.1", how: "PatchOperationReplace" },
   { def: "ThingDef/AA_Xenoloxodon", path: "tools/li[1]/power", from: ALPHA, to: AACE, oldValue: "22", newValue: "18", how: "PatchOperationReplace" },
-  { def: "TerrainDef/Concrete", path: "statBases/Beauty", from: CORE_B, to: VEF, oldValue: "0", newValue: "2", how: "PatchOperationReplace" }
-];
+  { def: "TerrainDef/Concrete", path: "statBases/Beauty", from: CORE_B, to: VEF, oldValue: "0", newValue: "2", how: "PatchOperationReplace" },
+  // one value that changed hands many times — the case that has to stay readable
+  { def: "ThingDef/Human", path: "statBases/MarketValue", from: CORE_B, to: VEF, oldValue: "1750", newValue: "1800", how: "PatchOperationReplace" },
+  { def: "ThingDef/Human", path: "statBases/MarketValue", from: VEF, to: VFE, oldValue: "1800", newValue: "1900", how: "PatchOperationReplace" },
+  { def: "ThingDef/Human", path: "statBases/MarketValue", from: VFE, to: ALPHA, oldValue: "1900", newValue: "2000", how: "PatchOperationReplace" },
+  { def: "ThingDef/Human", path: "statBases/MarketValue", from: ALPHA, to: DBH, oldValue: "2000", newValue: "2100", how: "PatchOperationReplace" },
+  { def: "ThingDef/Human", path: "statBases/MarketValue", from: DBH, to: CE_B, oldValue: "2100", newValue: "2400", how: "PatchOperationReplace" },
+  // one mod removing several items of one list — folds into one row
+  { def: "ThingDef/Gun_Autopistol", path: "comps/li[1]", from: CORE_W, to: CE_W, oldValue: "CompProperties_Biocodable", newValue: "", how: "PatchOperationRemove" },
+  { def: "ThingDef/Gun_Autopistol", path: "comps/li[1]", from: CORE_W, to: CE_W, oldValue: "CompProperties_Styleable", newValue: "", how: "PatchOperationRemove" },
+  { def: "ThingDef/Gun_Autopistol", path: "comps/li[1]", from: CORE_W, to: CE_W, oldValue: "CompProperties_Forbiddable", newValue: "", how: "PatchOperationRemove" }
+].map((o, i, all) => {
+  // node ids the way the backend hands them out: a Replace's successor is the next entry on
+  // the same def and path; a Remove has no successor.
+  const node = 1000 + i;
+  const succ = all.findIndex((x, j) => j > i && x.def === o.def && x.path === o.path && x.from === o.to);
+  return { ...o, node, next: o.how === "PatchOperationRemove" ? 0xffffffff : succ >= 0 ? 1000 + succ : node };
+});
+
+/** Histories from the journal, the way `defs::flatten::build_chains` makes them. */
+function chainsOf(list: typeof OVERWRITES): Chain[] {
+  const taken = new Set<number>();
+  const out: Chain[] = [];
+  const split = (def: string): [string, string] => { const i = def.indexOf("/"); return i < 0 ? [def, ""] : [def.slice(0, i), def.slice(i + 1)]; };
+  list.forEach((first, i) => {
+    if (taken.has(i)) return;
+    taken.add(i);
+    const [defType, defName] = split(first.def);
+    const steps: ChainStep[] = [{ origin: first.from, value: first.oldValue, how: "Defs" }, { origin: first.to, value: first.newValue, how: first.how }];
+    let cur = first;
+    for (;;) {
+      if (cur.next === 0xffffffff) break;
+      const j = list.findIndex((x, k) => k > i && !taken.has(k) && x.node === cur.next);
+      if (j < 0) break;
+      taken.add(j);
+      cur = list[j];
+      steps.push({ origin: cur.to, value: cur.newValue, how: cur.how });
+    }
+    out.push({ def: first.def, defType, defName, path: first.path, steps });
+  });
+  // fold same-mod removals from one list
+  const groups = new Map<string, Chain[]>();
+  for (const c of out) {
+    const m = c.path.match(/^(.*)\/li(\[\d+\])?$/);
+    if (c.steps.length === 2 && c.steps[1].how === "PatchOperationRemove" && m) {
+      const key = `${c.def} ${m[1]} ${c.steps[0].origin} ${c.steps[1].origin}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(c);
+    }
+  }
+  const folded: Chain[] = [];
+  const absorbed = new Set<Chain>();
+  for (const members of groups.values()) {
+    if (members.length < 2) continue;
+    const m = members[0];
+    const list = m.path.replace(/\/li(\[\d+\])?$/, "");
+    for (const x of members) absorbed.add(x);
+    folded.push({ def: m.def, defType: m.defType, defName: m.defName, path: list, steps: [{ origin: m.steps[0].origin, value: `${members.length} items`, how: "Defs" }, { origin: m.steps[1].origin, value: "", how: "PatchOperationRemove" }], removed: members.map((x) => x.steps[0].value) });
+  }
+  for (const c of out) if (!absorbed.has(c)) folded.push(c);
+  return folded.sort((a, b) => b.steps.length - a.steps.length || (b.removed?.length ?? 0) - (a.removed?.length ?? 0) || a.def.localeCompare(b.def) || a.path.localeCompare(b.path));
+}
 
 const PROBLEMS = [
   { origin: CE_W, xpath: 'Defs/ThingDef[defName="Gun_Revolver"]/verbs/li/burstShotCount', class: "PatchOperationReplace", reason: "nothing in the list matches this xpath", tolerated: false },
@@ -819,6 +879,7 @@ function defsReport() {
     values: perMod.reduce((n, m) => n + m.values, 0),
     operations: perMod.reduce((n, m) => n + m.operations, 0),
     overwrites: OVERWRITES,
+    chains: chainsOf(OVERWRITES),
     problems: PROBLEMS,
     duplicates: DUPLICATES,
     perMod,

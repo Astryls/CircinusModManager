@@ -895,6 +895,28 @@ export interface Overwrite {
   newValue: string;
   /** The operation that did it, or `Defs` for a plain duplicate def. */
   how: string;
+  /** The node that changed; histories are followed by node, not by path. */
+  node: number;
+  /** The node that took its place, the node itself for an in-place change, or NONE when removed. */
+  next: number;
+}
+
+/** One value's history: who shipped it, then everyone who changed it, in load order. */
+export interface Chain {
+  def: string;
+  defType: string;
+  defName: string;
+  path: string;
+  steps: ChainStep[];
+  /** Several list items removed by one mod, folded into this one row: what went. */
+  removed?: string[];
+}
+
+export interface ChainStep {
+  origin: number;
+  value: string;
+  /** `Defs` for the value as shipped, else the operation. */
+  how: string;
 }
 
 export interface PatchProblem {
@@ -930,6 +952,8 @@ export interface DefsReport {
   values: number;
   operations: number;
   overwrites: Overwrite[];
+  /** `overwrites` followed by node into the histories the view shows. */
+  chains: Chain[];
   problems: PatchProblem[];
   duplicates: DefDuplicate[];
   perMod: DefModStats[];
