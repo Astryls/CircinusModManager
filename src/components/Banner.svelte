@@ -3,7 +3,7 @@
   import { headline } from "$lib/describe";
   import { I } from "$lib/icons";
 
-  type Notice = { id: string; kind: "error" | "warning" | "note" | "info"; title: string; detail: string; action: string; run: () => void; dismissable: boolean };
+  type Notice = { id: string; kind: "error" | "warning" | "note" | "info"; title: string; detail: string; action: string; run: () => void; dismissable: boolean; alt?: { action: string; title: string; run: () => void } };
 
   const head = $derived(headline(store.issues, store.byUid));
   const missing = $derived(store.snap?.missing ?? []);
@@ -51,9 +51,11 @@
         id: "missing",
         kind: "warning",
         title: `${missing.length} mod${missing.length === 1 ? " in your list isn't" : "s in your list aren't"} installed`,
-        detail: ready ? "SteamCMD can fetch them from the Workshop without the Steam client" : "Set up SteamCMD once, then Circinus can download them for you",
+        // The two routes differ in one thing each, so say that one thing.
+        detail: "Steam keeps them updated; SteamCMD needs no client",
         action: ready ? "Download with SteamCMD" : "Set up SteamCMD",
         run: () => (ready ? store.queueMissing().then(() => (store.view = "downloads")) : store.installSteamCmd()),
+        alt: { action: "Subscribe in Steam", title: store.steamClient?.detail ?? "Opens each mod's page in Steam, where Subscribe is one press", run: () => store.subscribeMissing() },
         dismissable: true
       });
     }
@@ -76,6 +78,7 @@
   <div class="banner {n.kind}" class:compact={i > 0} role="status">
     <span class="ico">{@html n.kind === "error" ? I.error : n.kind === "warning" ? I.warn : n.id === "changes" ? I.bell : I.note}</span>
     <span class="t">{n.title}{#if i === 0}<small>{n.detail}</small>{:else}<span class="inline">{n.detail}</span>{/if}</span>
+    {#if n.alt}<button class="alt" title={n.alt.title} onclick={n.alt.run}>{n.alt.action}</button>{/if}
     <button onclick={n.run}>{n.action}</button>
     {#if n.dismissable}<button class="x" aria-label="Dismiss" title="Hide until next launch" onclick={() => store.dismiss(n.id)}>{@html I.close}</button>{/if}
   </div>
@@ -99,6 +102,9 @@
   .t small { display: block; font-weight: 500; opacity: 0.8; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   button { font-weight: 800; padding: 6px 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.16); color: inherit; white-space: nowrap; }
   button:hover { background: rgba(0, 0, 0, 0.26); }
+  /* The second way of doing the same job: offered, but quieter than the first. */
+  button.alt { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, 0.22); }
+  button.alt:hover { background: rgba(0, 0, 0, 0.16); }
   button.x { width: 28px; height: 28px; padding: 0; display: grid; place-items: center; opacity: 0.7; }
   button.x :global(svg) { width: 12px; height: 12px; }
 </style>

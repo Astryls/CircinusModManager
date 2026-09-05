@@ -3,7 +3,7 @@
   import { I, sevIcon } from "$lib/icons";
   import { describe, explainLoad } from "$lib/describe";
   import { api, assetUrl, openUrl, revealPath } from "$lib/api";
-  import { BAND_LABEL, LOAD_BAND_LABEL, PHASES, SOURCE_LABEL, describeChange, formatBytes, initials, severityOf, splitTarget, type Phase, type Rule } from "$lib/types";
+  import { BAND_LABEL, describeChange, formatBytes, initials, LOAD_BAND_LABEL, PHASES, severityOf, SOURCE_LABEL, splitTarget, type Issue, type Phase, type Rule } from "$lib/types";
 
   const m = $derived(store.selectedMod);
   const placement = $derived(m ? store.placement(m.uid) : undefined);
@@ -16,6 +16,22 @@
   const change = $derived(m ? store.changeByUid.get(m.uid) : undefined);
   const update = $derived(m ? store.updateByUid.get(m.uid) : undefined);
   const canRedownload = $derived(!!m?.publishedFileId && m.source !== "ludeon");
+  /** Steam can only unsubscribe from what it put there: a Workshop folder it still lists. */
+  const canUnsubscribe = $derived(!!m?.publishedFileId && m.source === "workshop" && store.subscriptions[m.publishedFileId] !== "absent");
+  let confirmUnsub = $state(false);
+  $effect(() => {
+    // A new mod in the panel starts with the confirmation closed, and Steam is asked what it
+    // knows about this one so the actions match reality rather than the folder's name.
+    const pfid = m?.publishedFileId;
+    confirmUnsub = false;
+    if (pfid) store.readSubscriptions([pfid]);
+  });
+  /** The Workshop id inside a dependency's link, when the About.xml gave one. */
+  function depWorkshopId(i: Issue): number | null {
+    if (i.kind !== "missingDependency" || i.installedUid) return null;
+    const id = /[?&]id=(\d+)/.exec(i.workshopUrl ?? "")?.[1];
+    return id ? Number(id) : null;
+  }
   const dds = $derived(m ? store.ddsOf(m.uid) : undefined);
   const patches = $derived(m ? store.patchesOf(m.uid) : undefined);
   /** The methods this mod fights over, worst first: most patchers, then by name. */
@@ -256,7 +272,13 @@
       <section class="card issues">
         <h3>Needs attention</h3>
         {#each issues.slice(0, 12) as i}
-          <div class="it"><span class="flag {severityOf(i)}">{@html sevIcon[severityOf(i)]}</span><span>{describe(i, store.byUid, m.uid)}</span></div>
+          {@const dep = depWorkshopId(i)}
+          <div class="it">
+            <span class="flag {severityOf(i)}">{@html sevIcon[severityOf(i)]}</span>
+            <span>{describe(i, store.byUid, m.uid)}
+              {#if dep}<button class="lnk sub" title="Opens that mod's page in Steam, where Subscribe is one press" onclick={() => store.subscribeIds([dep])}>Subscribe in Steam</button>{/if}
+            </span>
+          </div>
         {/each}
         {#if issues.length > 12}<div class="muted">and {issues.length - 12} more, see the Analyzer</div>{/if}
       </section>
@@ -270,6 +292,14 @@
         {#if canRedownload && !change && !update}<button class="btn" title="Fetch a fresh copy from the Workshop with SteamCMD, into your Mods folder" onclick={() => store.queueIds([m.publishedFileId!])}>{@html I.download}Re-download</button>{/if}
         {#if m.contents.textures > 0 && !ddsExcluded && m.source !== "ludeon"}<button class="btn" title="Convert this mod's PNG textures to DDS" disabled={store.tex?.running} onclick={() => store.optimizeTextures([m.uid])}>{@html I.image}Make DDS</button>{/if}
         {#if dds}<button class="btn" title="Delete the DDS files Circinus made for this mod" disabled={store.tex?.running} onclick={() => store.revertTextures([m.uid])}>Remove DDS</button>{/if}
+        {#if canUnsubscribe}
+          {#if confirmUnsub}
+            <button class="btn danger" onclick={() => { confirmUnsub = false; store.unsubscribeIds([m.publishedFileId!]); }}>Yes, unsubscribe</button>
+            <button class="btn" onclick={() => (confirmUnsub = false)}>Keep it</button>
+          {:else}
+            <button class="btn danger" title="Opens the mod's page in Steam, where Unsubscribe is one press" onclick={() => (confirmUnsub = true)}>{@html I.minus}Unsubscribe</button>
+          {/if}
+        {/if}
         {#if isActive}
           <button class="btn" onclick={() => store.moveSelected(-1)}>Move up</button>
           <button class="btn" onclick={() => store.moveSelected(1)}>Move down</button>
@@ -278,6 +308,7 @@
           <button class="btn primary" onclick={() => store.activate(store.selected.length > 1 ? store.selected : [m.uid])}>{@html I.plus}Activate</button>
         {/if}
       </div>
+      {#if confirmUnsub}<p class="warnline">Steam deletes this mod's folder when you unsubscribe. Circinus cannot undo that; subscribing again downloads it afresh.</p>{/if}
       {#if description}<details class="desc"><summary>Description</summary><p>{description.replace(/<[^>]+>/g, "")}</p></details>{/if}
     </section>
   {:else}
@@ -342,6 +373,8 @@
   .desc { margin-top: 12px; font-size: 12.5px; color: var(--text-2); }
   .desc summary { cursor: pointer; font-weight: 600; color: var(--text-3); }
   .desc p { white-space: pre-wrap; line-height: 1.5; max-height: 260px; overflow: hidden auto; margin: 8px 0 0; user-select: text; }
+  .warnline { margin: 10px 0 0; font-size: 12px; color: var(--text-2); line-height: 1.45; }
+  .lnk.sub { font-size: 12px; margin-left: 4px; white-space: nowrap; }
   .muted { color: var(--text-3); font-size: 12.5px; }
   .patches .kv dd.mono { font-size: 11.5px; }
   .patches .fights { margin-top: 10px; display: flex; flex-direction: column; gap: 2px; }

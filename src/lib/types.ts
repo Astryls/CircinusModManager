@@ -577,6 +577,42 @@ export interface TestOutcome {
   seconds: number;
 }
 
+/** Where one Workshop item stands with Steam: from a subscription, on disk some other way, or absent. */
+export type ItemState = "subscribed" | "installed" | "absent";
+
+export interface ItemSubscription {
+  id: number;
+  state: ItemState;
+  timeUpdated?: number;
+  path?: string;
+}
+
+export interface SteamClientStatus {
+  installed: boolean;
+  running: boolean;
+  steamDir?: string;
+  /** Steam's record of RimWorld Workshop items was found, so subscriptions can be read back. */
+  recordsFound: boolean;
+  detail: string;
+}
+
+/** What a subscribe or unsubscribe request did: `opened` means a page was shown, not that Steam acted. */
+export interface SubscribeOutcome {
+  opened: number[];
+  skipped: [number, string][];
+  failed: [number, string][];
+  note: string;
+  client: SteamClientStatus;
+  states: ItemSubscription[];
+}
+
+/** Steam's record catching up after pages were opened (the `subscription-changed` event). */
+export interface SubscriptionProgress {
+  states: ItemSubscription[];
+  settled: boolean;
+  want: "subscribe" | "unsubscribe";
+}
+
 export interface CollectionPreview {
   ids: number[];
   installed: [number, string][];

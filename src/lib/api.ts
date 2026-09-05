@@ -1,6 +1,6 @@
 // Thin wrapper over Tauri's invoke, with a browser mock so the UI can run outside Tauri.
 
-import type { AddResult, AuditReport, BuiltinRule, CollectionPreview, DdsReport, DefQuery, DefsState, DefTree, ImportPreview, Instance, Issue, LaunchInfo, LaunchSettings, Locations, LogAnalysis, LogFile, ModFiles, ModPatchDetail, ModTextures, PatchJob, PatchReport, QueueState, RentryPreview, RestoreResult, Rule, RulesFile, SavedList, Settings, Snapshot, SortResult, SteamCmdStatus, TestOutcome, TexState, UserData } from "./types";
+import type { AddResult, AuditReport, BuiltinRule, CollectionPreview, DdsReport, DefQuery, DefsState, DefTree, ImportPreview, Instance, Issue, ItemSubscription, LaunchInfo, LaunchSettings, Locations, LogAnalysis, LogFile, ModFiles, ModPatchDetail, ModTextures, PatchJob, PatchReport, QueueState, RentryPreview, RestoreResult, Rule, RulesFile, SavedList, Settings, Snapshot, SortResult, SteamClientStatus, SteamCmdStatus, SubscribeOutcome, TestOutcome, TexState, UserData } from "./types";
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -55,6 +55,12 @@ export const api = {
   steamcmdInstall: () => invoke<void>("steamcmd_install"),
   steamcmdStatus: () => invoke<SteamCmdStatus>("steamcmd_status"),
   steamcmdTest: () => invoke<TestOutcome>("steamcmd_test"),
+  // subscriptions, through the Steam client
+  steamClientStatus: () => invoke<SteamClientStatus>("steam_client_status"),
+  subscriptionState: (ids: number[]) => invoke<ItemSubscription[]>("subscription_state", { ids }),
+  missingWorkshopIds: () => invoke<[number[], string[]]>("missing_workshop_ids"),
+  subscribeItems: (ids: number[]) => invoke<SubscribeOutcome>("subscribe_items", { ids }),
+  unsubscribeItems: (ids: number[]) => invoke<SubscribeOutcome>("unsubscribe_items", { ids }),
   acknowledgeChanges: () => invoke<Snapshot>("acknowledge_changes"),
   // list history
   savedLists: () => invoke<SavedList[]>("saved_lists"),
