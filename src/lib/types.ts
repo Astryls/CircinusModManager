@@ -186,6 +186,8 @@ export interface UserData {
   muted: string[];
   /** Mods whose textures must not be converted. */
   ddsExcluded: string[];
+  /** Steam collections the user follows. */
+  collections?: TrackedCollection[];
 }
 
 export interface Weight {
@@ -240,6 +242,10 @@ export interface Snapshot {
   dds: Record<string, DdsSummary>;
   /** RimWorld failed to load and wrote a Core-only list; what to put back. */
   listReset: ListReset | null;
+  /** The named list being worked on, if any. Save writes it too. */
+  currentList?: string;
+  /** The user's named lists, newest first. */
+  namedLists?: NamedList[];
 }
 
 export interface SavedList {
@@ -249,6 +255,28 @@ export interface SavedList {
   label: string;
   count: number;
   gameVersion: string;
+}
+
+/** A list kept by name, in ModsConfig.xml form, under the data folder. */
+export interface NamedList {
+  name: string;
+  path: string;
+  count: number;
+  updatedAt: number;
+  gameVersion: string;
+}
+
+/** A Steam collection the user follows. `items` is what it holds now, `known` what it held when last reviewed. */
+export interface TrackedCollection {
+  id: number;
+  name: string;
+  creator: string;
+  items: number[];
+  known: number[];
+  names: Record<string, string>;
+  checkedAt: number;
+  addedAt: number;
+  timeUpdated: number;
 }
 
 export interface ListReset {

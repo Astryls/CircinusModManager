@@ -2,13 +2,13 @@
 // indexes for fast lookups, and the actions the components call.
 
 import { api, listen } from "./api";
-import type { CollectionPreview, Group, ImportPreview, Issue, ModChange, ModInfo, ModTextures, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamCmdStatus, TexState, UserData, Weight, LogAnalysis, LogFile, AuditReport } from "./types";
+import type { CollectionPreview, Group, ImportPreview, Issue, ModChange, ModInfo, ModTextures, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamCmdStatus, TexState, TrackedCollection, UserData, Weight, LogAnalysis, LogFile, AuditReport } from "./types";
 import { GROUP_COLORS, PHASES, primaryUid, severityOf, type Severity } from "./types";
 
 export type View = "order" | "library" | "downloads" | "textures" | "analyzer" | "settings";
 export type Tab = "active" | "inactive" | "all";
 /** What the list is narrowed to: mods with errors, warnings, HALO notes, conflicts, changes, or moves. */
-export type ShowOnly = "attention" | "error" | "warning" | "note" | "conflict" | "changed" | "moved" | null;
+export type ShowOnly = "attention" | "error" | "warning" | "note" | "conflict" | "collision" | "heavy" | "changed" | "moved" | null;
 
 const ALL_SOURCES: Source[] = ["ludeon", "workshop", "local", "steamcmd", "git"];
 
@@ -49,6 +49,10 @@ class Store {
   dismissed = $state<string[]>([]);
   /** uid → the list should scroll to it on the next render. */
   scrollRequest = $state<string | null>(null);
+  /** The right-click menu, when open: where, and for which mods. */
+  menu = $state<{ x: number; y: number; uids: string[] } | null>(null);
+  /** The collection panel, when open: which followed collection. */
+  showCollection = $state<number | null>(null);
   /** Last Player.log analysis, and the logs RimWorld writes on this machine. */
   gameLog = $state<LogAnalysis | null>(null);
   gameLogFiles = $state<LogFile[]>([]);
@@ -166,13 +170,19 @@ class Store {
       case "warning": return list.some((i) => severityOf(i) === "warning");
       case "note": return list.some((i) => severityOf(i) === "note");
       case "conflict": return list.some((i) => i.kind === "incompatible" || i.kind === "orderViolation" || i.kind === "cycle" || i.kind === "aboveOfficial");
+      case "collision": return list.some((i) => i.kind === "textureCollision");
+      case "heavy": {
+        const m = this.byUid.get(uid);
+        const w = m && this.weightOf(m);
+        return !!w && (w.band === "heavy" || w.band === "veryheavy");
+      }
       case "changed": return this.changeByUid.has(uid);
       case "moved": return this.moveOf.has(uid);
     }
   }
   /** How many mods each "show only" choice would keep, for the menu. */
   showOnlyCounts = $derived.by(() => {
-    const out: Record<Exclude<ShowOnly, null>, number> = { attention: 0, error: 0, warning: 0, note: 0, conflict: 0, changed: 0, moved: 0 };
+    const out: Record<Exclude<ShowOnly, null>, number> = { attention: 0, error: 0, warning: 0, note: 0, conflict: 0, collision: 0, heavy: 0, changed: 0, moved: 0 };
     for (const m of this.mods) for (const k of Object.keys(out) as (keyof typeof out)[]) if (this.passesShowOnly(m.uid, k)) out[k]++;
     return out;
   });
@@ -564,6 +574,101 @@ class Store {
       return r;
     });
   }
+  // ---- named lists ----
+  namedLists = $derived(this.snap?.namedLists ?? []);
+  currentList = $derived(this.snap?.currentList ?? null);
+  saveNamedList(name: string) {
+    return this.run("Saving list…", async () => {
+      this.apply(await api.saveNamedList(name));
+      this.say(`List ${name.trim()} saved (${this.active.length} mods)`);
+    });
+  }
+  loadNamedList(name: string) {
+    return this.run("Loading list…", async () => {
+      const r = await api.loadNamedList(name);
+      this.snap = r.snapshot;
+      this.preview = null;
+      this.say(`${r.restored} mods in the list${r.missing.length ? `, ${r.missing.length} not installed` : ""} · press Save to write ModsConfig.xml`, r.missing.length ? "warn" : "ok");
+      return r;
+    });
+  }
+  deleteNamedList(name: string) {
+    return this.run("Deleting list…", async () => {
+      this.apply(await api.deleteNamedList(name));
+      this.say(`List ${name} deleted`);
+    });
+  }
+  renameNamedList(from: string, to: string) {
+    return this.run("Renaming list…", async () => this.apply(await api.renameNamedList(from, to)));
+  }
+  detachList() {
+    return this.run("…", async () => this.apply(await api.detachList()));
+  }
+
+  // ---- collections ----
+  collections = $derived(this.snap?.user.collections ?? []);
+  /** Installed mods by Workshop id, for matching collections and downloads. */
+  byPfid = $derived(new Map(this.mods.filter((m) => m.publishedFileId && !m.invalid).map((m) => [m.publishedFileId!, m])));
+  /** What a followed collection looks like against the install. */
+  collectionView(c: TrackedCollection) {
+    const installed = c.items.filter((id) => this.byPfid.has(id));
+    const missing = c.items.filter((id) => !this.byPfid.has(id));
+    const added = c.items.filter((id) => !c.known.includes(id));
+    const removed = c.known.filter((id) => !c.items.includes(id));
+    const active = installed.filter((id) => this.activeSet.has(this.byPfid.get(id)!.uid));
+    return { installed, missing, added, removed, active };
+  }
+  trackCollection(text: string) {
+    return this.run("Asking Steam about the collection…", async () => {
+      this.apply(await api.collectionTrack(text));
+      const c = this.collections[this.collections.length - 1];
+      if (c) this.say(`Following ${c.name}: ${c.items.length} mods`);
+    });
+  }
+  refreshCollections(id?: number) {
+    return this.run("Asking Steam…", async () => {
+      this.apply(await api.collectionRefresh(id));
+      const changed = this.collections.filter((c) => (id == null || c.id === id) && (this.collectionView(c).added.length || this.collectionView(c).removed.length));
+      this.say(changed.length ? `${changed.length} collection${changed.length === 1 ? " has" : "s have"} changed` : "No changes in your collections");
+    });
+  }
+  acknowledgeCollection(id: number) {
+    return this.run("…", async () => this.apply(await api.collectionAcknowledge(id)));
+  }
+  untrackCollection(id: number) {
+    return this.run("…", async () => {
+      this.apply(await api.collectionUntrack(id));
+      if (this.showCollection === id) this.showCollection = null;
+    });
+  }
+  /** Activate the installed mods of a collection, in the collection's order, after what is active now. */
+  activateCollection(c: TrackedCollection) {
+    const uids = c.items.map((id) => this.byPfid.get(id)?.uid).filter((u): u is string => !!u && !this.activeSet.has(u));
+    if (!uids.length) return this.say("Everything installed from it is already active");
+    return this.activate(uids);
+  }
+  /** Make a named list from a collection: its installed mods in its order, after the game and DLC. */
+  listFromCollection(c: TrackedCollection) {
+    const official = this.active.filter((u) => this.byUid.get(u)?.source === "ludeon");
+    const uids = c.items.map((id) => this.byPfid.get(id)?.uid).filter((u): u is string => !!u && !official.includes(u));
+    return this.run("Making a list…", async () => {
+      this.apply(await api.setActive([...official, ...uids]));
+      this.apply(await api.saveNamedList(c.name));
+      this.say(`List ${c.name} made from the collection: ${uids.length} mods, ${c.items.length - uids.length} not installed`);
+    });
+  }
+
+  // ---- the mod itself ----
+  deleteMod(uid: string) {
+    const m = this.byUid.get(uid);
+    return this.run("Deleting…", async () => {
+      const [snap, what] = await api.deleteMod(uid);
+      this.apply(snap);
+      this.selected = this.selected.filter((u) => u !== uid);
+      this.say(`${m?.name ?? uid}: ${what}`);
+    });
+  }
+
   /** Which Player.log files exist right now. */
   async refreshGameLogFiles() {
     try {
@@ -707,6 +812,14 @@ class Store {
         if (value) u.phaseOverrides[uid] = value as Phase;
         else delete u.phaseOverrides[uid];
       }
+      return u;
+    });
+  }
+  setPinned(uids: string[], pinned: boolean) {
+    return this.updateUser((u) => {
+      const set = new Set(u.pinned);
+      for (const uid of uids) pinned ? set.add(uid) : set.delete(uid);
+      u.pinned = [...set];
       return u;
     });
   }

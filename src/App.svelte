@@ -15,6 +15,8 @@
   import DownloadsView from "./components/DownloadsView.svelte";
   import TexturesView from "./components/TexturesView.svelte";
   import Toast from "./components/Toast.svelte";
+  import ContextMenu from "./components/ContextMenu.svelte";
+  import CollectionDialog from "./components/CollectionDialog.svelte";
   import Panel from "./components/Panel.svelte";
 
   onMount(() => {
@@ -71,6 +73,8 @@
   {/if}
   {#if store.showImport}<ImportDialog />{/if}
   {#if store.showChanges}<Panel name="Changes"><ChangesDialog /></Panel>{/if}
+  {#if store.showCollection != null}<Panel name="Collection"><CollectionDialog /></Panel>{/if}
+  <Panel name="Menu"><ContextMenu /></Panel>
   <Toast />
   {#if store.loading}
     <div class="loading"><div class="spin"></div><span>{store.progress ? `Reading your mods… ${store.progress.done.toLocaleString()} of ${store.progress.total.toLocaleString()}` : store.error ? store.error : `${store.step}…`}</span></div>

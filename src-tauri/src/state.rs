@@ -129,6 +129,52 @@ pub struct UserData {
     pub muted: HashSet<String>,
     /// Mods whose textures must not be converted.
     pub dds_excluded: HashSet<String>,
+    /// Steam collections the user follows, with what they held when last looked at.
+    pub collections: Vec<TrackedCollection>,
+}
+
+/// A Steam Workshop collection the user follows. `items` is what it holds now (last fetch);
+/// `known` is what it held when the user last reviewed it, so additions and removals since
+/// then can be shown until they are acknowledged.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TrackedCollection {
+    pub id: u64,
+    pub name: String,
+    pub creator: String,
+    /// Workshop ids in the collection's order.
+    pub items: Vec<u64>,
+    pub known: Vec<u64>,
+    /// Workshop id → title, for everything seen in it.
+    pub names: HashMap<u64, String>,
+    /// Unix seconds of the last fetch (0 = never), and of the last reviewed change.
+    pub checked_at: i64,
+    pub added_at: i64,
+    /// Steam's own "last updated" time for the collection.
+    pub time_updated: u64,
+}
+
+impl TrackedCollection {
+    /// Items now in the collection that were not there when it was last reviewed.
+    pub fn added(&self) -> Vec<u64> {
+        self.items.iter().filter(|i| !self.known.contains(i)).copied().collect()
+    }
+    /// Items that were there when last reviewed and are gone now.
+    pub fn removed(&self) -> Vec<u64> {
+        self.known.iter().filter(|i| !self.items.contains(i)).copied().collect()
+    }
+}
+
+/// A list the user keeps by name, in ModsConfig.xml form, under `<data>/lists/named/`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NamedList {
+    pub name: String,
+    pub path: PathBuf,
+    pub count: usize,
+    /// Unix seconds of the last write.
+    pub updated_at: i64,
+    pub game_version: String,
 }
 
 fn default_groups() -> Vec<Group> {
@@ -185,6 +231,12 @@ pub struct Snapshot {
     /// Set when ModsConfig.xml holds only official content although a real list was there
     /// before: RimWorld failed to load and reset it.
     pub list_reset: Option<ListReset>,
+    /// The named list being worked on, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_list: Option<String>,
+    /// The user's named lists, newest first.
+    #[serde(default)]
+    pub named_lists: Vec<NamedList>,
 }
 
 /// RimWorld gave up loading and wrote a Core-only list; here is what to put back.
@@ -248,12 +300,21 @@ pub struct App {
     /// uid → converted-texture summary, from the manifest.
     pub dds_index: HashMap<String, DdsSummary>,
     pub list_reset: Option<ListReset>,
+    /// The named list the active list came from, or was last saved to. Save writes it too.
+    pub current_list: Option<String>,
 }
+
+const CURRENT_LIST_KEY: &str = "current_list";
 
 /// How many archived lists to keep.
 const LIST_HISTORY: usize = 40;
 
 const BASELINE_KEY: &str = "mod_baseline";
+
+/// Unix seconds.
+pub fn now_secs() -> i64 {
+    now()
+}
 
 fn now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
@@ -308,7 +369,9 @@ impl App {
             file_active: Vec::new(),
             dds_index: HashMap::new(),
             list_reset: None,
+            current_list: None,
         };
+        app.current_list = app.cache.get(CURRENT_LIST_KEY).unwrap_or(None);
         app.resolve_locations();
         app.load_databases();
         app.load_cached_weights()?;
@@ -589,7 +652,137 @@ impl App {
             changes_since: self.baseline.as_ref().map(|b| b.taken_at).unwrap_or(0),
             dds: self.dds_index.clone(),
             list_reset: self.list_reset.clone(),
+            current_list: self.current_list.clone(),
+            named_lists: self.named_lists(),
         }
+    }
+
+    // ---- named lists ----
+
+    pub fn named_dir(&self) -> PathBuf {
+        self.lists_dir().join("named")
+    }
+
+    /// A file name for a list name: the characters no file system takes are replaced.
+    fn list_file_name(name: &str) -> Option<String> {
+        let clean: String = name.trim().chars().map(|c| if matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|') { '-' } else { c }).collect();
+        let clean = clean.trim().trim_matches('.').to_string();
+        if clean.is_empty() || clean.len() > 120 {
+            return None;
+        }
+        Some(format!("{clean}.xml"))
+    }
+
+    /// The user's named lists, newest first.
+    pub fn named_lists(&self) -> Vec<NamedList> {
+        let Ok(rd) = std::fs::read_dir(self.named_dir()) else { return Vec::new() };
+        let mut out: Vec<NamedList> = rd
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().map(|x| x == "xml").unwrap_or(false))
+            .filter_map(|p| {
+                let cfg = modsconfig::read(&p).ok()?;
+                let name = p.file_stem()?.to_string_lossy().to_string();
+                let updated_at = std::fs::metadata(&p).ok().and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs() as i64).unwrap_or(0);
+                Some(NamedList { name, path: p, count: cfg.active_mods.len(), updated_at, game_version: cfg.version })
+            })
+            .collect();
+        out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then_with(|| a.name.cmp(&b.name)));
+        out
+    }
+
+    fn set_current_list(&mut self, name: Option<String>) {
+        self.current_list = name;
+        if let Err(e) = self.cache.set(CURRENT_LIST_KEY, &self.current_list) {
+            tracing::warn!("could not remember the current list: {e}");
+        }
+    }
+
+    /// Write the active list under a name (new or existing) and make it the current list.
+    pub fn save_named_list(&mut self, name: &str) -> Result<NamedList> {
+        let file = Self::list_file_name(name).ok_or_else(|| circinus_core::Error::Other("Give the list a name".into()))?;
+        let dir = self.named_dir();
+        std::fs::create_dir_all(&dir)?;
+        let path = dir.join(&file);
+        let cfg = modsconfig::build(&self.active, &self.mods, &self.game_version.full, &self.previous_known);
+        std::fs::write(&path, modsconfig::to_xml(&cfg))?;
+        let name = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| name.to_string());
+        self.set_current_list(Some(name.clone()));
+        Ok(NamedList { name, path, count: cfg.active_mods.len(), updated_at: now(), game_version: self.game_version.full.clone() })
+    }
+
+    fn named_path(&self, name: &str) -> Result<PathBuf> {
+        let file = Self::list_file_name(name).ok_or_else(|| circinus_core::Error::Other("No such list".into()))?;
+        let path = self.named_dir().join(file);
+        if !path.is_file() {
+            return Err(circinus_core::Error::Other(format!("No list called {name}")));
+        }
+        Ok(path)
+    }
+
+    /// Make a named list the active list (unsaved until `save`) and the current list.
+    pub fn load_named_list(&mut self, name: &str) -> Result<(usize, Vec<String>)> {
+        let path = self.named_path(name)?;
+        let r = self.restore_list(&path)?;
+        self.set_current_list(Some(name.to_string()));
+        Ok(r)
+    }
+
+    pub fn delete_named_list(&mut self, name: &str) -> Result<()> {
+        let path = self.named_path(name)?;
+        std::fs::remove_file(path)?;
+        if self.current_list.as_deref() == Some(name) {
+            self.set_current_list(None);
+        }
+        Ok(())
+    }
+
+    pub fn rename_named_list(&mut self, from: &str, to: &str) -> Result<String> {
+        let path = self.named_path(from)?;
+        let file = Self::list_file_name(to).ok_or_else(|| circinus_core::Error::Other("Give the list a name".into()))?;
+        let dest = self.named_dir().join(&file);
+        if dest.is_file() && !dest.to_string_lossy().eq_ignore_ascii_case(&path.to_string_lossy()) {
+            return Err(circinus_core::Error::Other(format!("There is already a list called {}", file.trim_end_matches(".xml"))));
+        }
+        std::fs::rename(&path, &dest)?;
+        let new_name = file.trim_end_matches(".xml").to_string();
+        if self.current_list.as_deref() == Some(from) {
+            self.set_current_list(Some(new_name.clone()));
+        }
+        Ok(new_name)
+    }
+
+    /// Stop working on a named list: the active list is ModsConfig.xml only from here on.
+    pub fn detach_list(&mut self) {
+        self.set_current_list(None);
+    }
+
+    /// Delete a mod folder. A link in the Mods folder is removed on its own; the folder it
+    /// points at is left alone. Anything else goes to the recycle bin.
+    pub fn delete_mod(&mut self, uid: &str) -> Result<String> {
+        let m = self.mods.iter().find(|m| m.uid == uid).cloned().ok_or_else(|| circinus_core::Error::Other("No such mod".into()))?;
+        if m.source == Source::Ludeon {
+            return Err(circinus_core::Error::Other("The game's own content cannot be deleted".into()));
+        }
+        if m.source == Source::Workshop {
+            return Err(circinus_core::Error::Other("Steam owns this folder: unsubscribe on the Workshop page and Steam removes it".into()));
+        }
+        let what = if m.link_target.is_some() {
+            std::fs::remove_dir(&m.path).or_else(|_| std::fs::remove_file(&m.path))?;
+            format!("Removed the link {}; the folder it pointed at is untouched", m.path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default())
+        } else {
+            trash::delete(&m.path).map_err(|e| circinus_core::Error::Other(format!("Could not move the folder to the recycle bin: {e}")))?;
+            format!("Moved {} to the recycle bin", m.path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default())
+        };
+        let was_active = self.active.iter().any(|u| u == uid);
+        self.mods.retain(|x| x.uid != uid);
+        self.files.remove(uid);
+        self.active.retain(|u| u != uid);
+        if was_active {
+            self.dirty = true;
+        }
+        self.recompile();
+        Ok(what)
     }
 
     /// Workshop ids of every installed mod that came from the Workshop or SteamCMD.
@@ -677,6 +870,12 @@ impl App {
         if let Err(e) = modsconfig::archive(&self.lists_dir(), &cfg, "saved", LIST_HISTORY) {
             tracing::warn!("could not archive the list: {e}");
         }
+        // The named list being worked on follows the save.
+        if let Some(name) = self.current_list.clone() {
+            if let Err(e) = self.save_named_list(&name) {
+                tracing::warn!("could not update the named list {name}: {e}");
+            }
+        }
         // Our own edit is not "a change made outside Circinus".
         self.file_active = cfg.active_mods.iter().map(|p| p.to_lowercase()).collect();
         if let Some(b) = &mut self.baseline {
@@ -757,5 +956,114 @@ impl App {
             }
         }
         n
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write(p: &std::path::Path, s: &str) {
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, s).unwrap();
+    }
+
+    /// A small game folder with Core, one DLC and two mods, and an App opened on it.
+    fn app_on_fixture() -> (tempfile::TempDir, App) {
+        let tmp = tempfile::tempdir().unwrap();
+        let game = tmp.path().join("game");
+        write(&game.join("Version.txt"), "1.6.4530 rev1235");
+        write(&game.join("Data/Core/About/About.xml"), "<ModMetaData><packageId>Ludeon.RimWorld</packageId></ModMetaData>");
+        write(&game.join("Data/Royalty/About/About.xml"), "<ModMetaData><packageId>Ludeon.RimWorld.Royalty</packageId></ModMetaData>");
+        write(&game.join("Mods/Harmony/About/About.xml"), "<ModMetaData><packageId>brrainz.harmony</packageId><name>Harmony</name><supportedVersions><li>1.6</li></supportedVersions></ModMetaData>");
+        write(&game.join("Mods/Walls/About/About.xml"), "<ModMetaData><packageId>nyx.retrowalls</packageId><name>Walls</name><supportedVersions><li>1.6</li></supportedVersions></ModMetaData>");
+        write(&game.join("Config/ModsConfig.xml"), "<ModsConfigData><version>1.6.4530 rev1235</version><activeMods><li>ludeon.rimworld</li><li>brrainz.harmony</li></activeMods><knownExpansions></knownExpansions></ModsConfigData>");
+        let mut settings = Settings::default();
+        settings.locations.game_dir = Some(game.clone());
+        settings.locations.config_dir = Some(game.join("Config"));
+        settings.locations.local_mods_dir = Some(game.join("Mods"));
+        let mut app = App::open_at(tmp.path().join("data"), Some(settings)).unwrap();
+        let shallow = app.scan_quick(true, &|_, _| {}).unwrap();
+        let ins = circinus_core::scan::inspect_mods(&shallow, &|_, _| {});
+        app.apply_inspections(ins).unwrap();
+        (tmp, app)
+    }
+
+    #[test]
+    fn named_lists_round_trip_and_follow_save() {
+        let (_tmp, mut app) = app_on_fixture();
+        assert_eq!(app.active.len(), 2);
+        let uid = |app: &App, id: &str| app.mods.iter().find(|m| m.package_id == id).unwrap().uid.clone();
+        let walls = uid(&app, "nyx.retrowalls");
+        let harmony = uid(&app, "brrainz.harmony");
+        // Save the list as "Vanilla+", add a mod, save the game config: the named list follows.
+        let saved = app.save_named_list("Vanilla+").unwrap();
+        assert_eq!(saved.name, "Vanilla+");
+        assert_eq!(saved.count, 2);
+        assert_eq!(app.current_list.as_deref(), Some("Vanilla+"));
+        app.activate(&[walls.clone()], None);
+        app.save().unwrap();
+        let lists = app.named_lists();
+        assert_eq!(lists.len(), 1);
+        assert_eq!(lists[0].count, 3, "Save updates the list being worked on");
+        // Another list, then switch back and forth.
+        app.deactivate(&[walls.clone(), harmony.clone()]);
+        app.save_named_list("Bare: core only").unwrap();
+        assert_eq!(app.named_lists().len(), 2);
+        let (n, missing) = app.load_named_list("Vanilla+").unwrap();
+        assert_eq!((n, missing.len()), (3, 0));
+        assert!(app.dirty, "loading a list is an unsaved change until Save");
+        assert_eq!(app.current_list.as_deref(), Some("Vanilla+"));
+        // Rename, detach, delete.
+        assert_eq!(app.rename_named_list("Vanilla+", "Vanilla plus").unwrap(), "Vanilla plus");
+        assert_eq!(app.current_list.as_deref(), Some("Vanilla plus"));
+        assert!(app.rename_named_list("Vanilla plus", "Bare: core only").is_err(), "no overwriting another list");
+        app.detach_list();
+        assert!(app.current_list.is_none());
+        app.delete_named_list("Bare: core only").unwrap();
+        assert_eq!(app.named_lists().len(), 1);
+        assert!(app.load_named_list("Bare: core only").is_err());
+        // Names get file-safe; reopening the app remembers the current list.
+        app.save_named_list("odd / name: v2?").unwrap();
+        assert_eq!(app.current_list.as_deref(), Some("odd - name- v2-"));
+        let again = App::open_at(app.data_dir.clone(), None).unwrap();
+        assert_eq!(again.current_list.as_deref(), Some("odd - name- v2-"));
+        assert!(App::list_file_name("   ").is_none());
+    }
+
+    #[test]
+    fn deleting_a_mod_removes_a_link_but_keeps_its_target() {
+        let (tmp, mut app) = app_on_fixture();
+        let work = tmp.path().join("work/linked");
+        write(&work.join("About/About.xml"), "<ModMetaData><packageId>x.linked</packageId><name>Linked</name></ModMetaData>");
+        let link = tmp.path().join("game/Mods/deadbeef");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&work, &link).unwrap();
+        #[cfg(windows)]
+        assert!(std::process::Command::new("cmd").args(["/C", "mklink", "/J"]).arg(&link).arg(&work).status().unwrap().success());
+        let shallow = app.scan_quick(false, &|_, _| {}).unwrap();
+        app.apply_inspections(circinus_core::scan::inspect_mods(&shallow, &|_, _| {})).unwrap();
+        let uid = app.mods.iter().find(|m| m.package_id == "x.linked").unwrap().uid.clone();
+        app.activate(std::slice::from_ref(&uid), None);
+        let what = app.delete_mod(&uid).unwrap();
+        assert!(what.contains("link"), "{what}");
+        assert!(!link.exists() && std::fs::symlink_metadata(&link).is_err(), "the link is gone");
+        assert!(work.join("About/About.xml").is_file(), "the folder it pointed at is untouched");
+        assert!(app.mods.iter().all(|m| m.uid != uid));
+        assert!(app.active.iter().all(|u| *u != uid));
+        assert!(app.dirty);
+        let core = app.mods.iter().find(|m| m.source == Source::Ludeon).unwrap().uid.clone();
+        assert!(app.delete_mod(&core).is_err(), "official content stays");
+    }
+
+    #[test]
+    fn collection_changes_are_measured_from_the_last_review() {
+        let mut c = TrackedCollection { id: 1, items: vec![10, 20, 30], known: vec![10, 20, 30], ..Default::default() };
+        assert!(c.added().is_empty() && c.removed().is_empty());
+        c.items = vec![10, 30, 40];
+        assert_eq!(c.added(), vec![40]);
+        assert_eq!(c.removed(), vec![20]);
+        c.known = c.items.clone();
+        assert!(c.added().is_empty() && c.removed().is_empty());
     }
 }

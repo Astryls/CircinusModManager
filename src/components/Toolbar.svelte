@@ -17,6 +17,8 @@
     { id: "warning", label: "With warnings", n: counts.warning, icon: I.warn },
     { id: "conflict", label: "With conflicts", n: counts.conflict, icon: I.error },
     { id: "note", label: "With HALO notes", n: counts.note, icon: I.note },
+    { id: "collision", label: "Replacing the same textures", n: counts.collision, icon: I.image },
+    ...(store.showWeight ? [{ id: "heavy" as ShowOnly, label: "Heavy on frame time", n: counts.heavy, icon: I.gauge }] : []),
     { id: "changed", label: "Changed since last launch", n: counts.changed, icon: I.change },
     ...(store.preview ? [{ id: "moved" as ShowOnly, label: "HALO would move", n: counts.moved, icon: I.halo }] : [])
   ]);

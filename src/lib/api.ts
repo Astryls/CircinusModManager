@@ -59,6 +59,16 @@ export const api = {
   // list history
   savedLists: () => invoke<SavedList[]>("saved_lists"),
   restoreList: (path: string, save: boolean) => invoke<RestoreResult>("restore_list", { path, save }),
+  saveNamedList: (name: string) => invoke<Snapshot>("save_named_list", { name }),
+  loadNamedList: (name: string) => invoke<RestoreResult>("load_named_list", { name }),
+  deleteNamedList: (name: string) => invoke<Snapshot>("delete_named_list", { name }),
+  renameNamedList: (from: string, to: string) => invoke<Snapshot>("rename_named_list", { from, to }),
+  detachList: () => invoke<Snapshot>("detach_list"),
+  deleteMod: (uid: string) => invoke<[Snapshot, string]>("delete_mod", { uid }),
+  collectionTrack: (text: string) => invoke<Snapshot>("collection_track", { text }),
+  collectionRefresh: (id?: number) => invoke<Snapshot>("collection_refresh", { id: id ?? null }),
+  collectionAcknowledge: (id: number) => invoke<Snapshot>("collection_acknowledge", { id }),
+  collectionUntrack: (id: number) => invoke<Snapshot>("collection_untrack", { id }),
   // launching
   launchInfo: () => invoke<LaunchInfo>("get_launch_info"),
   launchGame: () => invoke<string>("launch_game"),

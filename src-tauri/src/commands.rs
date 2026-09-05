@@ -304,6 +304,164 @@ pub async fn restore_list(state: State<'_, Shared>, path: String, save: bool) ->
     .await
 }
 
+// ---------------------------------------------------------------- named lists
+
+#[tauri::command]
+pub async fn save_named_list(state: State<'_, Shared>, name: String) -> CmdResult<Snapshot> {
+    with_app(&state, move |app| {
+        app.save_named_list(&name).map_err(err)?;
+        Ok(app.snapshot())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn load_named_list(state: State<'_, Shared>, name: String) -> CmdResult<RestoreResult> {
+    with_app(&state, move |app| {
+        let (restored, missing) = app.load_named_list(&name).map_err(err)?;
+        Ok(RestoreResult { snapshot: app.snapshot(), restored, missing })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn delete_named_list(state: State<'_, Shared>, name: String) -> CmdResult<Snapshot> {
+    with_app(&state, move |app| {
+        app.delete_named_list(&name).map_err(err)?;
+        Ok(app.snapshot())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn rename_named_list(state: State<'_, Shared>, from: String, to: String) -> CmdResult<Snapshot> {
+    with_app(&state, move |app| {
+        app.rename_named_list(&from, &to).map_err(err)?;
+        Ok(app.snapshot())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn detach_list(state: State<'_, Shared>) -> CmdResult<Snapshot> {
+    with_app(&state, |app| {
+        app.detach_list();
+        Ok(app.snapshot())
+    })
+    .await
+}
+
+/// Delete a mod's folder (recycle bin), or just the link when the entry is one.
+#[tauri::command]
+pub async fn delete_mod(state: State<'_, Shared>, uid: String) -> CmdResult<(Snapshot, String)> {
+    with_app(&state, move |app| {
+        let what = app.delete_mod(&uid).map_err(err)?;
+        Ok((app.snapshot(), what))
+    })
+    .await
+}
+
+// ---------------------------------------------------------------- collections
+
+/// Follow a Steam collection: `text` is its link or id.
+#[tauri::command]
+pub async fn collection_track(state: State<'_, Shared>, text: String) -> CmdResult<Snapshot> {
+    let ids = webapi::extract_workshop_ids(&text);
+    let id = *ids.first().ok_or_else(|| "No Workshop link or id found".to_string())?;
+    let client = reqwest::Client::builder().user_agent(circinus_core::weight::USER_AGENT).build().map_err(err)?;
+    let details = webapi::published_file_details(&client, &[id]).await.map_err(err)?;
+    let item = details.into_iter().find(|i| i.published_file_id == id).ok_or_else(|| "Steam has no such item".to_string())?;
+    if item.file_type != 2 {
+        return Err(format!("{} is a mod, not a collection. Add mods from the Import dialog or the Downloads view", item.title));
+    }
+    let fetched = fetch_collection(&client, id).await?;
+    with_app(&state, move |app| {
+        if app.user.collections.iter().any(|c| c.id == id) {
+            return Err(format!("You already follow {}", item.title));
+        }
+        let now = crate::state::now_secs();
+        app.user.collections.push(crate::state::TrackedCollection { id, name: item.title.clone(), creator: item.creator.clone(), items: fetched.0.clone(), known: fetched.0, names: fetched.1, checked_at: now, added_at: now, time_updated: item.time_updated });
+        app.persist().map_err(err)?;
+        Ok(app.snapshot())
+    })
+    .await
+}
+
+/// Items and titles of a collection, one level of sub-collections included.
+async fn fetch_collection(client: &reqwest::Client, id: u64) -> CmdResult<(Vec<u64>, HashMap<u64, String>)> {
+    let items = webapi::collection_items(client, id).await.map_err(err)?;
+    let mut names = HashMap::new();
+    if let Ok(details) = webapi::published_file_details(client, &items).await {
+        for d in details {
+            names.insert(d.published_file_id, d.title);
+        }
+    }
+    Ok((items, names))
+}
+
+/// Fetch a followed collection again (all of them when `id` is None) and note what changed.
+#[tauri::command]
+pub async fn collection_refresh(state: State<'_, Shared>, id: Option<u64>) -> CmdResult<Snapshot> {
+    let ids: Vec<u64> = with_app(&state, move |app| Ok(app.user.collections.iter().map(|c| c.id).filter(|c| id.map(|i| i == *c).unwrap_or(true)).collect())).await?;
+    if ids.is_empty() {
+        return with_app(&state, |app| Ok(app.snapshot())).await;
+    }
+    let client = reqwest::Client::builder().user_agent(circinus_core::weight::USER_AGENT).build().map_err(err)?;
+    let details = webapi::published_file_details(&client, &ids).await.unwrap_or_default();
+    let mut fetched: Vec<(u64, Vec<u64>, HashMap<u64, String>)> = Vec::new();
+    let mut failed = Vec::new();
+    for id in &ids {
+        match fetch_collection(&client, *id).await {
+            Ok((items, names)) => fetched.push((*id, items, names)),
+            Err(e) => failed.push(format!("{id}: {e}")),
+        }
+    }
+    with_app(&state, move |app| {
+        let now = crate::state::now_secs();
+        for (id, items, names) in fetched {
+            if let Some(c) = app.user.collections.iter_mut().find(|c| c.id == id) {
+                c.items = items;
+                c.names.extend(names);
+                c.checked_at = now;
+                if let Some(d) = details.iter().find(|d| d.published_file_id == id) {
+                    c.name = d.title.clone();
+                    c.creator = d.creator.clone();
+                    c.time_updated = d.time_updated;
+                }
+            }
+        }
+        app.persist().map_err(err)?;
+        if !failed.is_empty() {
+            return Err(format!("Steam did not answer for {}", failed.join(", ")));
+        }
+        Ok(app.snapshot())
+    })
+    .await
+}
+
+/// The user has seen the collection's changes: measure from its current contents.
+#[tauri::command]
+pub async fn collection_acknowledge(state: State<'_, Shared>, id: u64) -> CmdResult<Snapshot> {
+    with_app(&state, move |app| {
+        if let Some(c) = app.user.collections.iter_mut().find(|c| c.id == id) {
+            c.known = c.items.clone();
+        }
+        app.persist().map_err(err)?;
+        Ok(app.snapshot())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn collection_untrack(state: State<'_, Shared>, id: u64) -> CmdResult<Snapshot> {
+    with_app(&state, move |app| {
+        app.user.collections.retain(|c| c.id != id);
+        app.persist().map_err(err)?;
+        Ok(app.snapshot())
+    })
+    .await
+}
+
 // ---------------------------------------------------------------- game log
 
 #[derive(Serialize, Clone)]

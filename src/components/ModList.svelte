@@ -99,6 +99,13 @@
   function click(e: MouseEvent, m: ModInfo) {
     store.select(m.uid, { toggle: e.ctrlKey || e.metaKey, range: e.shiftKey, list: visibleList() });
   }
+  /** Right click: the menu for the selection when the row is part of it, else for that row alone. */
+  function contextMenu(e: MouseEvent, m: ModInfo) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!store.selected.includes(m.uid)) store.select(m.uid);
+    store.menu = { x: e.clientX, y: e.clientY, uids: store.selected.includes(m.uid) ? [...store.selected] : [m.uid] };
+  }
   function toggle(m: ModInfo) {
     if (store.activeSet.has(m.uid)) store.deactivate([m.uid]);
     else store.activate([m.uid]);
@@ -241,6 +248,7 @@
           aria-selected={store.selected.includes(m.uid)}
           tabindex="0"
           onclick={(e) => rowClick(e, m)}
+          oncontextmenu={(e) => contextMenu(e, m)}
           ondblclick={() => toggle(m)}
           onkeydown={(e) => key(e, m)}
           onpointerdown={(e) => pointerDown(e, m)}

@@ -115,7 +115,14 @@ let user: UserData = {
   phaseOverrides: {},
   notes: {},
   muted: [],
-  ddsExcluded: []
+  ddsExcluded: [],
+  collections: [
+    (() => {
+      const picks = SEED.filter((s) => s[3] && s[4] === "workshop").slice(4, 16);
+      const items = picks.map((s) => Number(s[3]));
+      return { id: 2932138122, name: "Rim of Madness: Complete", creator: "Curator", items: [...items, 3300000001], known: items.slice(0, -1), names: { ...Object.fromEntries(picks.map((s) => [s[3], s[0]])), "3300000001": "A mod not yet installed" }, checkedAt: 1_757_000_000, addedAt: 1_756_000_000, timeUpdated: 1_756_950_000 };
+    })()
+  ]
 };
 
 let settings: Settings = {
@@ -207,6 +214,8 @@ function snapshot(): Snapshot {
     weights,
     weightsFetchedAt: 1_757_000_000,
     dirty,
+    currentList: currentList ?? undefined,
+    namedLists: namedLists.map((l) => ({ name: l.name, path: `C:\\Users\\Player\\AppData\\Local\\Circinus\\lists\\named\\${l.name}.xml`, count: l.uids.length, updatedAt: l.updatedAt, gameVersion: "1.6.4530 rev1235" })),
     dbLoaded: ["communityRules.json (7,412 rules)", "steamDB.json (31,988 items)"],
     scannedAt: 1_757_000_000,
     inspecting: 0,
@@ -223,6 +232,12 @@ function snapshot(): Snapshot {
 }
 
 const resetSimulated = typeof location !== "undefined" && location.search.includes("reset");
+// Named lists, kept in memory for the preview.
+let namedLists: { name: string; uids: string[]; updatedAt: number }[] = [
+  { name: "Vanilla plus", uids: SEED.filter((s) => s[4] === "ludeon" || s[5] === "framework").map((s) => uidOf(s[2])), updatedAt: 1_756_990_000 },
+  { name: "Full run", uids: SEED.filter((s) => !(s[9] ?? "").includes("off")).map((s) => uidOf(s[2])), updatedAt: 1_756_900_000 }
+];
+let currentList: string | null = null;
 const savedLists = [
   { path: "C:\\Users\\Player\\AppData\\Local\\Circinus\\lists\\1757000000-saved.xml", savedAt: 1_757_000_000, label: "saved", count: 44, gameVersion: "1.6.4530 rev1235" },
   { path: "C:\\Users\\Player\\AppData\\Local\\Circinus\\lists\\1756900000-seen.xml", savedAt: 1_756_900_000, label: "seen", count: 41, gameVersion: "1.6.4530 rev1235" },
@@ -379,6 +394,70 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
     case "restore_list":
       dirty = !A.save;
       return { snapshot: snapshot(), restored: 44, missing: [] } as T;
+    case "save_named_list": {
+      const name = (A.name as string).trim();
+      if (!name) throw new Error("Give the list a name");
+      const existing = namedLists.find((l) => l.name === name);
+      if (existing) { existing.uids = [...active]; existing.updatedAt = Math.floor(Date.now() / 1000); }
+      else namedLists.unshift({ name, uids: [...active], updatedAt: Math.floor(Date.now() / 1000) });
+      currentList = name;
+      return snapshot() as T;
+    }
+    case "load_named_list": {
+      const l = namedLists.find((l) => l.name === A.name);
+      if (!l) throw new Error(`No list called ${A.name}`);
+      active = [...l.uids];
+      dirty = true;
+      currentList = l.name;
+      return { snapshot: snapshot(), restored: l.uids.length, missing: [] } as T;
+    }
+    case "delete_named_list":
+      namedLists = namedLists.filter((l) => l.name !== A.name);
+      if (currentList === A.name) currentList = null;
+      return snapshot() as T;
+    case "rename_named_list": {
+      const l = namedLists.find((l) => l.name === A.from);
+      if (!l) throw new Error(`No list called ${A.from}`);
+      if (namedLists.some((x) => x.name === A.to)) throw new Error(`There is already a list called ${A.to}`);
+      l.name = A.to as string;
+      if (currentList === A.from) currentList = l.name;
+      return snapshot() as T;
+    }
+    case "detach_list":
+      currentList = null;
+      return snapshot() as T;
+    case "delete_mod": {
+      const m = mods.find((m) => m.uid === A.uid);
+      if (!m) throw new Error("No such mod");
+      if (m.source === "workshop") throw new Error("Steam owns this folder: unsubscribe on the Workshop page and Steam removes it");
+      mods.splice(mods.indexOf(m), 1);
+      if (active.includes(m.uid)) { active = active.filter((u) => u !== m.uid); dirty = true; }
+      return [snapshot(), m.linkTarget ? `Removed the link ${m.path.split("\\").pop()}; the folder it pointed at is untouched` : `Moved ${m.path.split("\\").pop()} to the recycle bin`] as T;
+    }
+    case "collection_track": {
+      const id = Number(String(A.text).match(/\d{6,}/)?.[0]);
+      if (!id) throw new Error("No Workshop link or id found");
+      if ((user.collections ?? []).some((c) => c.id === id)) throw new Error("You already follow that collection");
+      const items = SEED.filter((s) => s[3]).slice(0, 12).map((s) => Number(s[3]));
+      const names = Object.fromEntries(SEED.filter((s) => s[3]).slice(0, 12).map((s) => [s[3], s[0]]));
+      user.collections = [...(user.collections ?? []), { id, name: `Collection ${id}`, creator: "Someone", items, known: items, names, checkedAt: Math.floor(Date.now() / 1000), addedAt: Math.floor(Date.now() / 1000), timeUpdated: 1_756_000_000 }];
+      return snapshot() as T;
+    }
+    case "collection_refresh":
+      for (const c of user.collections ?? []) {
+        if (A.id != null && c.id !== A.id) continue;
+        c.checkedAt = Math.floor(Date.now() / 1000);
+        // pretend the author added one mod and dropped another
+        const extra = Number(SEED[SEED.length - 1][3]);
+        if (!c.items.includes(extra)) { c.items = [...c.items.slice(1), extra]; c.names[String(extra)] = SEED[SEED.length - 1][0]; }
+      }
+      return snapshot() as T;
+    case "collection_acknowledge":
+      for (const c of user.collections ?? []) if (c.id === A.id) c.known = [...c.items];
+      return snapshot() as T;
+    case "collection_untrack":
+      user.collections = (user.collections ?? []).filter((c) => c.id !== A.id);
+      return snapshot() as T;
     case "get_launch_info":
       return { executable: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld\\RimWorldWin64.exe", executableExists: true, steamInstall: true, autoResolvesTo: "steam" } as T;
     case "launch_game":
