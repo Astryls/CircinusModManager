@@ -107,9 +107,10 @@ let user: UserData = {
     { id: "frameworks", name: "Frameworks", color: "teal" },
     { id: "qol", name: "Quality of life", color: "green" },
     { id: "visual", name: "Visual", color: "amber" },
-    { id: "performance", name: "Performance", color: "coral", phase: "optimization" }
+    { id: "performance", name: "Performance", color: "coral", phase: "optimization" },
+    { id: "rjw-x1y2", name: "Adult content", color: "violet", phase: "content", section: true }
   ],
-  modGroups: Object.fromEntries(SEED.map((s) => [uidOf(s[2]), s[6]])),
+  modGroups: { ...Object.fromEntries(SEED.map((s) => [uidOf(s[2]), s[6]])), [uidOf("orion.hospitality")]: "rjw-x1y2", [uidOf("dubwise.rimatomics")]: "rjw-x1y2" },
   pinned: [],
   phaseOverrides: {},
   notes: {},
@@ -157,7 +158,9 @@ const weights: Record<string, Weight> = Object.fromEntries(
 function placements(order: string[]): Placement[] {
   const reason: Record<Phase, string> = { core: "The game itself", prepatch: "Changes the game before other mods load", framework: "A library many mods use", content: "Adds content", patch: "Only patches, so it loads after what it changes", texture: "Only textures", late: "A rule says: load near the bottom", optimization: "Speeds up other mods, so it has to load after them" };
   return order.map((uid) => {
-    const phase = user.phaseOverrides[uid] ?? user.groups.find((g) => g.id === user.modGroups[uid])?.phase ?? phaseOfSeed[uid] ?? "content";
+    const g = user.groups.find((g) => g.id === user.modGroups[uid]);
+    if (!user.phaseOverrides[uid] && g?.section && g.phase) return { uid, phase: g.phase, reason: `In your group ${g.name}, which goes after ${PHASES.find((p) => p.id === g.phase)?.name.toLowerCase()}`, section: g.id };
+    const phase = user.phaseOverrides[uid] ?? g?.phase ?? phaseOfSeed[uid] ?? "content";
     return { uid, phase, reason: user.phaseOverrides[uid] ? "Set by you" : reason[phase] };
   });
 }

@@ -89,6 +89,8 @@ export interface Placement {
   uid: string;
   phase: Phase;
   reason: string;
+  /** The user's group it sorts with when that group has its own section after `phase`. */
+  section?: string;
 }
 
 export interface SortResult {
@@ -166,8 +168,14 @@ export interface Group {
   id: string;
   name: string;
   color: string;
+  /** Members are sorted as this phase; with `section`, the phase the group's own section follows. */
   phase?: Phase | null;
+  /** The group has its own place in the load order: a section right after `phase`. */
+  section?: boolean;
 }
+
+/** Colours a group can have; `c-<name>` classes exist for each. */
+export const GROUP_COLORS = ["blue", "teal", "green", "pink", "amber", "coral", "violet", "slate"] as const;
 
 export interface UserData {
   groups: Group[];

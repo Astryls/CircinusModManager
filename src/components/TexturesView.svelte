@@ -209,7 +209,7 @@
 </main>
 
 <style>
-  .center { display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; overflow: auto; padding-bottom: 14px; }
+  .center { display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; overflow: hidden auto; padding-bottom: 14px; }
   .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
   .tile .k { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
   .tile .v { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; margin-top: 4px; }
@@ -227,7 +227,7 @@
   .cur { color: var(--text-3); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .errs { margin-top: 10px; font-size: 12.5px; color: var(--text-2); }
   .errs summary { cursor: pointer; font-weight: 600; color: var(--amber); }
-  .errlist { margin-top: 6px; max-height: 200px; overflow: auto; display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--text-3); }
+  .errlist { margin-top: 6px; max-height: 200px; overflow: hidden auto; display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--text-3); }
   .errlist b { color: var(--text-2); }
   .opt { display: flex; align-items: center; gap: 10px; margin: 8px 0; font-size: 13px; }
   .opt .l { width: 100px; color: var(--text-2); }
@@ -262,7 +262,7 @@
   .fm summary { cursor: pointer; display: flex; align-items: center; gap: 10px; padding: 6px 10px; font-size: 13px; color: var(--text-2); }
   .fm summary b { color: var(--text); }
   .fm .fc { color: var(--text-3); font-size: 12px; margin-left: auto; }
-  .flist { display: flex; flex-direction: column; gap: 4px; padding: 4px 12px 10px 24px; max-height: 260px; overflow: auto; }
+  .flist { display: flex; flex-direction: column; gap: 4px; padding: 4px 12px 10px 24px; max-height: 260px; overflow: hidden auto; }
   .fr { display: flex; flex-direction: column; font-size: 12px; }
   .fr .mono { color: var(--text-2); word-break: break-all; }
   .fr .why { color: var(--text-3); font-size: 11.5px; }

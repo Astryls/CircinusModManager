@@ -112,7 +112,7 @@
 
 <style>
   .scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(6px); display: grid; place-items: center; z-index: 40; }
-  .dlg { width: min(680px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow: auto; padding: 18px 20px; box-shadow: var(--shadow-float); display: flex; flex-direction: column; gap: 14px; }
+  .dlg { width: min(680px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow: hidden auto; padding: 18px 20px; box-shadow: var(--shadow-float); display: flex; flex-direction: column; gap: 14px; }
   .hd { display: flex; justify-content: space-between; align-items: center; }
   .hd b { font-size: 16px; font-weight: 800; }
   .x { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--text-3); }
@@ -124,10 +124,10 @@
   .or { color: var(--text-3); font-size: 12.5px; }
   .res { font-size: 13px; color: var(--text-2); background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
   .res b { color: var(--text); }
-  .ids { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; max-height: 120px; overflow: auto; }
+  .ids { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; max-height: 120px; overflow: hidden auto; }
   .ids .mono { background: var(--surface-3); padding: 2px 7px; border-radius: 6px; color: var(--text-2); }
   .hint { margin-top: 8px; font-size: 12px; color: var(--text-3); }
-  .hist { display: flex; flex-direction: column; gap: 2px; max-height: 190px; overflow: auto; }
+  .hist { display: flex; flex-direction: column; gap: 2px; max-height: 190px; overflow: hidden auto; }
   .hrow { display: grid; grid-template-columns: 130px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 4px 6px; border-radius: 8px; font-size: 12.5px; }
   .hrow:hover { background: var(--surface-2); }
   .hw { color: var(--text-3); }

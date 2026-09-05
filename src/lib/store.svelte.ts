@@ -3,7 +3,7 @@
 
 import { api, listen } from "./api";
 import type { CollectionPreview, Group, ImportPreview, Issue, ModChange, ModInfo, ModTextures, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamCmdStatus, TexState, UserData, Weight, LogAnalysis, LogFile, AuditReport } from "./types";
-import { PHASES, primaryUid, severityOf } from "./types";
+import { GROUP_COLORS, PHASES, primaryUid, severityOf, type Severity } from "./types";
 
 export type View = "order" | "library" | "downloads" | "textures" | "analyzer" | "settings";
 export type Tab = "active" | "inactive" | "all";
@@ -179,11 +179,19 @@ class Store {
   visibleActive = $derived(this.active.map((u) => this.byUid.get(u)!).filter((m) => m && this.matches(m)));
   inactive = $derived(this.mods.filter((m) => !this.activeSet.has(m.uid)).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "")));
   visibleInactive = $derived(this.inactive.filter((m) => this.matches(m)));
+  /** Groups with their own place in the load order, in the order they follow one another. */
+  sectionGroups = $derived((this.snap?.user.groups ?? []).filter((g) => g.section && g.phase));
+  /** The load order as shown: each phase's ordinary members, then the groups placed after it. */
   sections = $derived.by(() => {
-    const out: { phase: (typeof PHASES)[number]; mods: ModInfo[] }[] = [];
+    const out: { phase: (typeof PHASES)[number]; group?: Group; mods: ModInfo[] }[] = [];
     for (const p of PHASES) {
-      const mods = this.visibleActive.filter((m) => (this.placementByUid.get(m.uid)?.phase ?? "content") === p.id);
-      if (mods.length) out.push({ phase: p, mods });
+      const inPhase = this.visibleActive.filter((m) => (this.placementByUid.get(m.uid)?.phase ?? "content") === p.id);
+      const plain = inPhase.filter((m) => !this.placementByUid.get(m.uid)?.section);
+      if (plain.length) out.push({ phase: p, mods: plain });
+      for (const g of this.sectionGroups.filter((g) => g.phase === p.id)) {
+        const mods = inPhase.filter((m) => this.placementByUid.get(m.uid)?.section === g.id);
+        if (mods.length) out.push({ phase: p, group: g, mods });
+      }
     }
     return out;
   });
@@ -440,6 +448,48 @@ class Store {
     this.select(uid);
     this.scrollRequest = uid;
   }
+  /** Bring a mod into view wherever it is: the load order view, the tab it lives in, and any
+   *  filter that would hide it lifted. */
+  reveal(uid: string) {
+    const m = this.byUid.get(uid);
+    if (!m) return;
+    this.view = "order";
+    const inactive = !this.activeSet.has(uid);
+    if (inactive && this.tab === "active") this.tab = "inactive";
+    if (!inactive && this.tab === "inactive") this.tab = "active";
+    // Lift only the filters that hide it, one at a time.
+    const lifts: (() => void)[] = [() => (this.query = ""), () => (this.group = null), () => (this.showOnly = null), () => (this.onlyCurrentVersion = false), () => (this.sources = [...ALL_SOURCES])];
+    for (const lift of lifts) {
+      if (this.matches(m)) break;
+      lift();
+    }
+    this.scrollTo(uid);
+  }
+  /** Mods with something to look at, in the order to look at them: errors first, then warnings,
+   *  then notes; within that, list order, with inactive mods last. */
+  reviewList = $derived.by((): string[] => {
+    const rank: Record<Severity, number> = { error: 0, warning: 1, note: 2 };
+    const key = new Map<string, [number, number, number]>();
+    for (const [uid, list] of this.issuesByUid) {
+      if (!this.byUid.has(uid)) continue;
+      const sev = Math.min(...list.map((i) => rank[severityOf(i)]));
+      key.set(uid, [this.activeSet.has(uid) ? 0 : 1, sev, this.indexOf.get(uid) ?? Number.MAX_SAFE_INTEGER]);
+    }
+    return [...key.entries()].sort((a, b) => a[1][0] - b[1][0] || a[1][1] - b[1][1] || a[1][2] - b[1][2] || (this.byUid.get(a[0])?.name ?? "").localeCompare(this.byUid.get(b[0])?.name ?? "")).map(([u]) => u);
+  });
+  /** Where Review stands: the selected mod's place in the review list (or -1) and the total. */
+  reviewPos = $derived.by(() => {
+    const list = this.reviewList;
+    const at = this.selected.length === 1 ? list.indexOf(this.selected[0]) : -1;
+    return { at, total: list.length };
+  });
+  /** Go to the next thing to review, after whatever is selected; the first one otherwise. */
+  reviewNext() {
+    const list = this.reviewList;
+    if (!list.length) return;
+    const { at } = this.reviewPos;
+    this.reveal(list[(at + 1) % list.length]);
+  }
   // ---- downloads ----
   async queueText(text: string) {
     return this.run("Looking up on Steam…", async () => {
@@ -595,6 +645,67 @@ class Store {
       for (const uid of uids) {
         if (groupId) u.modGroups[uid] = groupId;
         else delete u.modGroups[uid];
+      }
+      return u;
+    });
+  }
+  /** Make a group, with members if given (one save, so nothing is lost between two). Returns its id. */
+  addGroup(name: string, opts: { members?: string[]; color?: string } = {}): string {
+    const clean = name.trim();
+    const id = (clean.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "group") + "-" + Math.random().toString(36).slice(2, 6);
+    const n = this.snap?.user.groups.length ?? 0;
+    this.updateUser((u) => {
+      for (const uid of opts.members ?? []) u.modGroups[uid] = id;
+      return { ...u, groups: [...u.groups, { id, name: clean, color: opts.color ?? GROUP_COLORS[n % GROUP_COLORS.length] }] };
+    });
+    return id;
+  }
+  updateGroup(id: string, patch: Partial<Omit<Group, "id">>) {
+    return this.updateUser((u) => ({ ...u, groups: u.groups.map((g) => (g.id === id ? { ...g, ...patch } : g)) }));
+  }
+  /** Remove a group; its members keep their places, they just lose the label. */
+  deleteGroup(id: string) {
+    if (this.group === id) this.group = null;
+    return this.updateUser((u) => {
+      for (const [uid, g] of Object.entries(u.modGroups)) if (g === id) delete u.modGroups[uid];
+      return { ...u, groups: u.groups.filter((g) => g.id !== id) };
+    });
+  }
+  /** Move a group up or down the list; for groups with their own section this is also the
+   *  order they follow one another in the load order. */
+  moveGroup(id: string, dir: -1 | 1) {
+    return this.updateUser((u) => {
+      const i = u.groups.findIndex((g) => g.id === id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= u.groups.length) return u;
+      const groups = [...u.groups];
+      [groups[i], groups[j]] = [groups[j], groups[i]];
+      return { ...u, groups };
+    });
+  }
+  /** What "Sort it as" shows for a mod: an explicit phase, its group's own section, or HALO's choice. */
+  sortAsOf(uid: string): string {
+    const p = this.snap?.user.phaseOverrides[uid];
+    if (p) return p;
+    const g = this.groupOf(uid);
+    return g?.section && g.phase ? `group:${g.id}` : "";
+  }
+  /** Apply a "Sort it as" choice: a phase, a group's section (which puts the mod in that group), or nothing. */
+  setSortAs(uids: string[], value: string) {
+    if (value.startsWith("group:")) {
+      const gid = value.slice(6);
+      return this.updateUser((u) => {
+        for (const uid of uids) {
+          u.modGroups[uid] = gid;
+          delete u.phaseOverrides[uid];
+        }
+        return u;
+      });
+    }
+    return this.updateUser((u) => {
+      for (const uid of uids) {
+        if (value) u.phaseOverrides[uid] = value as Phase;
+        else delete u.phaseOverrides[uid];
       }
       return u;
     });

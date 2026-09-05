@@ -143,7 +143,7 @@
 </main>
 
 <style>
-  .center { display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; overflow: auto; padding-bottom: 14px; }
+  .center { display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; overflow: hidden auto; padding-bottom: 14px; }
   .top { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .row { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--text-2); line-height: 1.45; margin-bottom: 10px; }
   .st { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; flex: none; }
@@ -186,6 +186,6 @@
   .ib { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--text-3); }
   .ib:hover { background: var(--surface-3); color: var(--text); }
   .ib :global(svg) { width: 14px; height: 14px; }
-  .log { margin: 0; font-family: var(--mono); font-size: 11.5px; color: var(--text-2); line-height: 1.5; max-height: 260px; overflow: auto; white-space: pre-wrap; user-select: text; }
+  .log { margin: 0; font-family: var(--mono); font-size: 11.5px; color: var(--text-2); line-height: 1.5; max-height: 260px; overflow: hidden auto; white-space: pre-wrap; user-select: text; }
   @media (max-width: 1100px) { .top { grid-template-columns: 1fr; } }
 </style>

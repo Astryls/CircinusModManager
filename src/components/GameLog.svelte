@@ -245,7 +245,7 @@
   summary { cursor: pointer; padding: 7px 10px; font-size: 13px; font-weight: 600; color: var(--text-2); display: flex; gap: 8px; align-items: center; }
   summary:hover { color: var(--text); }
   summary .aside { font-weight: 500; color: var(--text-3); }
-  .dl { padding: 4px 12px 10px 28px; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: var(--text-2); line-height: 1.45; max-height: 360px; overflow: auto; }
+  .dl { padding: 4px 12px 10px 28px; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: var(--text-2); line-height: 1.45; max-height: 360px; overflow: hidden auto; }
   .dl b { color: var(--text); }
   .dl .mono { color: var(--text-2); word-break: break-all; }
   .msgs { display: flex; flex-direction: column; gap: 2px; padding-left: 12px; }

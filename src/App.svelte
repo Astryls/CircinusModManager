@@ -31,6 +31,7 @@
     else if (meta && e.key.toLowerCase() === "d") { e.preventDefault(); store.view = store.view === "downloads" ? "order" : "downloads"; }
     else if (e.altKey && e.key === "ArrowUp") { e.preventDefault(); store.moveSelected(-1); }
     else if (e.altKey && e.key === "ArrowDown") { e.preventDefault(); store.moveSelected(1); }
+    else if (e.key === "F8") { e.preventDefault(); store.reviewNext(); }
     else if (e.key === "Delete" || e.key === "Backspace") {
       const sel = store.selected.filter((u) => store.activeSet.has(u));
       if (sel.length) { e.preventDefault(); store.deactivate(sel); }

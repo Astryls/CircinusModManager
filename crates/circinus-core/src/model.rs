@@ -399,6 +399,10 @@ pub struct Placement {
     pub phase: Phase,
     /// Why it landed in that phase, in one short sentence.
     pub reason: String,
+    /// The user's group it sorts with when that group has its own place in the order (a
+    /// section right after the ordinary members of `phase`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub section: Option<String>,
 }
 
 /// Result of a HALO sort: the proposed order and what moved.

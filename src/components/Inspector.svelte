@@ -56,6 +56,24 @@
   function workshopUrl() {
     return m?.publishedFileId ? `https://steamcommunity.com/sharedfiles/filedetails/?id=${m.publishedFileId}` : m?.url;
   }
+  let newGroup = $state(false);
+  let newGroupName = $state("");
+  let newGroupInput = $state<HTMLInputElement | null>(null);
+  function onGroupChoice(value: string) {
+    if (!m) return;
+    if (value === "+new") {
+      newGroup = true;
+      setTimeout(() => newGroupInput?.focus(), 0);
+      return;
+    }
+    store.setGroup(store.selected.length > 1 ? store.selected : [m.uid], value || null);
+  }
+  function makeGroup() {
+    if (!m || !newGroupName.trim()) return;
+    store.addGroup(newGroupName, { members: store.selected.length > 1 ? store.selected : [m.uid] });
+    newGroupName = "";
+    newGroup = false;
+  }
   const folderName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
   /** The last two parts of a path; the whole thing is in the tooltip. */
   function shortPath(p: string) {
@@ -90,10 +108,18 @@
         {/if}
         <dt>Group</dt>
         <dd>
-          <select class="sel" value={group?.id ?? ""} onchange={(e) => store.setGroup(store.selected.length > 1 ? store.selected : [m.uid], (e.currentTarget as HTMLSelectElement).value || null)}>
+          <select class="sel" value={group?.id ?? ""} onchange={(e) => onGroupChoice((e.currentTarget as HTMLSelectElement).value)}>
             <option value="">None</option>
-            {#each store.snap?.user.groups ?? [] as g}<option value={g.id}>{g.name}</option>{/each}
+            {#each store.snap?.user.groups ?? [] as g}<option value={g.id}>{g.name}{g.section && g.phase ? " (own section)" : g.phase ? ` (sorted as ${store.phaseInfo(g.phase).name.toLowerCase()})` : ""}</option>{/each}
+            <option value="+new">New group…</option>
           </select>
+          {#if newGroup}
+            <form class="newg" onsubmit={(e) => { e.preventDefault(); makeGroup(); }}>
+              <input class="input" placeholder="Group name" bind:value={newGroupName} bind:this={newGroupInput} />
+              <button class="btn sm primary" type="submit">Add</button>
+              <button class="btn sm" type="button" onclick={() => (newGroup = false)}>Cancel</button>
+            </form>
+          {/if}
         </dd>
       </dl>
     </section>
@@ -130,11 +156,15 @@
       <div class="ctl">
         <label class="switch"><input type="checkbox" checked={store.pinned.has(m.uid)} onchange={() => store.togglePin(m.uid)} />Keep its position when sorting</label>
         <label class="fld"><span>Sort it as</span>
-          <select class="sel" value={store.snap?.user.phaseOverrides[m.uid] ?? ""} onchange={(e) => store.setPhaseOverride(m.uid, ((e.currentTarget as HTMLSelectElement).value || null) as Phase | null)}>
+          <select class="sel" value={store.sortAsOf(m.uid)} onchange={(e) => store.setSortAs(store.selected.length > 1 ? store.selected : [m.uid], (e.currentTarget as HTMLSelectElement).value)}>
             <option value="">Let HALO decide</option>
-            {#each PHASES as p}<option value={p.id}>{p.name}</option>{/each}
+            {#each PHASES as p}
+              <option value={p.id}>{p.name}</option>
+              {#each store.sectionGroups.filter((g) => g.phase === p.id) as g}<option value="group:{g.id}">{g.name} (your group, after {p.name.toLowerCase()})</option>{/each}
+            {/each}
           </select>
         </label>
+        <p class="hint">A group of yours can have its own place in the order: give it one under Groups, in the panel on the left, and it appears here.</p>
       </div>
     </section>
 
@@ -233,6 +263,9 @@
   .lnk:hover { text-decoration: underline; }
   .sel { height: 28px; border: 0; border-radius: 7px; background: var(--surface-3); color: var(--text); font-size: 12.5px; padding: 0 8px; max-width: 100%; min-width: 0; width: 100%; }
   .kv .sel { width: auto; max-width: 180px; }
+  .newg { display: flex; gap: 6px; margin-top: 6px; justify-content: flex-end; }
+  .newg .input { height: 28px; font-size: 12.5px; min-width: 0; flex: 1; }
+  .halo .hint { color: var(--text-3); font-size: 11.5px; line-height: 1.4; margin: 6px 0 0; }
   .halo .ph2 { display: flex; align-items: center; gap: 8px; font-weight: 600; }
   .halo .why { color: var(--text-3); font-size: 12px; margin-top: 4px; line-height: 1.4; }
   .halo .move { margin-top: 10px; background: var(--surface-2); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; color: var(--text-2); }
@@ -262,7 +295,7 @@
   .acts .btn.primary { background: var(--amber); }
   .desc { margin-top: 12px; font-size: 12.5px; color: var(--text-2); }
   .desc summary { cursor: pointer; font-weight: 600; color: var(--text-3); }
-  .desc p { white-space: pre-wrap; line-height: 1.5; max-height: 260px; overflow: auto; margin: 8px 0 0; user-select: text; }
+  .desc p { white-space: pre-wrap; line-height: 1.5; max-height: 260px; overflow: hidden auto; margin: 8px 0 0; user-select: text; }
   .muted { color: var(--text-3); font-size: 12.5px; }
   .empty-card p { color: var(--text-3); font-size: 13px; line-height: 1.5; margin: 8px 0 0; }
 </style>

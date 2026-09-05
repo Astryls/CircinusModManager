@@ -100,7 +100,7 @@
   .x { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--text-3); }
   .x:hover { background: var(--surface-2); color: var(--text); }
   .x :global(svg) { width: 14px; height: 14px; }
-  .body { overflow: auto; min-height: 0; display: flex; flex-direction: column; gap: 16px; padding-right: 4px; }
+  .body { overflow: hidden auto; min-height: 0; display: flex; flex-direction: column; gap: 16px; padding-right: 4px; }
   h4 { margin: 0 0 4px; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2); display: flex; align-items: center; gap: 8px; }
   .aside { color: var(--text-3); font-weight: 600; letter-spacing: 0; text-transform: none; }
   .hint { margin: 0 0 8px; color: var(--text-3); font-size: 12.5px; line-height: 1.45; }

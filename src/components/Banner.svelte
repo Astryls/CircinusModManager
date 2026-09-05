@@ -2,7 +2,6 @@
   import { store } from "$lib/store.svelte";
   import { headline } from "$lib/describe";
   import { I } from "$lib/icons";
-  import { primaryUid } from "$lib/types";
 
   type Notice = { id: string; kind: "error" | "warning" | "note" | "info"; title: string; detail: string; action: string; run: () => void; dismissable: boolean };
 
@@ -59,8 +58,11 @@
       });
     }
     if (head) {
-      // Errors stay until fixed; warnings and notes can be closed for this session.
-      const notice: Notice = { id: `issues:${head.title}`, kind: head.kind, title: head.title, detail: head.detail, action: "Review", run: review, dismissable: head.kind !== "error" };
+      // Errors stay until fixed; warnings and notes can be closed for this session. Review walks
+      // the mods with something to look at, one press each, most serious first.
+      const { at, total } = store.reviewPos;
+      const action = total > 1 ? (at < 0 ? `Review (${total})` : `Next (${((at + 1) % total) + 1} of ${total})`) : "Review";
+      const notice: Notice = { id: `issues:${head.title}`, kind: head.kind, title: head.title, detail: head.detail, action, run: () => store.reviewNext(), dismissable: head.kind !== "error" };
       // Something that will make the game reset the list outranks housekeeping notices.
       if (head.kind === "error") out.splice(reset ? 1 : 0, 0, notice);
       else out.push(notice);
@@ -68,12 +70,6 @@
     return out.filter((n) => !store.dismissed.includes(n.id));
   });
 
-  function review() {
-    const wanted = head?.kind === "error" ? ["aboveOfficial", "cycle", "incompatible", "missingDependency"] : ["misplacedOptimization"];
-    const target = store.issues.find((i) => wanted.includes(i.kind)) ?? store.issues[0];
-    const uid = target && primaryUid(target);
-    if (uid) store.scrollTo(uid);
-  }
 </script>
 
 {#each notices as n, i (n.id)}

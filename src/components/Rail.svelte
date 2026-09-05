@@ -1,6 +1,8 @@
 <script lang="ts">
   import { store, type View } from "$lib/store.svelte";
   import { I } from "$lib/icons";
+  import GroupEditor from "./GroupEditor.svelte";
+  import type { Group } from "$lib/types";
 
   const snap = $derived(store.snap);
   const groupCounts = $derived.by(() => {
@@ -18,14 +20,17 @@
   ];
   let newGroup = $state(false);
   let newName = $state("");
-  const palette = ["blue", "teal", "green", "pink", "amber", "coral", "violet"];
+  let editing = $state<string | null>(null);
   function addGroup() {
-    const name = newName.trim();
-    if (!name) return;
-    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + Math.random().toString(36).slice(2, 6);
-    store.updateUser((u) => ({ ...u, groups: [...u.groups, { id, name, color: palette[u.groups.length % palette.length] }] }));
+    if (!newName.trim()) return;
+    editing = store.addGroup(newName);
     newName = "";
     newGroup = false;
+  }
+  function marker(g: Group): string {
+    if (g.section && g.phase) return `Has its own section in the load order, after ${store.phaseInfo(g.phase).name.toLowerCase()}`;
+    if (g.phase) return `Members are sorted as ${store.phaseInfo(g.phase).name.toLowerCase()}`;
+    return "";
   }
   const pct = $derived(store.mods.length ? Math.round((store.active.length / store.mods.length) * 100) : 0);
 </script>
@@ -57,13 +62,18 @@
       </form>
     {/if}
     {#each snap?.user.groups ?? [] as g (g.id)}
-      <button class="g" class:on={store.group === g.id} onclick={() => (store.group = store.group === g.id ? null : g.id)}>
-        <span class="dot c-{g.color}"></span><span class="n">{g.name}</span>
-        {#if g.phase}<span class="ov" title="Members are placed in the {store.phaseInfo(g.phase).name} phase">{@html I.over}</span>{/if}
-        <span class="c num">{groupCounts.get(g.id) ?? 0}</span>
-      </button>
+      <div class="grow" class:on={store.group === g.id} class:editing={editing === g.id}>
+        <button class="g" onclick={() => (store.group = store.group === g.id ? null : g.id)} title={marker(g) || "Show only this group"}>
+          <span class="dot c-{g.color}"></span><span class="n">{g.name}</span>
+          {#if g.phase}<span class="ov" title={marker(g)}>{@html I.over}</span>{/if}
+          <span class="c num">{groupCounts.get(g.id) ?? 0}</span>
+        </button>
+        <button class="edit" aria-label="Edit group {g.name}" title="Rename, colour, where it sorts, delete" onclick={() => (editing = editing === g.id ? null : g.id)}>{@html I.gear}</button>
+      </div>
+      {#if editing === g.id}<GroupEditor group={g} onclose={() => (editing = null)} />{/if}
     {/each}
     {#if store.group}<button class="clear" onclick={() => (store.group = null)}>Show all groups</button>{/if}
+    <p class="ghint">Click a group to show only its mods. The gear sets where its members sort: a phase, or a section of their own.</p>
   </section>
 
 </aside>
@@ -89,9 +99,15 @@
   .newg { display: flex; gap: 6px; margin-bottom: 8px; }
   .newg .input { height: 28px; font-size: 12.5px; }
   .groups h3 { margin-bottom: 4px; }
-  .groups .g { display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; margin: 0 -6px; border-radius: 8px; font-weight: 600; font-size: 13px; width: calc(100% + 12px); text-align: left; }
-  .groups .g:hover { background: var(--surface-2); }
-  .groups .g.on { background: var(--surface-3); }
+  .grow { display: flex; align-items: center; margin: 0 -6px; border-radius: 8px; }
+  .grow:hover, .grow.editing { background: var(--surface-2); }
+  .grow.on { background: var(--surface-3); }
+  .groups .g { display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; border-radius: 8px; font-weight: 600; font-size: 13px; flex: 1; min-width: 0; text-align: left; }
+  .grow .edit { width: 24px; height: 24px; margin-right: 2px; border-radius: 6px; display: grid; place-items: center; opacity: 0; color: var(--text-3); flex: none; }
+  .grow .edit :global(svg) { width: 14px; height: 14px; }
+  .grow:hover .edit, .grow.editing .edit, .grow .edit:focus-visible { opacity: 1; }
+  .grow .edit:hover { background: var(--surface-3); color: var(--text); }
+  .ghint { color: var(--text-3); font-size: 11.5px; line-height: 1.4; margin: 8px 0 0; }
   .groups .g .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .groups .g .c { color: var(--text-3); font-size: 12px; }
   .groups .g .ov { color: var(--text-3); display: grid; }

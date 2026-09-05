@@ -22,7 +22,8 @@
     const out: Item[] = [];
     if (store.tab !== "inactive") {
       for (const sec of store.sections) {
-        out.push({ kind: "header", key: `h:${sec.phase.id}`, name: sec.phase.name, color: sec.phase.color, note: sec.phase.note, count: sec.mods.length });
+        if (sec.group) out.push({ kind: "header", key: `h:${sec.phase.id}:${sec.group.id}`, name: sec.group.name, color: sec.group.color, note: `Your group, after ${sec.phase.name.toLowerCase()}`, count: sec.mods.length });
+        else out.push({ kind: "header", key: `h:${sec.phase.id}`, name: sec.phase.name, color: sec.phase.color, note: sec.phase.note, count: sec.mods.length });
         for (const m of sec.mods) out.push({ kind: "row", key: m.uid, mod: m, inactive: false });
       }
     }
@@ -275,7 +276,7 @@
 </div>
 
 <style>
-  .list { flex: 1; min-height: 0; overflow: auto; padding: 0 6px 10px; position: relative; }
+  .list { flex: 1; min-height: 0; overflow: hidden auto; padding: 0 6px 10px; position: relative; }
   .list.dragging { cursor: grabbing; }
   .list.dragging .row { cursor: grabbing; }
   .ghost { position: fixed; z-index: 30; pointer-events: none; background: var(--surface-4); color: var(--text); font-size: 12.5px; font-weight: 600; padding: 6px 10px; border-radius: 8px; box-shadow: var(--shadow-float); max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

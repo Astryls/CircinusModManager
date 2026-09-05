@@ -42,10 +42,40 @@ const OPTIMIZATION_IDS: &[&str] = &["krkr.rocketman", "bs.performance", "taranch
 pub struct UserOverrides {
     /// uid → phase the user assigned.
     pub phases: HashMap<String, Phase>,
+    /// uid → the section (a group of the user's with its own place in the order) it sorts in.
+    /// An entry in `phases` for the same uid wins: an explicit per-mod choice beats the group.
+    #[serde(default)]
+    pub sections: HashMap<String, String>,
+    /// The sections, in the order they follow one another when several sit after one phase.
+    #[serde(default)]
+    pub section_defs: Vec<SectionDef>,
     /// uids whose position must not change.
     pub pinned: HashSet<String>,
     /// Sort alphabetically within a phase instead of keeping the current arrangement.
     pub alphabetical: bool,
+}
+
+/// A group the user gave its own place in the load order: its members sort together, right
+/// after the ordinary members of `after`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SectionDef {
+    pub id: String,
+    pub name: String,
+    pub after: Phase,
+}
+
+impl UserOverrides {
+    /// Sort rank within a phase: 0 for its ordinary members, then the sections after it in
+    /// the order the user keeps them.
+    pub fn section_rank(&self, phase: Phase, section: Option<&str>) -> u16 {
+        let Some(id) = section else { return 0 };
+        self.section_defs.iter().filter(|d| d.after == phase).position(|d| d.id == id).map(|k| k as u16 + 1).unwrap_or(0)
+    }
+}
+
+fn place(uid: &str, phase: Phase, reason: impl Into<String>) -> Placement {
+    Placement { uid: uid.to_string(), phase, reason: reason.into(), section: None }
 }
 
 pub struct Context<'a> {
@@ -64,50 +94,53 @@ fn name_matches(name: &str, needles: &[&str]) -> bool {
 
 /// Decide a phase for one active mod. `top` says the mod may sit above official content.
 pub fn classify(m: &ModInfo, ctx: &Context, dependents: usize, texture_collides: bool, top: bool) -> Placement {
-    let uid = m.uid.clone();
+    let uid = m.uid.as_str();
     if let Some(p) = ctx.overrides.phases.get(&m.uid) {
-        return Placement { uid, phase: *p, reason: "Set by you".into() };
+        return place(uid, *p, "Set by you");
+    }
+    if let Some(def) = ctx.overrides.sections.get(&m.uid).and_then(|id| ctx.overrides.section_defs.iter().find(|d| d.id == *id)) {
+        return Placement { uid: uid.to_string(), phase: def.after, reason: format!("In your group {}, which goes after {}", def.name, def.after.label().to_lowercase()), section: Some(def.id.clone()) };
     }
     let id = m.package_id.as_str();
     let c = &m.contents;
     if is_official(m) {
-        return Placement { uid, phase: Phase::Core, reason: "The game itself".into() };
+        return place(uid, Phase::Core, "The game itself");
     }
     if PREPATCH_IDS.contains(&id) {
-        return Placement { uid, phase: Phase::Prepatch, reason: "Changes the game before other mods load".into() };
+        return place(uid, Phase::Prepatch, "Changes the game before other mods load");
     }
     if top {
-        return Placement { uid, phase: Phase::Prepatch, reason: "Asks to load before the game and has no Defs, so that is safe".into() };
+        return place(uid, Phase::Prepatch, "Asks to load before the game and has no Defs, so that is safe");
     }
     if ctx.rules.iter().any(|r| r.kind == RuleKind::LoadTop && r.subject == id) {
-        return Placement { uid, phase: Phase::Framework, reason: "A rule says: load near the top".into() };
+        return place(uid, Phase::Framework, "A rule says: load near the top");
     }
     let optimizer = OPTIMIZATION_IDS.contains(&id) || (c.assemblies > 0 && c.defs == 0 && name_matches(&m.name, &["performance", "optimiz", "optimis", "rocketman", "fps boost"]));
     if optimizer {
-        return Placement { uid, phase: Phase::Optimization, reason: "Speeds up other mods, so it has to load after them".into() };
+        return place(uid, Phase::Optimization, "Speeds up other mods, so it has to load after them");
     }
     if ctx.rules.iter().any(|r| r.kind == RuleKind::LoadBottom && r.subject == id) {
-        return Placement { uid, phase: Phase::Late, reason: "A rule says: load near the bottom".into() };
+        return place(uid, Phase::Late, "A rule says: load near the bottom");
     }
     if FRAMEWORK_IDS.contains(&id) {
-        return Placement { uid, phase: Phase::Framework, reason: "A library many mods use".into() };
+        return place(uid, Phase::Framework, "A library many mods use");
     }
     if c.assemblies > 0 && dependents >= 3 {
-        return Placement { uid, phase: Phase::Framework, reason: format!("{dependents} active mods need it") };
+        return place(uid, Phase::Framework, format!("{dependents} active mods need it"));
     }
     if c.assemblies > 0 && name_matches(&m.name, &["framework", "library", " lib", "api"]) && !name_matches(&m.name, &["patch"]) {
-        return Placement { uid, phase: Phase::Framework, reason: "Named like a library and has code".into() };
+        return place(uid, Phase::Framework, "Named like a library and has code");
     }
     if m.kind == ModKind::Textures || (c.textures + c.dds > 0 && c.assemblies == 0 && c.defs == 0 && (texture_collides || name_matches(&m.name, &["retexture", "texture", "textures"]))) {
-        return Placement { uid, phase: Phase::Texture, reason: if texture_collides { "Replaces textures that other mods also replace".into() } else { "Only textures".into() } };
+        return place(uid, Phase::Texture, if texture_collides { "Replaces textures that other mods also replace" } else { "Only textures" });
     }
     if c.patches > 0 && c.defs == 0 && c.assemblies == 0 {
-        return Placement { uid, phase: Phase::Patch, reason: "Only patches, so it loads after what it changes".into() };
+        return place(uid, Phase::Patch, "Only patches, so it loads after what it changes");
     }
     if name_matches(&m.name, &["patch", "compat"]) && (c.assemblies == 0 || m.rules.dependencies.len() >= 2) {
-        return Placement { uid, phase: Phase::Patch, reason: "A patch that joins two mods".into() };
+        return place(uid, Phase::Patch, "A patch that joins two mods");
     }
-    Placement { uid, phase: Phase::Content, reason: "Adds content".into() }
+    place(uid, Phase::Content, "Adds content")
 }
 
 struct Edge {
@@ -360,7 +393,8 @@ fn placements_and_graph(order: &[&ModInfo], ctx: &Context) -> (Vec<Placement>, D
             }
             for e in g.edges(n) {
                 let j = g[e.target()];
-                if placements[j].phase < from && !ctx.overrides.phases.contains_key(&order[j].uid) && !is_official(order[j]) {
+                let chosen = ctx.overrides.phases.contains_key(&order[j].uid) || ctx.overrides.sections.contains_key(&order[j].uid);
+                if placements[j].phase < from && !chosen && !is_official(order[j]) {
                     placements[j].phase = from;
                     placements[j].reason = format!("Must load after {}, so it goes with the {} group", order[i].name, from.label().to_lowercase());
                 }
@@ -375,20 +409,20 @@ pub fn sort(current: &[String], ctx: &Context) -> SortResult {
     let by_uid: HashMap<&str, &ModInfo> = ctx.mods.iter().map(|m| (m.uid.as_str(), m)).collect();
     let order: Vec<&ModInfo> = current.iter().filter_map(|u| by_uid.get(u.as_str()).copied()).collect();
     let (placements, g, mut issues) = placements_and_graph(&order, ctx);
-    let phase_of: HashMap<&str, Phase> = placements.iter().map(|p| (p.uid.as_str(), p.phase)).collect();
+    let phase_of: HashMap<&str, (Phase, u16)> = placements.iter().map(|p| (p.uid.as_str(), (p.phase, ctx.overrides.section_rank(p.phase, p.section.as_deref())))).collect();
 
-    // Priority Kahn: among ready nodes pick the lowest (phase, key).
-    let key_of = |i: usize| -> (Phase, String) {
+    // Priority Kahn: among ready nodes pick the lowest (phase, section, key).
+    let key_of = |i: usize| -> (Phase, u16, String) {
         let m = order[i];
-        let phase = phase_of.get(m.uid.as_str()).copied().unwrap_or(Phase::Content);
+        let (phase, rank) = phase_of.get(m.uid.as_str()).copied().unwrap_or((Phase::Content, 0));
         let k = if ctx.overrides.alphabetical { m.name.to_lowercase() } else { format!("{i:06}") };
-        (phase, k)
+        (phase, rank, k)
     };
     let mut indeg: Vec<usize> = vec![0; g.node_count()];
     for e in g.edge_references() {
         indeg[e.target().index()] += 1;
     }
-    let mut heap: BinaryHeap<Reverse<((Phase, String), usize)>> = BinaryHeap::new();
+    let mut heap: BinaryHeap<Reverse<((Phase, u16, String), usize)>> = BinaryHeap::new();
     for n in g.node_indices() {
         if indeg[n.index()] == 0 {
             heap.push(Reverse((key_of(g[n]), n.index())));
@@ -789,6 +823,49 @@ mod tests {
         wrong.insert(at, hugs_uid);
         let v = validate(&wrong, &ctx);
         assert!(v.iter().any(|i| matches!(i, Issue::OrderViolation { uid, target_uid, comment, .. } if uid == "rjw" && target_uid == "hugs" && comment.as_deref() == Some(crate::rules::NEEDS))), "{v:?}");
+    }
+
+    /// A group with its own place in the order: its members sort together right after the
+    /// ordinary members of the phase it follows, rules still hold, and a per-mod choice wins.
+    #[test]
+    fn sections_sort_after_their_phase_in_the_users_order() {
+        let mut mods = fixture();
+        for i in 0..4 {
+            let mut c = m(&format!("c{i}"), &format!("x.content{i}"), &format!("Content {i}"), Source::Workshop);
+            c.contents.defs = 3;
+            mods.push(c);
+        }
+        let mut addon = m("addon", "x.addon", "Addon for Content 2", Source::Workshop);
+        addon.contents.defs = 1;
+        addon.rules.load_after = vec!["x.content2".into()];
+        mods.push(addon);
+        let db = Databases::default();
+        let rules = compile_rules(&mods, &db);
+        let files = HashMap::new();
+        let mut ov = UserOverrides::default();
+        ov.section_defs = vec![SectionDef { id: "g-late".into(), name: "My late content".into(), after: Phase::Content }, SectionDef { id: "g-later".into(), name: "Even later".into(), after: Phase::Content }];
+        ov.sections.insert("c0".into(), "g-later".into());
+        ov.sections.insert("c2".into(), "g-late".into());
+        ov.sections.insert("c3".into(), "g-late".into());
+        // c3 also has an explicit phase: that wins over the group
+        ov.phases.insert("c3".into(), Phase::Patch);
+        let ctx = Context { mods: &mods, files: &files, rules: &rules, db: &db, major_minor: "1.6", overrides: &ov };
+        let current: Vec<String> = ["core", "harmony", "c0", "c1", "c2", "c3", "addon", "walls", "patch", "rocket"].iter().map(|s| s.to_string()).collect();
+        let r = sort(&current, &ctx);
+        let pos = |u: &str| r.order.iter().position(|x| x == u).unwrap();
+        let pl = |u: &str| r.placements.iter().find(|p| p.uid == u).unwrap();
+        assert_eq!(pl("c2").phase, Phase::Content);
+        assert_eq!(pl("c2").section.as_deref(), Some("g-late"));
+        assert!(pl("c2").reason.contains("My late content"), "{}", pl("c2").reason);
+        assert_eq!(pl("c1").section, None);
+        assert_eq!(pl("c3").phase, Phase::Patch, "the mod's own choice beats its group");
+        assert_eq!(pl("c3").section, None);
+        assert!(pos("c1") < pos("c2"), "ordinary content first, then the section: {:?}", r.order);
+        assert!(pos("c2") < pos("c0"), "sections follow one another in the user's order: {:?}", r.order);
+        assert!(pos("c0") < pos("walls") && pos("c0") < pos("patch"), "sections sit before the next phase: {:?}", r.order);
+        assert!(pos("addon") > pos("c2"), "a rule still holds across the section: {:?}", r.order);
+        assert_eq!(ov.section_rank(Phase::Content, Some("g-later")), 2);
+        assert_eq!(ov.section_rank(Phase::Patch, Some("g-later")), 0, "a section is ranked only within the phase it follows");
     }
 
     #[test]

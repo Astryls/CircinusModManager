@@ -8,7 +8,7 @@ use circinus_core::game::GameVersion;
 use circinus_core::import::ImportedList;
 use circinus_core::model::*;
 use circinus_core::modsconfig::{self, ModsConfig, SavedList};
-use circinus_core::order::{self, Context, UserOverrides};
+use circinus_core::order::{self, Context, SectionDef, UserOverrides};
 use circinus_core::paths::{app_data_dir, Locations};
 use circinus_core::rules::{self, Databases, DbSource, RulesFile};
 use circinus_core::scan::{self, Inspection, ModFiles, ScanOptions, Unreadable};
@@ -108,9 +108,14 @@ pub struct Group {
     pub id: String,
     pub name: String,
     pub color: String,
-    /// Phase every member is placed in (unless the member has its own override).
+    /// Phase every member is placed in (unless the member has its own override). With
+    /// `section` set, the phase the group's own section follows instead.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phase: Option<Phase>,
+    /// The group has its own place in the load order: its members sort together in a section
+    /// of their own, right after the ordinary members of `phase`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub section: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -128,11 +133,11 @@ pub struct UserData {
 
 fn default_groups() -> Vec<Group> {
     vec![
-        Group { id: "core".into(), name: "Core".into(), color: "blue".into(), phase: None },
-        Group { id: "frameworks".into(), name: "Frameworks".into(), color: "teal".into(), phase: None },
-        Group { id: "qol".into(), name: "Quality of life".into(), color: "green".into(), phase: None },
-        Group { id: "visual".into(), name: "Visual".into(), color: "amber".into(), phase: None },
-        Group { id: "performance".into(), name: "Performance".into(), color: "coral".into(), phase: Some(Phase::Optimization) },
+        Group { id: "core".into(), name: "Core".into(), color: "blue".into(), phase: None, section: false },
+        Group { id: "frameworks".into(), name: "Frameworks".into(), color: "teal".into(), phase: None, section: false },
+        Group { id: "qol".into(), name: "Quality of life".into(), color: "green".into(), phase: None, section: false },
+        Group { id: "visual".into(), name: "Visual".into(), color: "amber".into(), phase: None, section: false },
+        Group { id: "performance".into(), name: "Performance".into(), color: "coral".into(), phase: Some(Phase::Optimization), section: false },
     ]
 }
 
@@ -363,15 +368,26 @@ impl App {
 
     fn overrides(&self) -> UserOverrides {
         let mut phases: HashMap<String, Phase> = HashMap::new();
+        let mut sections: HashMap<String, String> = HashMap::new();
         for (uid, gid) in &self.user.mod_groups {
-            if let Some(p) = self.user.groups.iter().find(|g| &g.id == gid).and_then(|g| g.phase) {
-                phases.insert(uid.clone(), p);
+            let Some(g) = self.user.groups.iter().find(|g| &g.id == gid) else { continue };
+            match (g.section, g.phase) {
+                (true, Some(_)) => {
+                    sections.insert(uid.clone(), gid.clone());
+                }
+                (false, Some(p)) => {
+                    phases.insert(uid.clone(), p);
+                }
+                _ => {}
             }
         }
+        // An explicit per-mod choice beats the group.
         for (uid, p) in &self.user.phase_overrides {
             phases.insert(uid.clone(), *p);
+            sections.remove(uid);
         }
-        UserOverrides { phases, pinned: self.user.pinned.clone(), alphabetical: self.settings.alphabetical_within_phase }
+        let section_defs = self.user.groups.iter().filter(|g| g.section).filter_map(|g| g.phase.map(|after| SectionDef { id: g.id.clone(), name: g.name.clone(), after })).collect();
+        UserOverrides { phases, sections, section_defs, pinned: self.user.pinned.clone(), alphabetical: self.settings.alphabetical_within_phase }
     }
 
     fn with_context<T>(&self, f: impl FnOnce(&Context) -> T) -> T {

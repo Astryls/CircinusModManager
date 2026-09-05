@@ -65,7 +65,8 @@
   });
 </script>
 
-<main class="settings">
+<main class="scroll">
+  <div class="settings">
     <section class="card">
       <h3>Where RimWorld lives</h3>
       {#each fields as f}
@@ -191,12 +192,16 @@
       <p class="hint">Circinus Mod Manager 0.1 · MIT licence · data folder <span class="mono">{appData || "loading"}</span></p>
       <p class="hint">Reads About.xml (with ByVersion blocks), Fluffy's Manifest.xml, LoadFolders.xml and PublishedFileId.txt. Writes ModsConfig.xml (and keeps a .bak) and your rules in dbs/userRules.json.</p>
     </section>
+  </div>
 </main>
 
 <style>
-  /* Multi-column layout balances the cards so both (or all three) columns end at about the same height. */
-  .settings { columns: 2; column-gap: 14px; padding: 0 14px 14px; min-height: 0; overflow: auto; }
-  .settings > .card { break-inside: avoid; margin-bottom: 12px; display: block; }
+  /* The page scrolls up and down only, never sideways. The multi-column box inside grows as tall
+     as it needs (it must not be height-limited: a limited multi-column box spills extra columns
+     out to the right), and balances the cards so the columns end at about the same height. */
+  .scroll { min-height: 0; height: 100%; overflow: hidden auto; }
+  .settings { columns: 2; column-gap: 14px; padding: 0 14px 14px; }
+  .settings > .card { break-inside: avoid; margin-bottom: 12px; display: block; min-width: 0; }
   @media (min-width: 1600px) { .settings { columns: 3; } }
   .loc { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
   .loc:last-of-type { border-bottom: 0; }
@@ -220,7 +225,7 @@
   .hint.bad { color: var(--red); }
   .sample { margin-top: 8px; font-size: 12.5px; color: var(--text-3); }
   .sample summary { cursor: pointer; font-weight: 600; }
-  .sample pre { margin: 6px 0 0; max-height: 240px; overflow: auto; background: var(--surface-2); border-radius: 8px; padding: 8px 10px; font-size: 11px; line-height: 1.4; user-select: text; white-space: pre-wrap; word-break: break-all; }
+  .sample pre { margin: 6px 0 0; max-height: 240px; overflow: hidden auto; background: var(--surface-2); border-radius: 8px; padding: 8px 10px; font-size: 11px; line-height: 1.4; user-select: text; white-space: pre-wrap; word-break: break-all; }
   .path.bad { color: var(--red); }
   .opt { display: flex; align-items: center; gap: 10px; margin: 6px 0 10px; font-size: 13px; }
   .opt .l { width: 100px; color: var(--text-2); }

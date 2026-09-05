@@ -74,7 +74,7 @@
 </main>
 
 <style>
-  .center { display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; overflow: auto; padding-bottom: 14px; }
+  .center { display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; overflow: hidden auto; padding-bottom: 14px; }
   .lead { margin: 0; color: var(--text-2); font-size: 13.5px; line-height: 1.5; max-width: 70ch; }
   .it { display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left; padding: 8px 6px; border-radius: 8px; font-size: 13px; color: var(--text-2); line-height: 1.4; }
   .it:hover { background: var(--surface-2); color: var(--text); }
@@ -83,6 +83,6 @@
   .pair { padding: 6px 6px; border-radius: 8px; }
   .pair summary { cursor: pointer; display: flex; gap: 10px; align-items: center; font-size: 13px; color: var(--text-2); }
   .pair summary b { color: var(--text); }
-  .paths { display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 8px 0 4px 28px; max-height: 240px; overflow: auto; }
+  .paths { display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 8px 0 4px 28px; max-height: 240px; overflow: hidden auto; }
   .paths .mono { color: var(--text-3); font-size: 11.5px; }
 </style>
