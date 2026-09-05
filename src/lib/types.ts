@@ -794,3 +794,117 @@ export interface LogFile {
   bytes: number;
   modified: number;
 }
+
+// ---------------------------------------------------------------- code patches (Harmony)
+
+/** One patch method in a mod's assembly, and the game method it attaches to. */
+export interface PatchTarget {
+  declaringType: string;
+  method: string;
+  /** prefix | postfix | transpiler | finalizer | reverse | patch | unpatch. */
+  kind: string;
+  targetType: string | null;
+  targetMethod: string | null;
+  /** normal | getter | setter | constructor | staticConstructor | enumerator | async. */
+  targetKind: string;
+  argumentTypes: string[] | null;
+  priority: number | null;
+  before: string[];
+  after: string[];
+  /** attribute | manual. */
+  source: string;
+}
+
+/** One mod patching one game method. */
+export interface Patcher {
+  uid: string;
+  modName: string;
+  kind: string;
+  declaringType: string;
+  method: string;
+  priority: number | null;
+  before: string[];
+  after: string[];
+}
+
+/** A game method and everyone who patches it. */
+export interface TargetGroup {
+  /** `RimWorld.Pawn::Tick`. */
+  target: string;
+  patchers: Patcher[];
+  /** Two mods prefix it, or two mods transpile it. Postfixes stack and do not count. */
+  contested: boolean;
+}
+
+export interface ModPatches {
+  uid: string;
+  name: string;
+  assemblies: number;
+  patches: number;
+  prefixes: number;
+  postfixes: number;
+  transpilers: number;
+  /** Places that patch in a way static reading cannot follow. */
+  manual: number;
+  harmonyIds: string[];
+  /** Assemblies the scanner could not read, with the reason. */
+  unreadable: string[];
+}
+
+export interface PatchReport {
+  perMod: ModPatches[];
+  targets: TargetGroup[];
+  contested: number;
+  scanned: number;
+}
+
+export interface PatchSummary {
+  mods: number;
+  assemblies: number;
+  targets: number;
+  contested: number;
+  unreadable: number;
+  seconds: number;
+}
+
+export interface PatchJob {
+  running: boolean;
+  phase: "idle" | "collecting" | "scanning";
+  done: number;
+  total: number;
+  current: string;
+  startedAt: number;
+  finishedAt: number;
+  cancelled: boolean;
+  error: string | null;
+  summary: PatchSummary | null;
+}
+
+/** A place that patches in a way reading the metadata cannot follow. */
+export interface ManualPatch {
+  declaringType: string;
+  method: string;
+  detail: string;
+}
+
+export interface ModPatchDetail {
+  summary: ModPatches;
+  targets: PatchTarget[];
+  manual: ManualPatch[];
+  contested: TargetGroup[];
+}
+
+/** The method a patch attaches to, written the way the game writes it. */
+export function patchTargetName(p: PatchTarget): string {
+  const ty = p.targetType ?? "?";
+  const method = p.targetMethod ?? (p.targetKind === "constructor" ? ".ctor" : p.targetKind === "staticConstructor" ? ".cctor" : "?");
+  if (p.targetKind === "getter") return `${ty}::get_${method}`;
+  if (p.targetKind === "setter") return `${ty}::set_${method}`;
+  return `${ty}::${method}`;
+}
+
+/** `RimWorld.Pawn::Tick` split into the type and the method, so a long name can wrap sensibly. */
+export function splitTarget(target: string): [string, string] {
+  const i = target.lastIndexOf("::");
+  return i < 0 ? ["", target] : [target.slice(0, i), target.slice(i + 2)];
+}

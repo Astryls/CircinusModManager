@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod downloads;
 pub mod logs;
+pub mod patches;
 pub mod state;
 pub mod textures;
 pub mod watch;
@@ -151,6 +152,7 @@ pub fn run() {
             let dl = downloads::Downloads::start(app.handle().clone(), shared.clone());
             app.manage(dl);
             app.manage(textures::Textures::new(app.handle().clone(), shared.clone()));
+            app.manage(patches::Patches::new(app.handle().clone(), shared.clone()));
             // The window: where it was last time, else a size that suits this screen.
             if let Some(w) = app.get_webview_window("main") {
                 place_window(&w, &shared);
@@ -232,6 +234,12 @@ pub fn run() {
             commands::import_collection,
             commands::import_rentry,
             commands::check_updates,
+            patches::patches_start,
+            patches::patches_status,
+            patches::patches_stop,
+            patches::patches_report,
+            patches::patches_for_mod,
+            patches::patches_scanner,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Circinus");

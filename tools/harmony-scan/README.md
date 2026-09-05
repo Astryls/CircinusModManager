@@ -79,6 +79,35 @@ dotnet publish -c Release -r osx-arm64 -p:Aot=true
 Each writes `bin/Release/net8.0/<rid>/publish/harmony-scan(.exe)`. Circinus looks for that binary
 beside its own executable, in its data folder, and on `PATH`.
 
+## Shipping it with Circinus
+
+**This is a release step, not part of the app build.** Publish the scanner for the platform being
+released and copy it next to the bundled executable before the installer is made:
+
+```
+dotnet publish -c Release -r win-x64 -p:Aot=true
+copy bin\Release\net8.0\win-x64\publish\harmony-scan.exe ..\..\src-tauri\target\release\
+```
+
+`src-tauri/tauri.conf.json` deliberately does not name the scanner. Tauri's two ways of carrying
+an extra file both make its absence fatal: `bundle.externalBin` wants
+`harmony-scan-<target-triple>.exe` and fails the build when that file is not there, and
+`bundle.resources` fails just as hard — a glob that matches nothing is
+`GlobPathNotFound`, not "nothing to copy". Naming it either way would mean nobody could build
+Circinus without first installing the .NET SDK and publishing this tool, which needs a network,
+and on Linux `clang` and zlib headers besides. So the copy stays here, in the release notes,
+where it costs one line.
+
+When publishing the scanner becomes part of the release script, add it as a resource then:
+
+```json
+"bundle": { "resources": ["harmony-scan.exe"] }
+```
+
+with the path relative to `src-tauri`, and the file present before `tauri build` runs. A player
+who has no scanner sees the Patches view explain what it is and how to get one, so a build
+without it is a build with one feature turned off rather than a broken one.
+
 ## The fixture
 
 `testdata/Fixture` is a stand-in for a mod assembly: it declares its own `HarmonyLib` and `Verse`
