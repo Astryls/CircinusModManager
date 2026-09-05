@@ -132,15 +132,14 @@ Play starts RimWorld through Steam (`steam://rungameid/294100`) when the game fo
 - **Def flattening** in `circinus-core::defs`. Circinus builds the document the game builds: every active mod's `Defs/` into one arena in load order, every mod's `PatchOperation`s over it in load order, then `Name`/`ParentName` inheritance — RimWorld's order, so the answer is the game's answer. `tree` is a mutable arena holding the parts of .NET's `XmlDocument` a patch can observe, with the origin that created it on every node. `xpath` is XPath 1.0 as .NET's `SelectNodes` means it (all thirteen axes, positional predicates that count the way reverse axes require, the core function library, the conversion rules), because a patch means whatever that language says it means; `Defs/Type[defName="X"]` — nearly every patch ever written — is answered from an index rather than a scan. `flatten` writes down what happened: every value one mod took from another with both values and the operation that did it, patches whose xpath matches nothing, patch files the game silently ignores, duplicate defs, defs whose `ParentName` names nothing, and per-mod wins and losses. `MayRequire` nodes for absent mods are dropped; `Sequence`, `Conditional`, `FindMod` and `Test` behave as the game's do; an operation from another mod's patch framework is named rather than skipped in silence.
 - **Harmony patch targets** from a .NET sidecar, `tools/harmony-scan`: it reads assembly metadata and IL — it never loads or runs a mod assembly — and reports `[HarmonyPatch]` targets in all their shapes, Harmony ids, manual `Patch(…)` calls, `[StaticConstructorOnStartup]` and `Verse.Mod` classes. `circinus-core::harmony` runs it, caches per assembly, and groups the results two ways: what one mod patches, and who else patches the same method. Two mods prefixing or transpiling one method is *contested* — the usual shape of "these two don't work together"; two postfixes stack and are not.
 
+## Milestone 4b (instances, and Steam)
+
+- **Instances.** A named set of game, config, local-mod and Workshop folders with its own launch settings: "1.6 vanilla-ish", "CE playthrough", "modding sandbox". The switcher lives in the title bar; the dialog creates, duplicates, renames and deletes them. Deleting one forgets the instance and nothing else — the mods and the saves stay where they are. Each instance keeps its own named lists, its own current list and its own change baseline (a shared baseline would report the other install's mods as added and removed on every switch); the mod cache and the DDS manifest stay keyed by folder path, since two instances sharing a Workshop folder share those files. A separate config folder reaches the game as `-savedatafolder`, so switching cannot quietly write the wrong ModsConfig.xml. An install made before instances existed becomes the Default instance, settings and lists intact.
+- **Subscribing through the Steam client** — see the section above. `steam://` links only, deliberately.
+
 ## Next milestones
 
-<<<<<<< HEAD
-3b. The Defs view in the app, over the flattening core that is now in place.
-4b. Instances/profiles, auto-update, Steam-client subscribe/unsubscribe.
-=======
-3b. Def/patch flattening (who wins each XML value) and a .NET NativeAOT sidecar that lists Harmony patch targets per assembly.
-4b. Instances/profiles, auto-update.
->>>>>>> worktree-agent-af37d2beb0a49932d
+Auto-update, once **https://circinus.sh/modmanager** is serving builds (a separate effort). The app side is `tauri-plugin-updater` pointed at that feed, a check-on-start setting, a *Check now* button, and an install-and-restart banner.
 
 ## The list's columns
 
