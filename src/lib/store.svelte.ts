@@ -1,8 +1,8 @@
 // Application state for the UI (Svelte 5 runes). One snapshot from the backend, derived
 // indexes for fast lookups, and the actions the components call.
 
-import { api, listen } from "./api";
-import type { AuditReport, BuiltinRule, CollectionPreview, DefMatch, DefQuery, DefsState, DefTree, Group, HaloRules, ImportPreview, Instance, Issue, ItemState, LaunchSettings, Locations, LogAnalysis, LogFile, ModChange, ModInfo, ModPatchDetail, ModTextures, PatchJob, PatchReport, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamClientStatus, SteamCmdStatus, SubscribeOutcome, SubscriptionProgress, TexState, TrackedCollection, UserData, Weight } from "./types";
+import { api, appVersion, listen } from "./api";
+import type { AuditReport, BuiltinRule, CollectionPreview, DefMatch, DefQuery, DefsState, DefTree, Group, HaloRules, ImportPreview, Instance, Issue, ItemState, LaunchSettings, Locations, LogAnalysis, LogFile, ModChange, ModInfo, ModPatchDetail, ModTextures, PatchJob, PatchReport, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamClientStatus, SteamCmdStatus, SubscribeOutcome, SubscriptionProgress, TexState, TrackedCollection, UpdateCheck, UpdateProgress, UserData, Weight } from "./types";
 import { EMPTY_HALO, GROUP_COLORS, loadBand, PHASES, primaryUid, severityOf, type LoadBand, type Severity } from "./types";
 
 export type View = "order" | "library" | "downloads" | "textures" | "defs" | "patches" | "analyzer" | "halo" | "settings";
@@ -78,6 +78,15 @@ class Store {
   /** The last raw XPath query, for the advanced box. */
   defsQuery = $state<DefQuery | null>(null);
   defsError = $state<string | null>(null);
+  /** The version this build is; asked of the app once, so Settings can show it before any check. */
+  appVersion = $state<string | null>(null);
+  /** The newer Circinus circinus.sh offers, once a check found one. */
+  update = $state<UpdateCheck | null>(null);
+  /** What the last check concluded, in words, for Settings. */
+  updateStatus = $state<{ text: string; kind: "ok" | "err" } | null>(null);
+  updateChecking = $state(false);
+  /** How far the install in hand has come (from `update-progress`); null when none is running. */
+  updateProgress = $state<UpdateProgress | null>(null);
 
   // ---- derived indexes ----
   mods = $derived.by(() => {
@@ -312,11 +321,14 @@ class Store {
       await listen<DefsState>("defs-progress", (d) => this.onDefs(d));
       await listen<PatchJob>("patch-progress", (j) => this.onPatchJob(j));
       await listen<SubscriptionProgress>("subscription-changed", (p) => this.onSubscription(p));
+      await listen<UpdateCheck>("update-available", (c) => this.onUpdateFound(c));
+      await listen<UpdateProgress>("update-progress", (p) => (this.updateProgress = p));
       log("event listeners ready");
     } catch (e) {
       log(`event listeners failed: ${e}`);
       this.error = `Could not connect to the app's event system: ${e}`;
     }
+    appVersion().then((v) => (this.appVersion = v)).catch(() => {});
     this.step = "Reading your mods";
     let snap: Snapshot | null = null;
     try {
@@ -1293,6 +1305,44 @@ class Store {
       await this.refresh();
       this.say(report.join(" · "));
     });
+  }
+
+  // ---- a newer Circinus ----
+  /** The launch-time check (in the backend) found one. */
+  private onUpdateFound(c: UpdateCheck) {
+    this.appVersion = c.current;
+    this.update = c;
+    this.updateStatus = { text: `${c.version} is available`, kind: "ok" };
+  }
+  /** Check now: ask circinus.sh and say what it answered, in Settings and, on failure, as a toast. */
+  async checkForUpdates() {
+    if (this.updateChecking) return;
+    this.updateChecking = true;
+    try {
+      const c = await api.updateCheck();
+      this.appVersion = c.current;
+      this.update = c.available ? c : null;
+      this.updateStatus = { text: c.available ? `${c.version} is available` : `Circinus ${c.current} is the newest`, kind: "ok" };
+      // Asking again is a way of asking to see the banner again.
+      if (c.available) this.dismissed = this.dismissed.filter((d) => d !== "update");
+    } catch (e) {
+      this.updateStatus = { text: String(e), kind: "err" };
+      this.say(String(e), "err");
+    } finally {
+      this.updateChecking = false;
+    }
+  }
+  /** Download, verify, install and restart. Progress arrives as events; on success the app is gone. */
+  async installUpdate() {
+    const u = this.update;
+    if (!u || (this.updateProgress && this.updateProgress.phase !== "failed")) return;
+    this.updateProgress = { phase: "downloading", version: u.version ?? "", downloaded: 0, total: null };
+    try {
+      await api.updateInstall();
+    } catch (e) {
+      this.updateProgress = { phase: "failed", version: u.version ?? "", downloaded: this.updateProgress?.downloaded ?? 0, total: this.updateProgress?.total ?? null, error: String(e) };
+      this.say(String(e), "err");
+    }
   }
 
   phaseInfo(phase: Phase) {

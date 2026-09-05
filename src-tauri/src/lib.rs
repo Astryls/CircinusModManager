@@ -7,6 +7,7 @@ pub mod patches;
 pub mod state;
 pub mod subscribe;
 pub mod textures;
+pub mod updater;
 pub mod watch;
 
 use commands::{ScanProgress, Shared};
@@ -118,7 +119,7 @@ fn place_window(w: &tauri::WebviewWindow, st: &Shared) {
     let _ = w.center();
 }
 
-fn remember_window(w: &tauri::WebviewWindow, st: &Shared) {
+pub(crate) fn remember_window(w: &tauri::WebviewWindow, st: &Shared) {
     let Ok(sf) = w.scale_factor() else { return };
     let maximized = w.is_maximized().unwrap_or(false);
     if maximized {
@@ -154,6 +155,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(shared.clone())
         .setup(move |app| {
             // The download manager needs the app handle for events; created here.
@@ -179,6 +182,10 @@ pub fn run() {
             tauri::async_runtime::spawn_blocking(move || run_scan(handle, st, false));
             // Then keep an eye on Steam and the game while we are open.
             watch::start(app.handle().clone(), shared.clone());
+            // And, a few seconds in, ask circinus.sh whether there is a newer build.
+            let up = updater::Updater::new(app.handle().clone(), shared.clone());
+            up.start();
+            app.manage(up);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -256,6 +263,8 @@ pub fn run() {
             commands::import_collection,
             commands::import_rentry,
             commands::check_updates,
+            updater::update_check,
+            updater::update_install,
             defs::defs_start,
             defs::defs_status,
             defs::defs_stop,

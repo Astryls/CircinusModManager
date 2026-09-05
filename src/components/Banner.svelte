@@ -72,7 +72,45 @@
     return out.filter((n) => !store.dismissed.includes(n.id));
   });
 
+  // ---- a newer Circinus ----
+  // Its own row rather than a Notice: while the install runs the row turns into a progress
+  // bar, and a failed install has to say why and offer another go.
+  const update = $derived(store.update);
+  const prog = $derived(store.updateProgress);
+  const showUpdate = $derived(!!update && (!!prog || !store.dismissed.includes("update")));
+  const mb = (n: number) => `${(n / 1e6).toFixed(n < 1e7 ? 1 : 0)} MB`;
+  const pct = $derived(prog?.total ? Math.min(100, Math.round((prog.downloaded / prog.total) * 100)) : null);
+  const upText = $derived.by(() => {
+    const v = update?.version ?? "";
+    if (!prog) {
+      // One line: the first sentence of the notes; the whole text is in Settings.
+      const first = (update?.notes ?? "").trim().split(/(?<=[.!?])\s+/)[0] ?? "";
+      const have = update?.current ?? store.appVersion ?? "";
+      return { title: `Circinus ${v} is available`, detail: first ? `${first} · You have ${have}; the full notes are in Settings` : `You have ${have} · installing takes about a minute and restarts Circinus` };
+    }
+    switch (prog.phase) {
+      case "downloading": return { title: `Downloading Circinus ${v}`, detail: prog.total ? `${mb(prog.downloaded)} of ${mb(prog.total)}` : mb(prog.downloaded) };
+      case "installing": return { title: `Installing Circinus ${v}`, detail: "The installer is running. Circinus restarts on its own when it is done." };
+      case "restarting": return { title: `Circinus is restarting with ${v}`, detail: "If this window stays open, close it and start Circinus again." };
+      case "failed": return { title: `Circinus ${v} was not installed`, detail: prog.error ?? "Something went wrong. Try again." };
+    }
+  });
+  const upBusy = $derived(!!prog && prog.phase !== "failed");
 </script>
+
+{#if showUpdate && update}
+  <div class="banner update" class:busy={upBusy} role="status" aria-live="polite">
+    <span class="ico">{@html prog?.phase === "failed" ? I.error : I.up}</span>
+    <span class="t">{upText.title}<small>{upText.detail}</small></span>
+    {#if prog && prog.phase !== "failed"}
+      <span class="bar" class:indeterminate={pct == null || prog.phase !== "downloading"} title={pct != null ? `${pct}%` : ""}><i style="width: {prog.phase === "downloading" ? (pct ?? 0) : 100}%"></i></span>
+      {#if pct != null && prog.phase === "downloading"}<span class="pct num">{pct}%</span>{/if}
+    {:else}
+      <button class="alt" title="Hide until next launch. Settings has Check now." onclick={() => { store.updateProgress = null; store.dismiss("update"); }}>Not now</button>
+      <button onclick={() => store.installUpdate()}>{prog?.phase === "failed" ? "Try again" : "Install and restart"}</button>
+    {/if}
+  </div>
+{/if}
 
 {#each notices as n, i (n.id)}
   <div class="banner {n.kind}" class:compact={i > 0} role="status">
@@ -96,6 +134,13 @@
   .banner.note, .banner.warning { background: var(--amber-deep); color: var(--amber-ink); }
   .banner.info { background: var(--surface-3); color: var(--text); }
   .banner.error { background: #b8433c; color: #fff4f3; }
+  /* A newer build: good news, in the blue the app uses for "something to fetch". */
+  .banner.update { background: #2f63c4; color: #eef3ff; }
+  .banner.update .bar { flex: 0 0 200px; height: 8px; border-radius: 4px; background: rgba(0, 0, 0, 0.28); overflow: hidden; }
+  .banner.update .bar i { display: block; height: 100%; border-radius: 4px; background: #fff; transition: width 0.12s linear; }
+  .banner.update .bar.indeterminate i { background: repeating-linear-gradient(-45deg, #fff 0 10px, rgba(255, 255, 255, 0.55) 10px 20px); background-size: 28px 100%; animation: slide 0.8s linear infinite; }
+  @keyframes slide { to { background-position: 28px 0; } }
+  .banner.update .pct { width: 38px; text-align: right; font-size: 12.5px; opacity: 0.9; }
   .ico { width: 24px; height: 24px; border-radius: 50%; background: rgba(0, 0, 0, 0.18); display: grid; place-items: center; flex: none; }
   .ico :global(svg) { width: 12px; height: 12px; }
   .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
