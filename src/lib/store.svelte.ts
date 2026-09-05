@@ -2,10 +2,10 @@
 // indexes for fast lookups, and the actions the components call.
 
 import { api, listen } from "./api";
-import type { BuiltinRule, CollectionPreview, Group, HaloRules, ImportPreview, Issue, ModChange, ModInfo, ModTextures, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamCmdStatus, TexState, TrackedCollection, UserData, Weight, LogAnalysis, LogFile, AuditReport } from "./types";
+import type { BuiltinRule, CollectionPreview, DefMatch, DefQuery, DefTree, DefsState, Group, HaloRules, ImportPreview, Issue, ModChange, ModInfo, ModTextures, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamCmdStatus, TexState, TrackedCollection, UserData, Weight, LogAnalysis, LogFile, AuditReport } from "./types";
 import { EMPTY_HALO, GROUP_COLORS, PHASES, loadBand, primaryUid, severityOf, type LoadBand, type Severity } from "./types";
 
-export type View = "order" | "library" | "downloads" | "textures" | "analyzer" | "halo" | "settings";
+export type View = "order" | "library" | "downloads" | "textures" | "analyzer" | "defs" | "halo" | "settings";
 export type Tab = "active" | "inactive" | "all";
 /** What the list is narrowed to: mods with errors, warnings, HALO notes, conflicts, changes, or moves. */
 export type ShowOnly = "attention" | "error" | "warning" | "note" | "conflict" | "collision" | "heavy" | "slow" | "changed" | "moved" | null;
@@ -56,6 +56,16 @@ class Store {
   /** Last Player.log analysis, and the logs RimWorld writes on this machine. */
   gameLog = $state<LogAnalysis | null>(null);
   gameLogFiles = $state<LogFile[]>([]);
+  /** The def flattening job: what it is doing and, when it is done, its report. */
+  defs = $state<DefsState | null>(null);
+  /** The def the inspector is showing, and the path within it to point at. */
+  defsTree = $state<DefTree | null>(null);
+  defsFocus = $state<string | null>(null);
+  /** Defs whose name matched the search box. */
+  defsFound = $state<DefMatch[]>([]);
+  /** The last raw XPath query, for the advanced box. */
+  defsQuery = $state<DefQuery | null>(null);
+  defsError = $state<string | null>(null);
 
   // ---- derived indexes ----
   mods = $derived.by(() => {
@@ -287,6 +297,7 @@ class Store {
       await listen<string>("scan-error", (e) => this.say(e, "err"));
       await listen<QueueState>("download-progress", (q) => (this.downloads = q));
       await listen<TexState>("dds-progress", (t) => this.onTex(t));
+      await listen<DefsState>("defs-progress", (d) => this.onDefs(d));
       log("event listeners ready");
     } catch (e) {
       log(`event listeners failed: ${e}`);
@@ -411,6 +422,108 @@ class Store {
       u.ddsExcluded = [...set];
       return u;
     });
+  }
+
+  // ---- the merged defs ----
+  /** The report of the last flattening, when there is one. */
+  defsReport = $derived(this.defs?.report ?? null);
+  /** Origin index → the mod that origin belongs to, for names and colours. */
+  defsOrigins = $derived(this.defsReport?.origins ?? []);
+  defsModName = (origin: number) => this.defsOrigins[origin]?.name ?? "an unknown mod";
+
+  async refreshDefs() {
+    try {
+      this.defs = await api.defsStatus();
+      // A job that was started before this view was opened still needs watching.
+      if (this.defs.running) this.watchDefs();
+    } catch (e) {
+      console.warn("[circinus] defs_status failed", e);
+    }
+  }
+  /** Merge every active mod's defs. The work happens on a thread; this returns straight away. */
+  startDefs() {
+    return this.run("Merging defs…", async () => {
+      this.defsTree = null;
+      this.defsFound = [];
+      this.defsQuery = null;
+      this.defsError = null;
+      await api.defsStart();
+      this.defs = await api.defsStatus();
+      this.view = "defs";
+      this.watchDefs();
+    });
+  }
+  stopDefs() {
+    api.defsStop().catch(() => {});
+  }
+  /** In the app the progress event drives this; polling also covers the browser mock. */
+  private defsTimer: ReturnType<typeof setInterval> | null = null;
+  private watchDefs() {
+    if (this.defsTimer) return;
+    this.defsTimer = setInterval(async () => {
+      let s: DefsState | null = null;
+      try {
+        s = await api.defsStatus();
+      } catch {
+        s = null;
+      }
+      if (s) this.onDefs(s);
+      if (!s?.running && this.defsTimer) {
+        clearInterval(this.defsTimer);
+        this.defsTimer = null;
+      }
+    }, 400);
+  }
+  onDefs(s: DefsState) {
+    const was = this.defs?.running ?? false;
+    this.defs = s;
+    if (!was || s.running) return;
+    if (s.error) this.say(s.error, "err");
+    else if (s.stopped) this.say("Stopped. Nothing was merged", "warn");
+    else if (s.report) this.say(`${s.report.defs.toLocaleString()} defs merged · ${s.report.overwrites.length.toLocaleString()} contested values · ${(s.report.elapsedMs / 1000).toFixed(1)}s`);
+  }
+  /** Show one def's merged contents, optionally pointing at a path inside it. */
+  openDef(defType: string, defName: string, path?: string) {
+    this.defsFocus = path ?? null;
+    return this.run("Reading the def…", async () => {
+      this.defsTree = await api.defsDef(defType, defName);
+      this.defsError = this.defsTree ? null : `Nothing called ${defName} is in the merged document`;
+      return this.defsTree;
+    });
+  }
+  /** Open the def an overwrite or a duplicate names (`ThingDef/Wall`). */
+  openDefLabel(label: string, path?: string) {
+    const at = label.indexOf("/");
+    if (at < 0) return;
+    return this.openDef(label.slice(0, at), label.slice(at + 1), path);
+  }
+  /** Defs whose defName contains `text`, case-insensitively: an xpath the backend already speaks. */
+  async searchDefs(text: string) {
+    const q = text.trim().replace(/['"\\]/g, "");
+    if (!q) {
+      this.defsFound = [];
+      return;
+    }
+    const upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const xpath = `Defs/*[contains(translate(defName,'${upper}','${upper.toLowerCase()}'),'${q.toLowerCase()}')]/defName`;
+    try {
+      const r = await api.defsQuery(xpath, 40);
+      this.defsFound = r.matches;
+      this.defsError = r.total ? null : `No def has ${q} in its name`;
+    } catch (e) {
+      this.defsFound = [];
+      this.defsError = String(e);
+    }
+  }
+  /** The advanced box: whatever xpath the user typed, run as RimWorld would run it. */
+  async runDefsQuery(xpath: string) {
+    try {
+      this.defsQuery = await api.defsQuery(xpath, 200);
+      this.defsError = null;
+    } catch (e) {
+      this.defsQuery = null;
+      this.defsError = String(e);
+    }
   }
 
   refreshDownloads() {

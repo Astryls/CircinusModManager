@@ -67,10 +67,6 @@
       {/if}
     </section>
   {/each}
-  <section class="card">
-    <h3>Coming next</h3>
-    <p class="lead">A view of every XML def merged in load order, so you can see which mod's value wins. And a list of what each mod's code patches, so "who patches what" sits next to the load order.</p>
-  </section>
 </main>
 
 <style>

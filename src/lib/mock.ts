@@ -335,6 +335,276 @@ const queue = {
   log: ["Batch of 3 (batch size 12)", "Loading Steam API...OK", "Connecting anonymously to Steam Public...OK", "Waiting for client config...OK", "Downloading item 818773962 ..."]
 } as const;
 
+// ---- the merged defs -------------------------------------------------------------------------
+// Enough of a merged document to build the view against: three-mod chains over one value, patches
+// that hit nothing, defs two mods both ship, and a def tree with inherited nodes.
+
+const ORIGIN_SEED: [pkg: string, file: string, patch: boolean][] = [
+  ["ludeon.rimworld", "Defs/ThingDefs_Buildings/Buildings_Structure.xml", false],
+  ["ludeon.rimworld", "Defs/ThingDefs_Misc/Weapons_Guns.xml", false],
+  ["oskarpotocki.vanillafactionsexpanded.core", "1.6/Defs/ThingDefs/Buildings_Base.xml", false],
+  ["vanillaexpanded.vwe", "1.6/Defs/ThingDefs/Weapons_Guns.xml", false],
+  ["sarg.alphaanimals", "1.6/Defs/ThingDefs/Animals_Xenoloxodon.xml", false],
+  ["vanillaexpanded.vfecore", "1.6/Defs/ThingDefs/Furniture_Beds.xml", false],
+  ["ceteam.combatextended", "Patches/Weapons_Guns.xml", true],
+  ["ceteam.combatextended", "Patches/Buildings_Structure.xml", true],
+  ["community.alphaanimals.ce", "1.6/Patches/Animals.xml", true],
+  ["community.dbh.vfe", "Patches/Furniture.xml", true],
+  ["imranfish.xmlextensions", "Patches/Settings.xml", true],
+  ["nyx.retrowalls", "Patches/Walls.xml", true]
+];
+const defsOrigins = () => [
+  { uid: "", packageId: "", name: "the game", file: "", index: 0, isPatch: false },
+  ...ORIGIN_SEED.map(([pkg, file, patch]) => {
+    const m = mods.find((x) => x.packageId === pkg)!;
+    return { uid: m.uid, packageId: pkg, name: m.name, file, index: Math.max(0, active.indexOf(m.uid)), isPatch: patch };
+  })
+];
+// origin indexes, one past the seed's own (0 is the game itself)
+const [CORE_B, CORE_W, VEF, VWE, ALPHA, VFE, CE_W, CE_B, AACE, DBH, XML, RETRO] = ORIGIN_SEED.map((_, i) => i + 1);
+
+const OVERWRITES = [
+  { def: "ThingDef/Wall", path: "statBases/MaxHitPoints", from: CORE_B, to: VEF, oldValue: "300", newValue: "400", how: "PatchOperationReplace" },
+  { def: "ThingDef/Wall", path: "statBases/MaxHitPoints", from: VEF, to: CE_B, oldValue: "400", newValue: "450", how: "PatchOperationReplace" },
+  { def: "ThingDef/Wall", path: "costStuffCount", from: CORE_B, to: RETRO, oldValue: "5", newValue: "4", how: "PatchOperationReplace" },
+  { def: "ThingDef/Gun_Autopistol", path: "statBases/AccuracyTouch", from: CORE_W, to: VWE, oldValue: "0.8", newValue: "0.75", how: "PatchOperationReplace" },
+  { def: "ThingDef/Gun_Autopistol", path: "statBases/AccuracyTouch", from: VWE, to: CE_W, oldValue: "0.75", newValue: "0.62", how: "PatchOperationReplace" },
+  { def: "ThingDef/Gun_Autopistol", path: "verbs/li/burstShotCount", from: CORE_W, to: CE_W, oldValue: "1", newValue: "3", how: "PatchOperationReplace" },
+  { def: "ThingDef/Gun_ChargeRifle", path: "statBases/Mass", from: CORE_W, to: CE_W, oldValue: "3.5", newValue: "4.1", how: "PatchOperationReplace" },
+  { def: "ThingDef/Bed", path: "costList/Steel", from: CORE_B, to: VFE, oldValue: "40", newValue: "30", how: "Defs" },
+  { def: "ThingDef/Bed", path: "costList/Steel", from: VFE, to: DBH, oldValue: "30", newValue: "35", how: "PatchOperationReplace" },
+  { def: "ThingDef/AA_Xenoloxodon", path: "statBases/MoveSpeed", from: ALPHA, to: AACE, oldValue: "4.2", newValue: "3.1", how: "PatchOperationReplace" },
+  { def: "ThingDef/AA_Xenoloxodon", path: "tools/li[1]/power", from: ALPHA, to: AACE, oldValue: "22", newValue: "18", how: "PatchOperationReplace" },
+  { def: "TerrainDef/Concrete", path: "statBases/Beauty", from: CORE_B, to: VEF, oldValue: "0", newValue: "2", how: "PatchOperationReplace" }
+];
+
+const PROBLEMS = [
+  { origin: CE_W, xpath: 'Defs/ThingDef[defName="Gun_Revolver"]/verbs/li/burstShotCount', class: "PatchOperationReplace", reason: "nothing in the list matches this xpath", tolerated: false },
+  { origin: CE_W, xpath: 'Defs/ThingDef[defName="Gun_SniperRifle"]/tools', class: "PatchOperationRemove", reason: "nothing in the list matches this xpath", tolerated: false },
+  { origin: AACE, xpath: 'Defs/ThingDef[defName="AA_Diredwarf"]/statBases/ArmorRating_Sharp', class: "PatchOperationReplace", reason: "nothing in the list matches this xpath", tolerated: false },
+  { origin: DBH, xpath: 'Defs/ThingDef[defName="VFE_Washbasin"]', class: "PatchOperationAdd", reason: "nothing in the list matches this xpath", tolerated: false },
+  { origin: RETRO, xpath: "", class: "Patch", reason: "the file's root element is <Defs>, not <Patch>, so the game ignores it", tolerated: false },
+  { origin: DBH, xpath: 'Defs/ThingDef[defName=="Bed"]/costList', class: "PatchOperationReplace", reason: "the xpath does not parse: unexpected '=' at 30", tolerated: false },
+  { origin: CE_B, xpath: 'Defs/ThingDef[defName="Wall"]/graphicData/damageData', class: "PatchOperationRemove", reason: "nothing in the list matches this xpath", tolerated: true },
+  { origin: VWE, xpath: 'Defs/ThingDef[defName="Gun_Autopistol"]/weaponTags/CE_Sidearm', class: "PatchOperationRemove", reason: "nothing in the list matches this xpath", tolerated: true },
+  { origin: XML, xpath: "Defs", class: "XmlExtensions.PatchOperationSafeAdd", reason: "Circinus does not know this operation, so its effect is not in this view", tolerated: true },
+  { origin: XML, xpath: 'Defs/ThingDef[defName="Wall"]', class: "XmlExtensions.PatchOperationFindMod", reason: "Circinus does not know this operation, so its effect is not in this view", tolerated: true }
+];
+
+const DUPLICATES = [
+  { defType: "ThingDef", defName: "Bed", origins: [CORE_B, VFE], winner: VFE },
+  { defType: "ThingDef", defName: "Gun_Autopistol", origins: [CORE_W, VWE], winner: VWE },
+  { defType: "TerrainDef", defName: "Concrete", origins: [CORE_B, VEF], winner: VEF }
+];
+
+/** [tag, value, depth, origin, inheritedFrom, Class] — inheritedFrom empty when the def wrote it. */
+type MockNode = [string, string, number, number, string, string?];
+const DEF_TREES: Record<string, { origin: number; nodes: MockNode[] }> = {
+  "ThingDef/Wall": {
+    origin: CORE_B,
+    nodes: [
+      ["defName", "Wall", 0, CORE_B, ""],
+      ["label", "wall", 0, CORE_B, ""],
+      ["description", "A wall used to block passage and provide a roof support.", 0, CORE_B, ""],
+      ["thingClass", "Building", 0, CORE_B, "BuildingBase"],
+      ["category", "Building", 0, CORE_B, "BuildingBase"],
+      ["statBases", "", 0, CORE_B, ""],
+      ["MaxHitPoints", "450", 1, CE_B, ""],
+      ["WorkToBuild", "135", 1, CORE_B, ""],
+      ["Flammability", "1.0", 1, CORE_B, "BuildingBase"],
+      ["Beauty", "2", 1, VEF, ""],
+      ["costStuffCount", "4", 0, RETRO, ""],
+      ["graphicData", "", 0, CORE_B, ""],
+      ["texPath", "Things/Building/Linked/Wall_Atlas", 1, RETRO, ""],
+      ["graphicClass", "Graphic_Appearances", 1, CORE_B, ""],
+      ["comps", "", 0, CORE_B, ""],
+      ["li", "", 1, CORE_B, "", "CompProperties_Forbiddable"],
+      ["li", "", 1, VEF, "", "VEF.CompProperties_Glower"],
+      ["building", "", 0, CORE_B, ""],
+      ["isInert", "true", 1, CORE_B, "BuildingBase"],
+      ["blueprintGraphicData", "", 1, CORE_B, ""],
+      ["texPath", "Things/Building/Linked/Wall_Blueprint_Atlas", 2, CORE_B, ""]
+    ]
+  },
+  "ThingDef/Gun_Autopistol": {
+    origin: VWE,
+    nodes: [
+      ["defName", "Gun_Autopistol", 0, VWE, ""],
+      ["label", "autopistol", 0, VWE, ""],
+      ["statBases", "", 0, VWE, ""],
+      ["AccuracyTouch", "0.62", 1, CE_W, ""],
+      ["AccuracyShort", "0.55", 1, VWE, ""],
+      ["Mass", "1.4", 1, VWE, "BaseHumanMakeableGun"],
+      ["verbs", "", 0, VWE, ""],
+      ["li", "", 1, VWE, ""],
+      ["burstShotCount", "3", 2, CE_W, ""],
+      ["range", "22", 2, VWE, ""],
+      ["weaponTags", "", 0, VWE, ""],
+      ["li", "SimpleGun", 1, VWE, ""],
+      ["li", "CE_Sidearm", 1, CE_W, ""]
+    ]
+  },
+  "ThingDef/Bed": {
+    origin: VFE,
+    nodes: [
+      ["defName", "Bed", 0, VFE, ""],
+      ["label", "bed", 0, VFE, ""],
+      ["costList", "", 0, VFE, ""],
+      ["Steel", "35", 1, DBH, ""],
+      ["Cloth", "20", 1, VFE, ""],
+      ["statBases", "", 0, VFE, ""],
+      ["Comfort", "0.75", 1, VFE, "BedBase"],
+      ["WorkToBuild", "800", 1, VFE, "BedBase"]
+    ]
+  },
+  "ThingDef/AA_Xenoloxodon": {
+    origin: ALPHA,
+    nodes: [
+      ["defName", "AA_Xenoloxodon", 0, ALPHA, ""],
+      ["label", "xenoloxodon", 0, ALPHA, ""],
+      ["statBases", "", 0, ALPHA, ""],
+      ["MoveSpeed", "3.1", 1, AACE, ""],
+      ["MarketValue", "1800", 1, ALPHA, ""],
+      ["tools", "", 0, ALPHA, ""],
+      ["li", "", 1, ALPHA, ""],
+      ["power", "18", 2, AACE, ""],
+      ["capacities", "", 2, ALPHA, ""]
+    ]
+  },
+  "TerrainDef/Concrete": {
+    origin: VEF,
+    nodes: [
+      ["defName", "Concrete", 0, VEF, ""],
+      ["label", "concrete", 0, VEF, ""],
+      ["statBases", "", 0, VEF, ""],
+      ["Beauty", "2", 1, VEF, ""],
+      ["Cleanliness", "0.05", 1, VEF, "FloorBase"]
+    ]
+  },
+  "ThingDef/Gun_ChargeRifle": {
+    origin: CORE_W,
+    nodes: [
+      ["defName", "Gun_ChargeRifle", 0, CORE_W, ""],
+      ["label", "charge rifle", 0, CORE_W, ""],
+      ["statBases", "", 0, CORE_W, ""],
+      ["Mass", "4.1", 1, CE_W, ""]
+    ]
+  },
+  "ThingDef/Wall_Sandstone": {
+    origin: CORE_B,
+    nodes: [
+      ["defName", "Wall_Sandstone", 0, CORE_B, ""],
+      ["label", "sandstone wall", 0, CORE_B, ""],
+      ["statBases", "", 0, CORE_B, ""],
+      ["MaxHitPoints", "300", 1, CORE_B, "BuildingBase"]
+    ]
+  }
+};
+
+function defTree(defType: string, defName: string) {
+  const t = DEF_TREES[`${defType}/${defName}`];
+  if (!t) return null;
+  const stack: string[] = [];
+  const nodes = t.nodes.map(([tag, value, depth, origin, from, cls], i) => {
+    stack.length = depth;
+    stack[depth] = tag;
+    const next = t.nodes[i + 1];
+    return {
+      tag,
+      path: stack.slice(0, depth + 1).join("/"),
+      value,
+      // A node is a leaf when nothing deeper follows it.
+      leaf: !next || next[2] <= depth,
+      depth,
+      origin,
+      inherited: !!from,
+      inheritedFrom: from,
+      attrs: (cls ? [["Class", cls]] : []) as [string, string][]
+    };
+  });
+  return { defType, defName, origin: t.origin, nodes, truncated: 0 };
+}
+
+/** Every def name the mock knows, for the search box. */
+const DEF_INDEX = Object.entries(DEF_TREES).map(([label, t]) => {
+  const at = label.indexOf("/");
+  return { def: label, defType: label.slice(0, at), defName: label.slice(at + 1), origin: t.origin };
+});
+
+function defsQuery(xpath: string, limit: number) {
+  const literals = [...xpath.matchAll(/'([^']*)'|"([^"]*)"/g)].map((m) => m[1] ?? m[2]);
+  const started = performance.now();
+  let matches: { def: string; defType: string; defName: string; path: string; value: string; origin: number; inherited: boolean }[] = [];
+  if (xpath.includes("contains(") && xpath.includes("defName")) {
+    // The search box: defs whose name contains the text.
+    const q = (literals[literals.length - 1] ?? "").toLowerCase();
+    matches = DEF_INDEX.filter((d) => d.defName.toLowerCase().includes(q)).map((d) => ({ ...d, path: "defName", value: d.defName, inherited: false }));
+  } else {
+    // Anything else: the node whose path within its def matches the tail of the xpath.
+    const wanted = (literals[0] ?? "").toLowerCase();
+    const steps = xpath.replace(/\[[^\]]*\]/g, "").split("/").filter((s) => s && s !== "Defs");
+    const tail = steps.slice(1).join("/");
+    for (const d of DEF_INDEX) {
+      if (wanted && !d.defName.toLowerCase().includes(wanted)) continue;
+      if (steps[0] && steps[0] !== "*" && steps[0] !== d.defType) continue;
+      const tree = defTree(d.defType, d.defName)!;
+      for (const n of tree.nodes) {
+        if (!tail || n.path === tail || n.path.endsWith(`/${tail}`) || n.tag === steps[steps.length - 1]) {
+          matches.push({ def: d.def, defType: d.defType, defName: d.defName, path: n.path, value: n.value, origin: n.origin, inherited: n.inherited });
+        }
+      }
+    }
+  }
+  return { total: matches.length, matches: matches.slice(0, limit), elapsedMs: Math.round(performance.now() - started) };
+}
+
+function defsReport() {
+  const origins = defsOrigins();
+  const byUid = new Map<string, { uid: string; name: string; defs: number; values: number; wins: number; losses: number; operations: number; failedOperations: number }>();
+  for (const o of origins.slice(1)) {
+    if (!byUid.has(o.uid)) byUid.set(o.uid, { uid: o.uid, name: o.name, defs: 0, values: 0, wins: 0, losses: 0, operations: 0, failedOperations: 0 });
+  }
+  const stat = (origin: number) => byUid.get(origins[origin]?.uid ?? "");
+  for (const [i, o] of origins.entries()) {
+    const s = stat(i);
+    if (!s) continue;
+    // The game ships the most, then the frameworks, then the content mods; patch mods ship none.
+    if (o.isPatch) s.operations += 40 + i * 7;
+    else {
+      s.defs += Math.max(80, 900 - i * 110);
+      s.values += Math.max(600, 7200 - i * 880);
+    }
+  }
+  for (const w of OVERWRITES) {
+    const to = stat(w.to), from = stat(w.from);
+    if (to) to.wins++;
+    if (from) from.losses++;
+  }
+  for (const p of PROBLEMS) {
+    const s = stat(p.origin);
+    if (s && !p.tolerated) s.failedOperations++;
+  }
+  const perMod = [...byUid.values()].sort((a, b) => b.values - a.values || a.name.localeCompare(b.name));
+  return {
+    origins,
+    defs: perMod.reduce((n, m) => n + m.defs, 0),
+    values: perMod.reduce((n, m) => n + m.values, 0),
+    operations: perMod.reduce((n, m) => n + m.operations, 0),
+    overwrites: OVERWRITES,
+    problems: PROBLEMS,
+    duplicates: DUPLICATES,
+    perMod,
+    missingParents: [
+      "ThingDef/AA_Diredwarf asks for a parent called AA_AnimalThingBase, which nothing defines",
+      "ThingDef/DBH_ShowerBase inherits from itself",
+      "RecipeDef/Make_Beer asks for a parent called DrinkRecipeBase, which nothing defines"
+    ],
+    elapsedMs: 8420
+  };
+}
+
+let defsState: import("./types").DefsState = { running: false, phase: "idle", done: 0, total: 0, current: "", startedAt: 0, finishedAt: 0, stopped: false, error: null, report: null };
+
 export async function invoke<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
   await new Promise((r) => setTimeout(r, 30));
   const A = args as Record<string, any>;
@@ -559,6 +829,32 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
       tex = { ...tex, report: { mods: targets.length, converted: 0, failed: 0, current: 0, shipped: 0, pngBytes: 0, ddsBytes: fixed * 400000, seconds: 3, cancelled: false, reverted: 0, bytesFreed: 0, fixed } };
       return tex.report as T;
     }
+    case "defs_start": {
+      const total = active.length * 2;
+      defsState = { running: true, phase: "defs", done: 0, total, current: mods.find((m) => m.uid === active[0])?.name ?? "", startedAt: Math.floor(Date.now() / 1000), finishedAt: 0, stopped: false, error: null, report: null };
+      setTimeout(() => {
+        if (!defsState.running) return;
+        defsState = { ...defsState, phase: "patches", done: Math.floor(total * 0.6), current: "Combat Extended" };
+      }, 400);
+      setTimeout(() => {
+        if (!defsState.running) return;
+        defsState = { ...defsState, running: false, phase: "idle", done: total, current: "", finishedAt: Math.floor(Date.now() / 1000), report: defsReport() };
+      }, 1100);
+      return undefined as T;
+    }
+    case "defs_status":
+      return structuredClone(defsState) as T;
+    case "defs_stop":
+      if (defsState.running) defsState = { ...defsState, running: false, phase: "idle", stopped: true, finishedAt: Math.floor(Date.now() / 1000) };
+      return undefined as T;
+    case "defs_query":
+      if (!defsState.report) throw new Error("Nothing has been merged yet. Run it first, then ask.");
+      if (!String(A.xpath ?? "").trim()) return { total: 0, matches: [], elapsedMs: 0 } as T;
+      if (!String(A.xpath).startsWith("Defs")) throw new Error("the xpath does not parse: a query starts at Defs");
+      return defsQuery(String(A.xpath), Number(A.limit ?? 50)) as T;
+    case "defs_def":
+      if (!defsState.report) throw new Error("Nothing has been merged yet. Run it first, then ask.");
+      return defTree(String(A.defType), String(A.defName)) as T;
     case "import_collection":
       return { ids: [2009463077, 818773962, 999], installed: [[2009463077, uidOf("brrainz.harmony")], [818773962, uidOf("unlimitedhugs.hugslib")]], missing: [999], names: { "2009463077": "Harmony", "818773962": "HugsLib", "999": "Some Missing Mod" } } as T;
     case "import_rentry":

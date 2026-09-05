@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod defs;
 pub mod downloads;
 pub mod logs;
 pub mod state;
@@ -32,6 +33,11 @@ pub fn scan_quick_phase(handle: &AppHandle, st: &Shared, full: bool) -> Result<V
     };
     match result {
         Ok(shallow) => {
+            // The merged defs described the list as it was before this scan; drop them rather
+            // than answer questions about mods that may have moved or gone.
+            if let Some(d) = handle.try_state::<Arc<defs::Defs>>() {
+                d.inner().forget();
+            }
             let _ = handle.emit("state-changed", ());
             Ok(shallow)
         }
@@ -151,6 +157,7 @@ pub fn run() {
             let dl = downloads::Downloads::start(app.handle().clone(), shared.clone());
             app.manage(dl);
             app.manage(textures::Textures::new(app.handle().clone(), shared.clone()));
+            app.manage(defs::Defs::new(app.handle().clone(), shared.clone()));
             // The window: where it was last time, else a size that suits this screen.
             if let Some(w) = app.get_webview_window("main") {
                 place_window(&w, &shared);
@@ -232,6 +239,11 @@ pub fn run() {
             commands::import_collection,
             commands::import_rentry,
             commands::check_updates,
+            defs::defs_start,
+            defs::defs_status,
+            defs::defs_stop,
+            defs::defs_query,
+            defs::defs_def,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Circinus");

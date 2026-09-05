@@ -12,6 +12,7 @@
     { id: "downloads", label: "Downloads", icon: I.cloud, count: () => store.queueCounts.queued || (store.downloads && !store.downloads.steamcmdInstalled && !store.downloads.installing ? "set up" : ""), att: true },
     { id: "textures", label: "Textures", icon: I.image, count: () => (store.tex?.running ? (store.tex.phase === "converting" && store.tex.progress.total ? `${Math.round((store.tex.progress.done / store.tex.progress.total) * 100)}%` : "busy") : store.ddsTotals.mods || ""), att: false },
     { id: "analyzer", label: "Analyzer", icon: I.analyze, count: () => store.stats.errors + store.stats.warnings, att: true },
+    { id: "defs", label: "Defs", icon: I.terminal, count: () => (store.defs?.running ? "busy" : store.defsReport ? store.defsReport.overwrites.length : ""), att: false },
     { id: "halo", label: "HALO", icon: I.halo, count: () => Object.keys(store.halo.packagePhases).length + store.halo.namePhases.length + store.halo.off.length + Object.keys(store.halo.retarget).length || "" },
     { id: "settings", label: "Settings", icon: I.gear }
   ];

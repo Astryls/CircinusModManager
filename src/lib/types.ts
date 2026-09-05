@@ -794,3 +794,130 @@ export interface LogFile {
   bytes: number;
   modified: number;
 }
+
+// ---------------------------------------------------------------- the merged defs
+
+/** Who put something in the merged document; index 0 is the game's own scaffolding. */
+export interface DefOrigin {
+  uid: string;
+  packageId: string;
+  name: string;
+  /** The file inside the mod, relative to its folder. */
+  file: string;
+  index: number;
+  isPatch: boolean;
+}
+
+/** A value a later mod took over from an earlier one. */
+export interface Overwrite {
+  /** `ThingDef/Wall`. */
+  def: string;
+  /** `statBases/MaxHitPoints`, relative to the def. */
+  path: string;
+  from: number;
+  to: number;
+  oldValue: string;
+  newValue: string;
+  /** The operation that did it, or `Defs` for a plain duplicate def. */
+  how: string;
+}
+
+export interface PatchProblem {
+  origin: number;
+  xpath: string;
+  class: string;
+  reason: string;
+  /** The operation says a miss is fine, so this is information rather than a fault. */
+  tolerated: boolean;
+}
+
+export interface DefDuplicate {
+  defType: string;
+  defName: string;
+  origins: number[];
+  winner: number;
+}
+
+export interface DefModStats {
+  uid: string;
+  name: string;
+  defs: number;
+  values: number;
+  wins: number;
+  losses: number;
+  operations: number;
+  failedOperations: number;
+}
+
+export interface DefsReport {
+  origins: DefOrigin[];
+  defs: number;
+  values: number;
+  operations: number;
+  overwrites: Overwrite[];
+  problems: PatchProblem[];
+  duplicates: DefDuplicate[];
+  perMod: DefModStats[];
+  missingParents: string[];
+  elapsedMs: number;
+}
+
+export interface DefsState {
+  running: boolean;
+  /** idle | defs | patches | inheritance */
+  phase: string;
+  done: number;
+  total: number;
+  /** The mod being read right now. */
+  current: string;
+  startedAt: number;
+  finishedAt: number;
+  stopped: boolean;
+  error: string | null;
+  report: DefsReport | null;
+}
+
+/** One node an XPath selected: which def it is in, where inside it, and whose it is. */
+export interface DefMatch {
+  def: string;
+  defType: string;
+  defName: string;
+  path: string;
+  value: string;
+  origin: number;
+  inherited: boolean;
+}
+
+export interface DefQuery {
+  /** How many the xpath matched, which can be more than were returned. */
+  total: number;
+  matches: DefMatch[];
+  elapsedMs: number;
+}
+
+export interface DefNode {
+  tag: string;
+  path: string;
+  value: string;
+  leaf: boolean;
+  /** 0 for the def's own children. */
+  depth: number;
+  origin: number;
+  inherited: boolean;
+  inheritedFrom: string;
+  attrs: [string, string][];
+}
+
+export interface DefTree {
+  defType: string;
+  defName: string;
+  origin: number;
+  nodes: DefNode[];
+  truncated: number;
+}
+
+/** A marker colour per origin, so a mod keeps the same colour everywhere in the view. */
+export const ORIGIN_COLORS = ["blue", "green", "violet", "teal", "pink", "coral", "amber", "slate", "red"] as const;
+export function originColor(origin: number): string {
+  return ORIGIN_COLORS[origin % ORIGIN_COLORS.length];
+}
