@@ -11,6 +11,7 @@ pub mod dds;
 pub mod fsx;
 pub mod game;
 pub mod import;
+pub mod loadcost;
 pub mod model;
 pub mod modsconfig;
 pub mod order;

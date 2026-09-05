@@ -2,8 +2,8 @@
   import { tick } from "svelte";
   import { store } from "$lib/store.svelte";
   import { I } from "$lib/icons";
-  import { describe } from "$lib/describe";
-  import { BAND_LABEL, describeChange, severityOf, type Issue, type ModInfo } from "$lib/types";
+  import { describe, explainLoad } from "$lib/describe";
+  import { BAND_LABEL, LOAD_BAND_LABEL, describeChange, severityOf, type Issue, type ModInfo } from "$lib/types";
 
   // ---- virtualization: only the rows in view exist in the DOM ----
   const ROW = 40;
@@ -16,6 +16,69 @@
   let scroller = $state<HTMLDivElement | null>(null);
   let scrollTop = $state(0);
   let viewport = $state(600);
+  let listW = $state(1000);
+
+  // ---- columns: Mod and Package id can be dragged; the rest are fixed ----
+  const NAME_MIN = 120;
+  const PKG_MIN = 60;
+  const PKG_DEFAULT = 120;
+  /** A width being dragged right now, ahead of the saved one. */
+  let live = $state<{ key: "name" | "pkg"; px: number } | null>(null);
+  const nameW = $derived(live?.key === "name" ? live.px : store.columns.name);
+  const pkgW = $derived(live?.key === "pkg" ? live.px : (store.columns.pkg ?? PKG_DEFAULT));
+  const showMove = $derived(!!store.preview);
+  /** Width of everything that is neither the name nor the package id, gaps included. */
+  const fixedW = $derived(34 + (store.showWeight ? 64 + 6 : 0) + 56 + 56 + 40 + 40 + 226 + (showMove ? 40 + 6 : 0) + 7 * 6);
+  /** Narrow lists drop the package id column rather than squeeze the names below their minimum. */
+  const showPkg = $derived(listW - 24 - fixedW - NAME_MIN >= (store.columns.pkg ?? PKG_DEFAULT) + 6);
+  const template = $derived.by(() => {
+    const cols = ["34px", nameW != null ? `${nameW}px` : `minmax(${NAME_MIN}px, 1fr)`];
+    if (showPkg) cols.push(`${pkgW}px`);
+    if (nameW != null) cols.push("minmax(0, 1fr)");
+    if (store.showWeight) cols.push("64px");
+    cols.push("56px", "56px", "40px", "40px", "226px");
+    if (showMove) cols.push("40px");
+    return cols.join(" ");
+  });
+  let colDrag: { key: "name" | "pkg"; startX: number; startW: number; max: number } | null = null;
+  function colDown(e: PointerEvent, key: "name" | "pkg") {
+    if (e.button !== 0 || !scroller) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const cell = scroller.querySelector(`.hdr .h.${key}`) as HTMLElement | null;
+    const other = scroller.querySelector(`.hdr .h.${key === "name" ? "pkg" : "name"}`) as HTMLElement | null;
+    const fill = scroller.querySelector(".hdr .fill") as HTMLElement | null;
+    if (!cell) return;
+    const startW = cell.getBoundingClientRect().width;
+    // Everything but the two adjustable columns and the filler keeps its width; the
+    // adjustable one may grow until the other is at its minimum.
+    const inner = scroller.clientWidth - 24;
+    const fixed = inner - startW - (other?.getBoundingClientRect().width ?? 0) - (fill?.getBoundingClientRect().width ?? 0);
+    const max = Math.max(key === "name" ? NAME_MIN : PKG_MIN, inner - fixed - (key === "name" ? (showPkg ? PKG_MIN : 0) : NAME_MIN) - 8);
+    colDrag = { key, startX: e.clientX, startW, max };
+    live = { key, px: startW };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    document.body.style.cursor = "col-resize";
+  }
+  function colMove(e: PointerEvent) {
+    if (!colDrag) return;
+    const min = colDrag.key === "name" ? NAME_MIN : PKG_MIN;
+    live = { key: colDrag.key, px: Math.round(Math.min(colDrag.max, Math.max(min, colDrag.startW + e.clientX - colDrag.startX))) };
+  }
+  function colUp() {
+    if (!colDrag) return;
+    const d = colDrag;
+    const px = live?.px;
+    colDrag = null;
+    document.body.style.cursor = "";
+    if (px != null && Math.abs(px - d.startW) >= 1) Promise.resolve(store.setColumn(d.key, px)).finally(() => (live = null));
+    else live = null;
+  }
+  /** Double-click a handle: back to the default width. */
+  function colReset(key: "name" | "pkg") {
+    live = null;
+    store.setColumn(key, null);
+  }
   let dragUids = $state<string[]>([]);
   let dropAt = $state<{ uid: string; after: boolean } | null>(null);
   let dropEnd = $state(false);
@@ -238,13 +301,14 @@
 
 <svelte:window onpointermove={pointerMove} onpointerup={pointerUp} onpointercancel={pointerCancel} onblur={pointerCancel} />
 
-<div class="card list" class:dragging class:weights={store.showWeight} bind:this={scroller} bind:clientHeight={viewport} onscroll={onScroll} role="listbox" aria-label="Load order" aria-multiselectable="true" tabindex="-1">
-  <div class="hdr" role="presentation">
+<div class="card list" class:dragging bind:this={scroller} bind:clientHeight={viewport} bind:clientWidth={listW} onscroll={onScroll} role="listbox" aria-label="Load order" aria-multiselectable="true" tabindex="-1" style="--cols: {template}">
+  <div class="hdr" role="presentation" onpointermove={colMove} onpointerup={colUp} onpointercancel={colUp}>
     <span class="h idx">#</span>
-    <span></span>
-    <span class="h">Mod</span>
-    <span class="h pkg">Package id</span>
+    <span class="h name">Mod<span class="grab" role="separator" aria-orientation="vertical" title="Drag to change the width; double-click for the default" onpointerdown={(e) => colDown(e, "name")} ondblclick={() => colReset("name")}></span></span>
+    {#if showPkg}<span class="h pkg">Package id<span class="grab" role="separator" aria-orientation="vertical" title="Drag to change the width; double-click for the default" onpointerdown={(e) => colDown(e, "pkg")} ondblclick={() => colReset("pkg")}></span></span>{/if}
+    {#if nameW != null}<span class="fill"></span>{/if}
     {#if store.showWeight}<span class="h wt" title="Share of frame time, from circinus.sh or your own runs">Cost</span>{/if}
+    <span class="h load" title="Expected share of the list's loading time, estimated from what the folder holds: Defs XML, patch operations and how far they search, PNG textures without DDS, assemblies. A ranking, not a stopwatch.">Load</span>
     <span class="h vers" title="Game versions the mod says it supports">Versions</span>
     <span class="h phz" title="Where HALO files the mod: the game, a library, content, a patch, a texture pack, a late loader, a performance mod">Phase</span>
     <span class="h g" title="The group the mod is in">Group</span>
@@ -252,11 +316,11 @@
       <span class="h b" title="Changed since you last opened Circinus: new, or updated on disk">{@html I.change}<i>Changed</i></span>
       <span class="h b" title="A newer version is on the Workshop">{@html I.up}<i>Update</i></span>
       <span class="h b" title="Errors: a missing dependency, two mods that do not work together, a rule loop, a mod above the game's own content">{@html I.error}<i>Errors</i></span>
-      <span class="h b" title="Warnings: a load-order rule not met, a mod not made for this game version, a performance mod not at the end">{@html I.warn}<i>Warnings</i></span>
+      <span class="h b" title="Warnings: a load-order rule not met, a mod not made for this game version, a performance mod not at the end">{@html I.warn}<i>Warning</i></span>
       <span class="h b" title="HALO notes: textures replaced by more than one mod, a rule HALO set aside">{@html I.note}<i>Notes</i></span>
       <span class="h b" title="Pinned: keeps its position when HALO sorts">{@html I.pin}<i>Pinned</i></span>
     </span>
-    <span class="h delta" title="How far HALO would move the mod, once you preview a sort">Move</span>
+    {#if showMove}<span class="h delta" title="How far HALO would move the mod">Move</span>{/if}
   </div>
   {#if floating}
     <div class="ph floating"><span class="dot c-{floating.color}"></span><span class="n">{floating.name}</span><span class="c num">{floating.count}</span><span class="note">{floating.note}</span></div>
@@ -278,6 +342,7 @@
         {@const warn = bySeverity(issues, "warning", m)}
         {@const note = bySeverity(issues, "note", m)}
         {@const invalid = m.invalid && it.inactive ? m.invalid : ""}
+        {@const ld = it.inactive ? undefined : store.loadOf(m.uid)}
         <div
           class="row"
           class:off={it.inactive}
@@ -295,13 +360,14 @@
           onkeydown={(e) => key(e, m)}
           onpointerdown={(e) => pointerDown(e, m)}
         >
-          <span class="idx num">{it.inactive ? "" : (store.indexOf.get(m.uid) ?? 0) + 1}</span>
-          <span class="grip">{@html I.grip}</span>
+          <span class="idx num"><span class="grip">{@html I.grip}</span>{it.inactive ? "" : (store.indexOf.get(m.uid) ?? 0) + 1}</span>
           <span class="name"><b>{m.name ?? m.uid}</b><span>{m.invalid ?? (m.authors ?? []).join(", ")}</span></span>
-          <span class="pkg">{m.packageId}</span>
+          {#if showPkg}<span class="pkg">{m.packageId}</span>{/if}
+          {#if nameW != null}<span class="fill"></span>{/if}
           {#if store.showWeight}
             <span class="wt">{#if w && w.share != null}<span class="band {w.band}" title="Performance cost: {w.share.toFixed(2)} % of frame time, {BAND_LABEL[w.band].toLowerCase()}. {w.measured ?? '?'} runs measured, from {w.origin === 'local' ? 'your runs' : 'circinus.sh'}">{w.share.toFixed(1)} %</span>{:else if w}<span class="band {w.band}" title="Performance cost: {BAND_LABEL[w.band].toLowerCase()}">{w.band === "negligible" ? "<0.1 %" : "n/a"}</span>{/if}</span>
           {/if}
+          <span class="load">{#if ld && m.contents.load}<span class="band {ld.band}" title="Expected share of loading time: {ld.share >= 0.0005 ? (ld.share * 100).toFixed(ld.share < 0.01 ? 2 : 1) : 'under 0.05'} % ({LOAD_BAND_LABEL[ld.band].toLowerCase()}), about {ld.ms >= 1000 ? `${(ld.ms / 1000).toFixed(1)} s` : `${ld.ms} ms`} of an estimated {store.loadTotalSeconds >= 60 ? `${(store.loadTotalSeconds / 60).toFixed(1)} min` : `${store.loadTotalSeconds.toFixed(0)} s`} for the list.&#10;{explainLoad(m).join('\n')}&#10;&#10;Estimated from the folder; a ranking, not a stopwatch.">{ld.share >= 0.001 ? `${(ld.share * 100).toFixed(ld.share < 0.01 ? 2 : 1)} %` : "<0.1 %"}</span>{:else if !it.inactive && m.contents.load == null}<span class="band unknown" title="Not read yet: the folder is still being inspected">…</span>{/if}</span>
           <span class="vers">{#each versions as v}<span class:off={!(m.supportedVersions ?? []).includes(v)}>{v}</span>{/each}</span>
           <span class="phz">{#if pl}<span class="dot c-{store.phaseInfo(pl.phase).color}" title="{store.phaseInfo(pl.phase).name} · {pl.reason}"></span>{/if}</span>
           <span class="g">{#if grp}<span class="dot c-{grp.color}" title="{grp.name}{grp.auto && !store.snap?.user.modGroups[m.uid] ? ' (by the group’s own rule)' : ''}"></span>{/if}</span>
@@ -313,7 +379,7 @@
             <span class="b">{#if note.n}<span class="flag" title={note.text}>{@html I.note}{#if note.n > 1}<em class="num">{note.n}</em>{/if}</span>{/if}</span>
             <span class="b">{#if store.pinned.has(m.uid)}<span class="flag" title="Pinned: keeps this position when sorting">{@html I.pin}</span>{/if}</span>
           </span>
-          <span class="delta num" class:down={delta && delta > 0} class:up={delta && delta < 0}>{#if delta}{delta > 0 ? "+" : ""}{delta}{/if}</span>
+          {#if showMove}<span class="delta num" class:down={delta && delta > 0} class:up={delta && delta < 0}>{#if delta}{delta > 0 ? "+" : ""}{delta}{/if}</span>{/if}
         </div>
       {/if}
     {/each}
@@ -333,13 +399,17 @@
   .list.dragging .row { cursor: grabbing; }
   .ghost { position: fixed; z-index: 30; pointer-events: none; background: var(--surface-4); color: var(--text); font-size: 12.5px; font-weight: 600; padding: 6px 10px; border-radius: 8px; box-shadow: var(--shadow-float); max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .spacer { position: relative; }
-  /* One grid for the column header and every row, so the columns line up. */
-  .hdr, .row { display: grid; grid-template-columns: 34px 18px minmax(0, 1fr) 150px 64px 44px 44px 238px 40px; align-items: center; gap: 10px; padding: 0 8px 0 4px; }
-  .list.weights .hdr, .list.weights .row { grid-template-columns: 34px 18px minmax(0, 1fr) 150px 64px 64px 44px 44px 238px 40px; }
+  /* One grid for the column header and every row, so the columns line up; the template is
+     built in the script (dragged widths, optional columns) and handed down as --cols. */
+  .hdr, .row { display: grid; grid-template-columns: var(--cols); align-items: center; gap: 6px; padding: 0 8px 0 4px; }
   .hdr { position: sticky; top: 0; z-index: 4; height: 34px; background: var(--surface); border-bottom: 1px solid var(--surface-3); margin: 0 -6px; padding-left: 10px; padding-right: 14px; }
-  .hdr .h { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); white-space: nowrap; overflow: hidden; }
-  .hdr .idx, .hdr .vers, .hdr .delta, .hdr .wt { text-align: right; }
+  .hdr .h { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); white-space: nowrap; overflow: hidden; position: relative; }
+  .hdr .idx, .hdr .vers, .hdr .delta, .hdr .wt, .hdr .load { text-align: right; }
   .hdr .phz, .hdr .g { text-align: center; }
+  .hdr .h.name, .hdr .h.pkg { overflow: visible; }
+  .hdr .grab { position: absolute; top: -8px; bottom: -8px; right: -6px; width: 11px; cursor: col-resize; touch-action: none; z-index: 1; }
+  .hdr .grab::after { content: ""; position: absolute; top: 8px; bottom: 8px; left: 5px; width: 1px; background: var(--surface-4); }
+  .hdr .grab:hover::after { background: var(--amber); width: 2px; left: 4px; }
   .hdr .b { display: grid; justify-items: center; gap: 1px; text-transform: none; letter-spacing: 0; font-size: 9px; font-weight: 600; }
   .hdr .b :global(svg) { width: 13px; height: 13px; }
   .hdr .b i { font-style: normal; }
@@ -359,20 +429,22 @@
   .row.drop-before::before { top: -1px; }
   .row.drop-after::after { bottom: -1px; }
   .drop-line { position: absolute; left: 8px; right: 8px; height: 2px; background: var(--amber); border-radius: 1px; }
-  .idx { font-family: var(--mono); font-size: 11.5px; color: var(--text-3); text-align: right; }
-  .grip { color: var(--text-4); opacity: 0; display: grid; place-items: center; cursor: grab; touch-action: none; }
+  .idx { font-family: var(--mono); font-size: 11.5px; color: var(--text-3); text-align: right; position: relative; }
+  .grip { position: absolute; left: -4px; top: 50%; transform: translateY(-50%); color: var(--text-4); opacity: 0; display: grid; place-items: center; cursor: grab; touch-action: none; }
   .row:hover .grip, .row.sel .grip { opacity: 1; }
-  .grip :global(svg) { width: 12px; height: 12px; }
+  .grip :global(svg) { width: 11px; height: 11px; }
   .name { min-width: 0; display: flex; flex-direction: column; justify-content: center; line-height: 1.2; }
   .name b { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .name span { font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pkg { font-family: var(--mono); font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .row .wt { min-width: 60px; display: flex; justify-content: flex-end; }
+  .row .wt, .row .load { display: flex; justify-content: flex-end; }
+  .row .load .band.unknown { color: var(--text-4); }
   .vers { justify-content: flex-end; }
   .row .phz, .row .g { display: grid; place-items: center; }
   .row .phz .dot, .row .g .dot { width: 8px; height: 8px; }
   /* Six fixed slots, one per kind of badge, so nothing ever draws over anything else. */
-  .badges { display: grid; grid-template-columns: repeat(6, 38px); gap: 2px; align-items: center; }
+  .badges { display: grid; grid-template-columns: repeat(6, 36px); gap: 2px; align-items: center; }
+  .hdr .b { font-size: 8.5px; }
   .badges .b { display: grid; place-items: center; height: 24px; }
   .flag { display: inline-flex; align-items: center; gap: 1px; height: 20px; padding: 0 2px; border-radius: 6px; }
   .flag :global(svg) { width: 15px; height: 15px; flex: none; }
@@ -381,9 +453,4 @@
   .delta.down { color: var(--amber); }
   .delta.up { color: var(--blue); }
   .empty { padding: 40px; text-align: center; color: var(--text-3); }
-  @media (max-width: 1240px) {
-    .hdr, .row { grid-template-columns: 34px 18px minmax(0, 1fr) 64px 44px 44px 238px 40px; }
-    .list.weights .hdr, .list.weights .row { grid-template-columns: 34px 18px minmax(0, 1fr) 64px 64px 44px 44px 238px 40px; }
-    .pkg { display: none; }
-  }
 </style>

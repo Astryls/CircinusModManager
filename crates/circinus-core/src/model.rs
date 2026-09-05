@@ -133,6 +133,34 @@ pub struct Contents {
     /// Ships its own copy of 0Harmony.dll (a smell; Harmony should come from the Harmony mod).
     pub bundles_harmony: bool,
     pub size_bytes: u64,
+    /// What loading the mod costs the game, from the folder alone (see `loadcost`).
+    #[serde(default)]
+    pub load: LoadCost,
+}
+
+/// The parts of a mod folder that cost loading time, and the estimate made from them.
+/// Counts and bytes are facts; `score_ms` is a model (`loadcost::score`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LoadCost {
+    /// Bytes of XML under Defs: parsed, inherited, reflected into objects.
+    pub def_bytes: u64,
+    /// Bytes of XML under Patches.
+    pub patch_bytes: u64,
+    /// Patch operations, nested ones included.
+    pub patch_ops: u32,
+    /// Operations whose XPath searches the whole document (`//`, wildcard steps, `contains()`).
+    pub heavy_ops: u32,
+    /// Pixels of PNG/JPG textures the game will decode: those with no DDS beside them.
+    pub png_pixels: u64,
+    pub png_bytes: u64,
+    /// Bytes of DDS files, loaded as they are.
+    pub dds_bytes: u64,
+    pub dll_bytes: u64,
+    pub sound_bytes: u64,
+    /// The estimate, in milliseconds on a typical machine. Relative to other mods it means
+    /// something; on its own it is a guess.
+    pub score_ms: u64,
 }
 
 /// A parsed, installed mod. `uid` is the folder path and is the identity everywhere.

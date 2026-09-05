@@ -108,6 +108,13 @@ pub async fn validate(state: State<'_, Shared>) -> CmdResult<Vec<Issue>> {
     with_app(&state, |app| Ok(app.issues())).await
 }
 
+/// HALO's built-in classification rules, in the order they are tried, for the HALO page.
+#[tauri::command]
+pub fn halo_rules() -> Vec<circinus_core::order::BuiltinRule> {
+    circinus_core::order::builtin_rules()
+}
+
+
 #[tauri::command]
 pub async fn save_mods_config(state: State<'_, Shared>) -> CmdResult<String> {
     with_app(&state, |app| app.save().map(|p| p.display().to_string()).map_err(err)).await

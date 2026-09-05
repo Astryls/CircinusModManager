@@ -2,13 +2,13 @@
 // indexes for fast lookups, and the actions the components call.
 
 import { api, listen } from "./api";
-import type { CollectionPreview, Group, ImportPreview, Issue, ModChange, ModInfo, ModTextures, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamCmdStatus, TexState, TrackedCollection, UserData, Weight, LogAnalysis, LogFile, AuditReport } from "./types";
-import { GROUP_COLORS, PHASES, primaryUid, severityOf, type Severity } from "./types";
+import type { BuiltinRule, CollectionPreview, Group, HaloRules, ImportPreview, Issue, ModChange, ModInfo, ModTextures, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamCmdStatus, TexState, TrackedCollection, UserData, Weight, LogAnalysis, LogFile, AuditReport } from "./types";
+import { EMPTY_HALO, GROUP_COLORS, PHASES, loadBand, primaryUid, severityOf, type LoadBand, type Severity } from "./types";
 
-export type View = "order" | "library" | "downloads" | "textures" | "analyzer" | "settings";
+export type View = "order" | "library" | "downloads" | "textures" | "analyzer" | "halo" | "settings";
 export type Tab = "active" | "inactive" | "all";
 /** What the list is narrowed to: mods with errors, warnings, HALO notes, conflicts, changes, or moves. */
-export type ShowOnly = "attention" | "error" | "warning" | "note" | "conflict" | "collision" | "heavy" | "changed" | "moved" | null;
+export type ShowOnly = "attention" | "error" | "warning" | "note" | "conflict" | "collision" | "heavy" | "slow" | "changed" | "moved" | null;
 
 const ALL_SOURCES: Source[] = ["ludeon", "workshop", "local", "steamcmd", "git"];
 
@@ -112,6 +112,42 @@ class Store {
   });
   /** The active list shown in HALO's phase sections (true) or as the plain load order (false). */
   byPhase = $derived(this.snap?.settings.listByPhase ?? false);
+  /** Column widths the user dragged, CSS px, by key; absent = the default. */
+  columns = $derived(this.snap?.settings.columns ?? {});
+  /** Each active mod's estimated share of the list's loading time, from the folder figures. */
+  loadShares = $derived.by(() => {
+    const out = new Map<string, { share: number; band: LoadBand; ms: number }>();
+    let total = 0;
+    for (const uid of this.active) total += this.byUid.get(uid)?.contents.load?.scoreMs ?? 0;
+    for (const m of this.mods) {
+      const ms = m.contents.load?.scoreMs ?? 0;
+      const share = total > 0 && this.activeSet.has(m.uid) ? ms / total : 0;
+      out.set(m.uid, { share, band: loadBand(share), ms });
+    }
+    return out;
+  });
+  loadOf = (uid: string) => this.loadShares.get(uid);
+  /** Total estimated loading time of the active list, in seconds; a model, not a measurement. */
+  loadTotalSeconds = $derived.by(() => {
+    let total = 0;
+    for (const uid of this.active) total += this.byUid.get(uid)?.contents.load?.scoreMs ?? 0;
+    return total / 1000;
+  });
+  /** The user's HALO rules, always present. */
+  halo = $derived<HaloRules>(this.snap?.user.halo ?? EMPTY_HALO);
+  /** HALO's built-in rule table, fetched once for the HALO page. */
+  haloRules = $state<BuiltinRule[]>([]);
+  async loadHaloRules() {
+    if (this.haloRules.length) return;
+    try {
+      this.haloRules = await api.haloRules();
+    } catch (e) {
+      console.warn("[circinus] halo_rules failed", e);
+    }
+  }
+  updateHalo(patch: (h: HaloRules) => HaloRules) {
+    return this.updateUser((u) => ({ ...u, halo: patch(structuredClone(u.halo ?? EMPTY_HALO)) }));
+  }
   weightOf = (m: ModInfo): Weight | undefined => this.snap?.weights[m.packageId];
   pinned = $derived(new Set(this.snap?.user.pinned ?? []));
   showWeight = $derived(this.snap?.settings.showWeight ?? false);
@@ -202,13 +238,17 @@ class Store {
         const w = m && this.weightOf(m);
         return !!w && (w.band === "heavy" || w.band === "veryheavy");
       }
+      case "slow": {
+        const l = this.loadShares.get(uid);
+        return !!l && (l.band === "heavy" || l.band === "veryheavy");
+      }
       case "changed": return this.changeByUid.has(uid);
       case "moved": return this.moveOf.has(uid);
     }
   }
   /** How many mods each "show only" choice would keep, for the menu. */
   showOnlyCounts = $derived.by(() => {
-    const out: Record<Exclude<ShowOnly, null>, number> = { attention: 0, error: 0, warning: 0, note: 0, conflict: 0, collision: 0, heavy: 0, changed: 0, moved: 0 };
+    const out: Record<Exclude<ShowOnly, null>, number> = { attention: 0, error: 0, warning: 0, note: 0, conflict: 0, collision: 0, heavy: 0, slow: 0, changed: 0, moved: 0 };
     for (const m of this.mods) for (const k of Object.keys(out) as (keyof typeof out)[]) if (this.passesShowOnly(m.uid, k)) out[k]++;
     return out;
   });
@@ -896,6 +936,13 @@ class Store {
   /** Show the active list in phase sections, or as the plain load order. Remembered in settings. */
   setByPhase(v: boolean) {
     return this.updateSettings({ listByPhase: v });
+  }
+  /** Remember a dragged column width (null puts the default back). */
+  setColumn(key: string, px: number | null) {
+    const columns = { ...this.columns };
+    if (px == null) delete columns[key];
+    else columns[key] = Math.round(px);
+    return this.updateSettings({ columns });
   }
   updateSettings(patch: Partial<Settings>) {
     if (!this.snap) return;

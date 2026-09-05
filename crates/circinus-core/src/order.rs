@@ -56,6 +56,79 @@ pub struct UserOverrides {
     pub pinned: HashSet<String>,
     /// Sort alphabetically within a phase instead of keeping the current arrangement.
     pub alphabetical: bool,
+    /// The user's own HALO rules: mods filed by package id or by name, built-in rules switched
+    /// off or sent to another phase.
+    #[serde(default)]
+    pub halo: HaloRules,
+}
+
+/// Edits to HALO's classification a user makes on the HALO page. Everything here is a
+/// portable statement about mods (package ids, names), not about folders, so it survives a
+/// reinstall and can be shared.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct HaloRules {
+    /// packageId (lowercase) → phase: "file this mod as". A per-mod Sort it as still wins.
+    pub package_phases: HashMap<String, Phase>,
+    /// Name contains (case-insensitive) → phase, in order; the first match wins.
+    pub name_phases: Vec<NamePhase>,
+    /// Built-in rules switched off, by key (see `builtin_rules`).
+    pub off: HashSet<String>,
+    /// Built-in rules sent to another phase than their own, by key.
+    pub retarget: HashMap<String, Phase>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NamePhase {
+    pub needle: String,
+    pub phase: Phase,
+}
+
+impl HaloRules {
+    fn on(&self, key: &str) -> bool {
+        !self.off.contains(key)
+    }
+    fn target(&self, key: &str, default: Phase) -> Phase {
+        self.retarget.get(key).copied().unwrap_or(default)
+    }
+}
+
+/// One of HALO's built-in classification rules, for the HALO page: what it looks at, where
+/// it files a mod, and the package ids it knows by heart, in the order the rules are tried.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuiltinRule {
+    pub key: String,
+    /// What the rule looks at, one line.
+    pub signal: String,
+    /// The longer story: why this belongs where it goes.
+    pub detail: String,
+    pub phase: Phase,
+    /// Package ids the rule knows outright, if it works from a list.
+    pub ids: Vec<String>,
+    /// Whether the user may switch it off or send it elsewhere (the game's own content is not up for debate).
+    pub editable: bool,
+}
+
+/// The classification rules in the order `classify` tries them.
+pub fn builtin_rules() -> Vec<BuiltinRule> {
+    let r = |key: &str, signal: &str, detail: &str, phase: Phase, ids: &[&str], editable: bool| BuiltinRule { key: key.into(), signal: signal.into(), detail: detail.into(), phase, ids: ids.iter().map(|s| s.to_string()).collect(), editable };
+    vec![
+        r("official", "The game and its DLC", "Core, then the DLCs in release order. Everything that ships Defs must load after them, because a def can only inherit from mods above it; this cannot be switched off.", Phase::Core, &[], false),
+        r("prepatch-ids", "Known pre-patchers", "Harmony, Prepatcher, Fishery, Visual Exceptions: they change the game before other mods load and ship no Defs of their own.", Phase::Prepatch, PREPATCH_IDS, true),
+        r("top", "Asks to load before the game and has no Defs", "About.xml says it loads before Core (or it is a known loading-screen mod), and with no Defs there is nothing to lose its parents up there.", Phase::Prepatch, TOP_IDS, true),
+        r("rule-top", "A rule says: load near the top", "A community or user rule marks it loadTop.", Phase::Framework, &[], true),
+        r("optimizer", "Known performance mod, or code without Defs named like one", "RocketMan, Performance Fish and friends, or a code-only mod whose name says performance, optimiser or FPS: it has to see every other mod, so it loads last.", Phase::Optimization, OPTIMIZATION_IDS, true),
+        r("rule-bottom", "A rule says: load near the bottom", "A community or user rule marks it loadBottom. Its add-ons follow it.", Phase::Late, &[], true),
+        r("framework-ids", "Known frameworks", "Libraries many mods build on: HugsLib, Vanilla Expanded Framework, Vehicle Framework, XML Extensions, Combat Extended…", Phase::Framework, FRAMEWORK_IDS, true),
+        r("dependents", "Code that three or more active mods need, with few Defs, not built on a framework", "Being depended on is not enough (VFE Empire has add-ons and is content); a library is mostly code, ships at most a few dozen Def files, and is not itself built on a known framework.", Phase::Framework, &[], true),
+        r("name-library", "Named framework, library, lib or api, and has code", "The name says library and there is a DLL; a patch is not one however it is named.", Phase::Framework, &[], true),
+        r("texture-pack", "Only textures, or a texture mod that replaces what another replaces", "No code, no Defs, just Textures; or named retexture. Later packs win, so they sort together where the order between them is visible.", Phase::Texture, &[], true),
+        r("patch-only", "Only patches", "Patches and nothing else: it loads after what it changes.", Phase::Patch, &[], true),
+        r("name-patch", "Named patch or compat", "Named like a patch and either has no code or joins two or more dependencies.", Phase::Patch, &[], true),
+        r("content", "Everything else", "Things, pawns, biomes, rules: the ordinary content mod.", Phase::Content, &[], false),
+    ]
 }
 
 /// A group the user gave its own place in the load order: its members sort together, right
@@ -109,43 +182,52 @@ pub fn classify(m: &ModInfo, ctx: &Context, dependents: usize, texture_collides:
     if is_official(m) {
         return place(uid, Phase::Core, "The game itself");
     }
-    if PREPATCH_IDS.contains(&id) {
-        return place(uid, Phase::Prepatch, "Changes the game before other mods load");
+    // The user's own HALO rules come next: a mod filed by package id, then by name.
+    let h = &ctx.overrides.halo;
+    if let Some(p) = h.package_phases.get(id) {
+        return place(uid, *p, "Your HALO rule for this package id");
     }
-    if top {
-        return place(uid, Phase::Prepatch, "Asks to load before the game and has no Defs, so that is safe");
+    let lower = m.name.to_ascii_lowercase();
+    if let Some(np) = h.name_phases.iter().find(|np| !np.needle.trim().is_empty() && lower.contains(&np.needle.trim().to_ascii_lowercase())) {
+        return place(uid, np.phase, format!("Your HALO rule: name contains \"{}\"", np.needle.trim()));
     }
-    if ctx.rules.iter().any(|r| r.kind == RuleKind::LoadTop && r.subject == id) {
-        return place(uid, Phase::Framework, "A rule says: load near the top");
+    if h.on("prepatch-ids") && PREPATCH_IDS.contains(&id) {
+        return place(uid, h.target("prepatch-ids", Phase::Prepatch), "Changes the game before other mods load");
+    }
+    if h.on("top") && top {
+        return place(uid, h.target("top", Phase::Prepatch), "Asks to load before the game and has no Defs, so that is safe");
+    }
+    if h.on("rule-top") && ctx.rules.iter().any(|r| r.kind == RuleKind::LoadTop && r.subject == id) {
+        return place(uid, h.target("rule-top", Phase::Framework), "A rule says: load near the top");
     }
     let optimizer = OPTIMIZATION_IDS.contains(&id) || (c.assemblies > 0 && c.defs == 0 && name_matches(&m.name, &["performance", "optimiz", "optimis", "rocketman", "fps boost"]));
-    if optimizer {
-        return place(uid, Phase::Optimization, "Speeds up other mods, so it has to load after them");
+    if h.on("optimizer") && optimizer {
+        return place(uid, h.target("optimizer", Phase::Optimization), "Speeds up other mods, so it has to load after them");
     }
-    if ctx.rules.iter().any(|r| r.kind == RuleKind::LoadBottom && r.subject == id) {
-        return place(uid, Phase::Late, "A rule says: load near the bottom");
+    if h.on("rule-bottom") && ctx.rules.iter().any(|r| r.kind == RuleKind::LoadBottom && r.subject == id) {
+        return place(uid, h.target("rule-bottom", Phase::Late), "A rule says: load near the bottom");
     }
-    if FRAMEWORK_IDS.contains(&id) {
-        return place(uid, Phase::Framework, "A library many mods use");
+    if h.on("framework-ids") && FRAMEWORK_IDS.contains(&id) {
+        return place(uid, h.target("framework-ids", Phase::Framework), "A library many mods use");
     }
     // Being depended on is not enough: content mods collect dependents too (VFE Empire has its
     // add-ons, Dubs Bad Hygiene its extensions). A library is mostly code — few Defs of its
     // own — and is not itself built on a framework.
     let built_on_framework = m.rules.dependencies.iter().any(|d| FRAMEWORK_IDS.contains(&d.package_id.as_str()));
-    if c.assemblies > 0 && dependents >= 3 && c.defs <= LIBRARY_MAX_DEFS && !built_on_framework {
-        return place(uid, Phase::Framework, format!("{dependents} active mods need it, and it is mostly code"));
+    if h.on("dependents") && c.assemblies > 0 && dependents >= 3 && c.defs <= LIBRARY_MAX_DEFS && !built_on_framework {
+        return place(uid, h.target("dependents", Phase::Framework), format!("{dependents} active mods need it, and it is mostly code"));
     }
-    if c.assemblies > 0 && name_matches(&m.name, &["framework", "library", " lib", "api"]) && !name_matches(&m.name, &["patch"]) {
-        return place(uid, Phase::Framework, "Named like a library and has code");
+    if h.on("name-library") && c.assemblies > 0 && name_matches(&m.name, &["framework", "library", " lib", "api"]) && !name_matches(&m.name, &["patch"]) {
+        return place(uid, h.target("name-library", Phase::Framework), "Named like a library and has code");
     }
-    if m.kind == ModKind::Textures || (c.textures + c.dds > 0 && c.assemblies == 0 && c.defs == 0 && (texture_collides || name_matches(&m.name, &["retexture", "texture", "textures"]))) {
-        return place(uid, Phase::Texture, if texture_collides { "Replaces textures that other mods also replace" } else { "Only textures" });
+    if h.on("texture-pack") && (m.kind == ModKind::Textures || (c.textures + c.dds > 0 && c.assemblies == 0 && c.defs == 0 && (texture_collides || name_matches(&m.name, &["retexture", "texture", "textures"])))) {
+        return place(uid, h.target("texture-pack", Phase::Texture), if texture_collides { "Replaces textures that other mods also replace" } else { "Only textures" });
     }
-    if c.patches > 0 && c.defs == 0 && c.assemblies == 0 {
-        return place(uid, Phase::Patch, "Only patches, so it loads after what it changes");
+    if h.on("patch-only") && c.patches > 0 && c.defs == 0 && c.assemblies == 0 {
+        return place(uid, h.target("patch-only", Phase::Patch), "Only patches, so it loads after what it changes");
     }
-    if name_matches(&m.name, &["patch", "compat"]) && (c.assemblies == 0 || m.rules.dependencies.len() >= 2) {
-        return place(uid, Phase::Patch, "A patch that joins two mods");
+    if h.on("name-patch") && name_matches(&m.name, &["patch", "compat"]) && (c.assemblies == 0 || m.rules.dependencies.len() >= 2) {
+        return place(uid, h.target("name-patch", Phase::Patch), "A patch that joins two mods");
     }
     place(uid, Phase::Content, "Adds content")
 }
@@ -936,6 +1018,43 @@ mod tests {
         let pos = |u: &str| r.order.iter().position(|x| x == u).unwrap();
         assert!(pos("empire") < pos("addon0") && pos("dbh") < pos("addon3") && pos("har") < pos("addon6"), "{:?}", r.order);
         assert!(pos("vef") < pos("empire"));
+    }
+
+    /// The HALO page's overrides: a package id filed by hand, a name rule, a built-in rule
+    /// switched off, another sent elsewhere; the game's own content is never moved.
+    #[test]
+    fn users_halo_rules_override_the_built_in_ones() {
+        let mods = fixture();
+        let db = Databases::default();
+        let rules = compile_rules(&mods, &db);
+        let files = HashMap::new();
+        let mut ov = UserOverrides::default();
+        ov.halo.package_phases.insert("voult.betterpawncontrol".into(), Phase::Late);
+        ov.halo.name_phases.push(NamePhase { needle: "RETRO".into(), phase: Phase::Content });
+        ov.halo.off.insert("prepatch-ids".into());
+        ov.halo.off.insert("top".into());
+        ov.halo.retarget.insert("patch-only".into(), Phase::Late);
+        ov.halo.package_phases.insert("ludeon.rimworld".into(), Phase::Late);
+        let ctx = Context { mods: &mods, files: &files, rules: &rules, db: &db, major_minor: "1.6", overrides: &ov };
+        let order: Vec<&ModInfo> = mods.iter().collect();
+        let pl = placements(&order, &ctx);
+        let p = |u: &str| pl.iter().find(|p| p.uid == u).unwrap();
+        assert_eq!(p("bpc").phase, Phase::Late);
+        assert!(p("bpc").reason.contains("package id"));
+        assert_eq!(p("walls").phase, Phase::Content, "{}", p("walls").reason);
+        assert!(p("walls").reason.contains("RETRO"));
+        assert_eq!(p("harmony").phase, Phase::Content, "with the pre-patcher rules off, Harmony is code with no other signal: {}", p("harmony").reason);
+        assert_eq!(p("patch").phase, Phase::Late, "the patch-only rule now files under late loaders");
+        assert_eq!(p("core").phase, Phase::Core, "official content is not up for debate");
+        // The rule table the page shows matches what classify tries, and round-trips as JSON.
+        let table = builtin_rules();
+        assert_eq!(table.first().unwrap().key, "official");
+        assert!(table.iter().any(|r| r.key == "framework-ids" && r.ids.iter().any(|i| i == "unlimitedhugs.hugslib")));
+        assert!(table.iter().filter(|r| !r.editable).count() == 2);
+        let json = serde_json::to_string(&ov.halo).unwrap();
+        let back: HaloRules = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, ov.halo);
+        assert!(json.contains("\"packagePhases\""));
     }
 
     #[test]

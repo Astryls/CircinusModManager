@@ -1,7 +1,7 @@
 // Browser-only stand-in for the Rust backend: lets `npm run dev` show the UI with example data.
 // Nothing here ships in the Tauri build path (api.ts only imports it outside Tauri).
 
-import type { Issue, ModChange, ModInfo, Phase, Placement, QueueState, Rule, Snapshot, SortResult, Source, TexState, UserData, Weight, Settings } from "./types";
+import type { BuiltinRule, Issue, ModChange, ModInfo, Phase, Placement, QueueState, Rule, Snapshot, SortResult, Source, TexState, UserData, Weight, Settings } from "./types";
 import { PHASES } from "./types";
 
 type Seed = [name: string, author: string, pkg: string, pfid: string | null, src: Source, phase: Phase, group: string, ver: string[], size: number, flags?: string];
@@ -78,7 +78,18 @@ function mod(s: Seed): ModInfo {
     publishedFileId: pfid ? Number(pfid) : undefined,
     source: src,
     rules: { loadAfter: src === "ludeon" ? [] : ["brrainz.harmony"], loadBefore: [], forceLoadAfter: [], forceLoadBefore: [], incompatibleWith: [], dependencies: src === "ludeon" ? [] : [{ packageId: "brrainz.harmony", displayName: "Harmony" }] },
-    contents: { assemblies: cs ? 2 : 0, patches: xml ? 3 : 0, defs: flags.includes("defs") || (!cs && !tex && !xml) ? 40 : cs ? 6 : 0, textures: tex ? 300 : 12, dds: 0, sounds: 0, languages: 1, bundlesHarmony: false, sizeBytes: size },
+    contents: (() => {
+      const defs = flags.includes("defs") || (!cs && !tex && !xml) ? 40 : cs ? 6 : 0;
+      const textures = tex ? 300 : 12;
+      // Load figures shaped like the real thing: XML by size, patches by count, pixels for PNGs
+      // without DDS, DLLs by size. The heavy XPath share is what makes a patch mod expensive.
+      const patchOps = xml ? 60 : defs ? 8 : 0;
+      const heavyOps = xml ? 12 : 0;
+      const pngPixels = textures * 512 * 512;
+      const load = { defBytes: defs * 14_000, patchBytes: patchOps * 400, patchOps, heavyOps, pngPixels, pngBytes: textures * 60_000, ddsBytes: 0, dllBytes: cs ? Math.min(size / 4, 3e6) : 0, soundBytes: 0, scoreMs: 0 };
+      load.scoreMs = Math.round((load.defBytes / 1024) * 0.25 + (load.patchOps - load.heavyOps) * 0.6 + load.heavyOps * 20 + load.pngPixels * 8e-6 + (cs ? 2 * 15 + (load.dllBytes / 1048576) * 60 : 0));
+      return { assemblies: cs ? 2 : 0, patches: xml ? 3 : 0, defs, textures, dds: 0, sounds: 0, languages: 1, bundlesHarmony: false, sizeBytes: size, load };
+    })(),
     modified: 1_756_000_000,
     kind: src === "ludeon" ? "official" : cs ? "code" : tex ? "textures" : "xml"
   };
@@ -118,6 +129,7 @@ let user: UserData = {
   notes: {},
   muted: [],
   ddsExcluded: [],
+  halo: { packagePhases: { "jaxe.rimhud": "content" }, namePhases: [{ needle: "Retro", phase: "texture" }], off: [], retarget: {} },
   collections: [
     (() => {
       const picks = SEED.filter((s) => s[3] && s[4] === "workshop").slice(4, 16);
@@ -170,6 +182,13 @@ function placements(order: string[]): Placement[] {
   return order.map((uid) => {
     const g = user.groups.find((g) => g.id === user.modGroups[uid]);
     if (!user.phaseOverrides[uid] && g?.section && g.phase) return { uid, phase: g.phase, reason: `In your group ${g.name}, which goes after ${PHASES.find((p) => p.id === g.phase)?.name.toLowerCase()}`, section: g.id };
+    const m = mods.find((m) => m.uid === uid)!;
+    if (!user.phaseOverrides[uid] && !g?.phase && m.source !== "ludeon") {
+      const byId = user.halo?.packagePhases[m.packageId];
+      if (byId) return { uid, phase: byId, reason: "Your HALO rule for this package id" };
+      const byName = user.halo?.namePhases.find((n) => n.needle.trim() && m.name.toLowerCase().includes(n.needle.trim().toLowerCase()));
+      if (byName) return { uid, phase: byName.phase, reason: `Your HALO rule: name contains "${byName.needle.trim()}"` };
+    }
     const phase = user.phaseOverrides[uid] ?? g?.phase ?? phaseOfSeed[uid] ?? "content";
     return { uid, phase, reason: user.phaseOverrides[uid] ? "Set by you" : reason[phase] };
   });
@@ -233,6 +252,23 @@ function snapshot(): Snapshot {
     listReset: resetSimulated ? { previousCount: 44, restoreFrom: savedLists[0] } : null
   };
 }
+
+/** A copy of HALO's rule table (the backend is the source of truth; this keeps the preview honest). */
+const HALO_RULES: BuiltinRule[] = [
+  { key: "official", signal: "The game and its DLC", detail: "Core, then the DLCs in release order. Everything that ships Defs must load after them, because a def can only inherit from mods above it; this cannot be switched off.", phase: "core", ids: [], editable: false },
+  { key: "prepatch-ids", signal: "Known pre-patchers", detail: "Harmony, Prepatcher, Fishery, Visual Exceptions: they change the game before other mods load and ship no Defs of their own.", phase: "prepatch", ids: ["zetrith.prepatcher", "jikulopo.prepatcher", "brrainz.harmony", "brrainz.visualexceptions", "bs.fishery"], editable: true },
+  { key: "top", signal: "Asks to load before the game and has no Defs", detail: "About.xml says it loads before Core (or it is a known loading-screen mod), and with no Defs there is nothing to lose its parents up there.", phase: "prepatch", ids: ["me.samboycoding.betterloading", "ilyvion.loadingprogress", "taranchuk.fastergameloading", "pirateby.harmony.optimizer", "automatic.startupimpact"], editable: true },
+  { key: "rule-top", signal: "A rule says: load near the top", detail: "A community or user rule marks it loadTop.", phase: "framework", ids: [], editable: true },
+  { key: "optimizer", signal: "Known performance mod, or code without Defs named like one", detail: "RocketMan, Performance Fish and friends, or a code-only mod whose name says performance, optimiser or FPS: it has to see every other mod, so it loads last.", phase: "optimization", ids: ["krkr.rocketman", "bs.performance", "taranchuk.performanceoptimizer", "dubwise.dubsperformanceanalyzer", "telardo.graphicssettings", "notfood.performancefish", "user19990313.runtimegc", "mlie.runtimegc"], editable: true },
+  { key: "rule-bottom", signal: "A rule says: load near the bottom", detail: "A community or user rule marks it loadBottom. Its add-ons follow it.", phase: "late", ids: [], editable: true },
+  { key: "framework-ids", signal: "Known frameworks", detail: "Libraries many mods build on: HugsLib, Vanilla Expanded Framework, Vehicle Framework, XML Extensions, Combat Extended…", phase: "framework", ids: ["unlimitedhugs.hugslib", "oskarpotocki.vanillafactionsexpanded.core", "smashphil.vehicleframework", "imranfish.xmlextensions", "adaptive.storage.framework", "aoba.framework", "aoba.exosuit.framework", "ebsg.framework", "owlchemist.cherrypicker", "redmattis.betterprerequisites", "vanillaexpanded.backgrounds", "thesepeople.ritualattachableoutcomes", "ceteam.combatextended"], editable: true },
+  { key: "dependents", signal: "Code that three or more active mods need, with few Defs, not built on a framework", detail: "Being depended on is not enough (VFE Empire has add-ons and is content); a library is mostly code, ships at most a few dozen Def files, and is not itself built on a known framework.", phase: "framework", ids: [], editable: true },
+  { key: "name-library", signal: "Named framework, library, lib or api, and has code", detail: "The name says library and there is a DLL; a patch is not one however it is named.", phase: "framework", ids: [], editable: true },
+  { key: "texture-pack", signal: "Only textures, or a texture mod that replaces what another replaces", detail: "No code, no Defs, just Textures; or named retexture. Later packs win, so they sort together where the order between them is visible.", phase: "texture", ids: [], editable: true },
+  { key: "patch-only", signal: "Only patches", detail: "Patches and nothing else: it loads after what it changes.", phase: "patch", ids: [], editable: true },
+  { key: "name-patch", signal: "Named patch or compat", detail: "Named like a patch and either has no code or joins two or more dependencies.", phase: "patch", ids: [], editable: true },
+  { key: "content", signal: "Everything else", detail: "Things, pawns, biomes, rules: the ordinary content mod.", phase: "content", ids: [], editable: false }
+];
 
 const resetSimulated = typeof location !== "undefined" && location.search.includes("reset");
 // Named lists, kept in memory for the preview.
@@ -473,6 +509,8 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
       ] as T;
     case "analyze_player_log":
       return mockLogAnalysis((A.path as string | null) ?? "C:\\Users\\Player\\AppData\\LocalLow\\Ludeon Studios\\RimWorld by Ludeon Studios\\Player.log") as T;
+    case "halo_rules":
+      return HALO_RULES as T;
     case "dds_state":
       return structuredClone(tex) as T;
     case "dds_overview":

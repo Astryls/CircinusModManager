@@ -8,7 +8,8 @@ use circinus_core::game::GameVersion;
 use circinus_core::import::ImportedList;
 use circinus_core::model::*;
 use circinus_core::modsconfig::{self, ModsConfig, SavedList};
-use circinus_core::order::{self, Context, SectionDef, UserOverrides};
+use circinus_core::loadcost;
+use circinus_core::order::{self, Context, HaloRules, SectionDef, UserOverrides};
 use circinus_core::paths::{app_data_dir, Locations};
 use circinus_core::rules::{self, Databases, DbSource, RulesFile};
 use circinus_core::scan::{self, Inspection, ModFiles, ScanOptions, Unreadable};
@@ -31,15 +32,30 @@ pub struct Settings {
     pub update_databases_on_start: bool,
     /// Show the active list in HALO's phase sections rather than as the plain load order.
     pub list_by_phase: bool,
+    /// Column widths the user dragged in the list, in CSS pixels, by column key (`name`, `pkg`).
+    pub columns: HashMap<String, u32>,
     pub dds: DdsSettings,
     pub launch: LaunchSettings,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { locations: Locations::default(), db_sources: rules::default_sources(), show_weight: false, include_local_runs: true, alphabetical_within_phase: false, update_databases_on_start: false, list_by_phase: false, dds: DdsSettings::default(), launch: LaunchSettings::default() }
+        Settings { locations: Locations::default(), db_sources: rules::default_sources(), show_weight: false, include_local_runs: true, alphabetical_within_phase: false, update_databases_on_start: false, list_by_phase: false, columns: HashMap::new(), dds: DdsSettings::default(), launch: LaunchSettings::default() }
     }
 }
+
+/// Where the window was when Circinus was last closed, in logical pixels.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct WindowState {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub maximized: bool,
+}
+
+const WINDOW_KEY: &str = "window_state";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -153,6 +169,8 @@ pub struct UserData {
     /// The default groups have been given their automatic members once (an upgrade step; the
     /// user may switch them back to hand-picked afterwards and that sticks).
     pub auto_groups_adopted: bool,
+    /// The user's edits to HALO's classification, from the HALO page.
+    pub halo: HaloRules,
 }
 
 /// A Steam Workshop collection the user follows. `items` is what it holds now (last fetch);
@@ -495,7 +513,7 @@ impl App {
             sections.remove(uid);
         }
         let section_defs = self.user.groups.iter().filter(|g| g.section).filter_map(|g| g.phase.map(|after| SectionDef { id: g.id.clone(), name: g.name.clone(), after })).collect();
-        UserOverrides { phases, sections, section_defs, pinned: self.user.pinned.clone(), alphabetical: self.settings.alphabetical_within_phase }
+        UserOverrides { phases, sections, section_defs, pinned: self.user.pinned.clone(), alphabetical: self.settings.alphabetical_within_phase, halo: self.user.halo.clone() }
     }
 
     fn with_context<T>(&self, f: impl FnOnce(&Context) -> T) -> T {
@@ -652,7 +670,17 @@ impl App {
         let started = std::time::Instant::now();
         // Descriptions are the bulk of the payload and only one is ever shown at a time:
         // the UI fetches them with `get_description`.
-        let mods: Vec<ModInfo> = self.mods.iter().map(|m| ModInfo { description: String::new(), ..m.clone() }).collect();
+        let mods: Vec<ModInfo> = self
+            .mods
+            .iter()
+            .map(|m| {
+                let mut m = ModInfo { description: String::new(), ..m.clone() };
+                // The estimate is a model over cached facts: computed here so a better model
+                // applies without a re-scan.
+                m.contents.load.score_ms = loadcost::score(&m.contents);
+                m
+            })
+            .collect();
         let mut issues = self.issues();
         let collisions = issues.iter().filter(|i| matches!(i, Issue::TextureCollision { .. })).count();
         let mut issues_truncated = 0;
@@ -939,6 +967,17 @@ impl App {
         self.cache.set("settings", &self.settings)?;
         self.cache.set("user", &self.user)?;
         Ok(())
+    }
+
+    /// Where the window was last time, if it was ever closed cleanly.
+    pub fn window_state(&self) -> Option<WindowState> {
+        self.cache.get(WINDOW_KEY).unwrap_or(None)
+    }
+
+    pub fn store_window_state(&self, w: &WindowState) {
+        if let Err(e) = self.cache.set(WINDOW_KEY, w) {
+            tracing::warn!("could not remember the window: {e}");
+        }
     }
 
     pub fn write_user_rules(&mut self, file: &RulesFile) -> Result<()> {

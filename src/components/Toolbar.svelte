@@ -19,6 +19,7 @@
     { id: "note", label: "With HALO notes", n: counts.note, icon: I.note },
     { id: "collision", label: "Replacing the same textures", n: counts.collision, icon: I.image },
     ...(store.showWeight ? [{ id: "heavy" as ShowOnly, label: "Heavy on frame time", n: counts.heavy, icon: I.gauge }] : []),
+    { id: "slow", label: "Slow to load", n: counts.slow, icon: I.halo },
     { id: "changed", label: "Changed since last launch", n: counts.changed, icon: I.change },
     ...(store.preview ? [{ id: "moved" as ShowOnly, label: "HALO would move", n: counts.moved, icon: I.halo }] : [])
   ]);
@@ -80,22 +81,30 @@
   <button class="btn" onclick={() => (store.showImport = true)} title="Import a mod list (Ctrl I)">{@html I.download}<span class="opt-lbl">Import</span></button>
   <button class="btn" onclick={() => store.rescan(false)} title="Read the mod folders again">{@html I.refresh}<span class="opt-lbl">Refresh</span></button>
   {#if store.preview}
-    <button class="btn" onclick={() => (store.preview = null)}>Discard</button>
-    <button class="btn primary" onclick={() => store.haloApply()}>{@html I.check}Apply {previewCount} move{previewCount === 1 ? "" : "s"}</button>
+    <span class="pair">
+      <button class="btn primary" onclick={() => store.haloApply()} title="Apply the {previewCount} move{previewCount === 1 ? '' : 's'} HALO proposes">{@html I.check}Apply<span class="opt-lbl"> {previewCount} move{previewCount === 1 ? "" : "s"}</span></button>
+      <button class="btn" onclick={() => (store.preview = null)} title="Discard the preview; nothing moves" aria-label="Discard the preview">{@html I.close}<span class="opt-lbl">Discard</span></button>
+    </span>
   {:else}
     <button class="btn primary" onclick={() => store.haloPreview()} title="Preview the load order HALO would use, then apply it or discard it">{@html I.halo}Sort with HALO</button>
   {/if}
 </div>
 
 <style>
-  .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .sp { flex: 1; }
-  .toolbar .btn { height: 32px; }
-  .seg.arr button { font-size: 12px; }
-  .seg.arr button { padding: 0 10px; }
+  /* One line, whatever the width: labels give way before anything wraps. */
+  .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; container-type: inline-size; min-width: 0; }
+  .sp { flex: 1; min-width: 0; }
+  .toolbar .btn { height: 32px; flex: none; }
+  .toolbar .seg { flex: none; }
+  .toolbar .filter { flex: 0 1 auto; min-width: 0; }
+  .filter > .btn { max-width: 100%; }
+  .seg.arr button { font-size: 12px; padding: 0 10px; }
   .filter > .btn .lbl { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* Narrower windows: the two secondary buttons keep their icons and tooltips. */
-  @media (max-width: 1640px) { .opt-lbl { display: none; } }
+  .pair { display: inline-flex; gap: 6px; flex: none; }
+  /* Narrower toolbars: the secondary buttons keep their icons and tooltips, the tabs their names. */
+  @container (max-width: 1080px) { .opt-lbl { display: none; } }
+  @container (max-width: 900px) { .seg .num { display: none; } .filter > .btn .lbl { max-width: 90px; } }
+  @container (max-width: 760px) { .seg.arr button { padding: 0 8px; } .filter > .btn .lbl { display: none; } }
   .filter { position: relative; }
   .filter > .btn.on { background: var(--amber-soft); color: var(--amber); }
   .filter .cnt { font-size: 11px; font-weight: 700; opacity: 0.8; }

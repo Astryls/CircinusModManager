@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::UNIX_EPOCH;
 
 /// Bump when the parser changes so cached entries are re-parsed.
-const PARSER_VERSION: u32 = 3;
+const PARSER_VERSION: u32 = 4;
 
 /// File inventory kept out of `ModInfo` (too large for the UI): relative paths from the mod
 /// root, lowercase, forward slashes. Textures are stored without extension because RimWorld
@@ -156,6 +156,11 @@ fn inspect_folder(root: &Path) -> (Contents, ModFiles, u64) {
     let mut f = ModFiles::default();
     let mut newest = 0u64;
     let mut language_dirs = std::collections::HashSet::new();
+    // Textures the game would decode: PNG/JPG without a DDS of the same name. Collected
+    // during the walk, sized from their headers after it, once the DDS set is complete.
+    let mut pngs: Vec<(String, PathBuf, u64)> = Vec::new();
+    let mut dds_stems: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut patch_files: Vec<PathBuf> = Vec::new();
     let found = walk(root, &|n| n == ".git" || n.eq_ignore_ascii_case("Source") || n == ".vs" || n.eq_ignore_ascii_case("obj"));
     for entry in &found {
         let md = &entry.meta;
@@ -171,31 +176,39 @@ fn inspect_folder(root: &Path) -> (Contents, ModFiles, u64) {
         let has_seg = |s: &str| segs[..segs.len().saturating_sub(1)].iter().any(|x| *x == s);
         if has_seg("assemblies") && ext == "dll" {
             c.assemblies += 1;
+            c.load.dll_bytes += md.len();
             if segs.last().map(|n| *n == "0harmony.dll").unwrap_or(false) {
                 c.bundles_harmony = true;
             }
             f.assemblies.push(rel_s.clone());
         } else if has_seg("patches") && ext == "xml" {
             c.patches += 1;
+            c.load.patch_bytes += md.len();
+            patch_files.push(entry.path.clone());
             f.patches.push(rel_s.clone());
         } else if has_seg("defs") && ext == "xml" {
             c.defs += 1;
+            c.load.def_bytes += md.len();
             f.defs.push(rel_s.clone());
         } else if has_seg("textures") && matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "dds" | "psd") {
-            if ext == "dds" {
-                c.dds += 1;
-            } else {
-                c.textures += 1;
-            }
             let stem = match rel_s.rfind('.') {
                 Some(i) => rel_s[..i].to_string(),
                 None => rel_s.clone(),
             };
+            if ext == "dds" {
+                c.dds += 1;
+                c.load.dds_bytes += md.len();
+                dds_stems.insert(stem.clone());
+            } else {
+                c.textures += 1;
+                pngs.push((stem.clone(), entry.path.clone(), md.len()));
+            }
             if !f.textures.last().map(|l| *l == stem).unwrap_or(false) {
                 f.textures.push(stem);
             }
         } else if has_seg("sounds") && matches!(ext.as_str(), "wav" | "ogg" | "mp3") {
             c.sounds += 1;
+            c.load.sound_bytes += md.len();
         } else if let Some(i) = segs.iter().position(|s| *s == "languages") {
             if let Some(lang) = segs.get(i + 1) {
                 language_dirs.insert(lang.to_string());
@@ -205,6 +218,21 @@ fn inspect_folder(root: &Path) -> (Contents, ModFiles, u64) {
     f.textures.sort();
     f.textures.dedup();
     c.languages = language_dirs.len() as u32;
+    for (stem, path, bytes) in pngs {
+        if dds_stems.contains(&stem) {
+            continue;
+        }
+        c.load.png_bytes += bytes;
+        c.load.png_pixels += crate::loadcost::image_pixels(&path).unwrap_or_else(|| crate::loadcost::pixels_from_bytes(bytes));
+    }
+    for p in patch_files {
+        if let Ok(xml) = std::fs::read_to_string(&p) {
+            let (ops, heavy) = crate::loadcost::count_patch_ops(&xml);
+            c.load.patch_ops += ops;
+            c.load.heavy_ops += heavy;
+        }
+    }
+    crate::loadcost::finish(&mut c);
     (c, f, newest)
 }
 

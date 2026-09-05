@@ -35,6 +35,25 @@ export interface Contents {
   languages: number;
   bundlesHarmony: boolean;
   sizeBytes: number;
+  /** What loading the mod costs the game, from the folder alone. */
+  load?: LoadCost;
+}
+
+/** The parts of a folder that cost loading time (facts) and the estimate made from them (a model). */
+export interface LoadCost {
+  defBytes: number;
+  patchBytes: number;
+  patchOps: number;
+  /** Operations whose XPath searches the whole document. */
+  heavyOps: number;
+  /** Pixels of PNG/JPG the game will decode: textures with no DDS beside them. */
+  pngPixels: number;
+  pngBytes: number;
+  ddsBytes: number;
+  dllBytes: number;
+  soundBytes: number;
+  /** Estimated milliseconds on a typical machine; only the ranking means much. */
+  scoreMs: number;
 }
 
 export interface ModInfo {
@@ -162,6 +181,8 @@ export interface Settings {
   updateDatabasesOnStart: boolean;
   /** Show the active list in HALO's phase sections rather than as the plain load order. */
   listByPhase: boolean;
+  /** Column widths dragged in the list, CSS px, by column key (`name`, `pkg`). */
+  columns?: Record<string, number>;
   dds: DdsSettings;
   launch: LaunchSettings;
 }
@@ -197,7 +218,38 @@ export interface UserData {
   collections?: TrackedCollection[];
   /** The default groups were given their automatic members once. */
   autoGroupsAdopted?: boolean;
+  /** Edits to HALO's classification made on the HALO page. */
+  halo?: HaloRules;
 }
+
+/** The user's own HALO rules: portable statements about mods, not folders. */
+export interface HaloRules {
+  /** packageId (lowercase) → phase. A per-mod Sort it as still wins. */
+  packagePhases: Record<string, Phase>;
+  /** Name contains (case-insensitive) → phase, first match wins. */
+  namePhases: NamePhase[];
+  /** Built-in rules switched off, by key. */
+  off: string[];
+  /** Built-in rules sent to another phase, by key. */
+  retarget: Record<string, Phase>;
+}
+
+export interface NamePhase {
+  needle: string;
+  phase: Phase;
+}
+
+/** One of HALO's built-in classification rules, in the order they are tried. */
+export interface BuiltinRule {
+  key: string;
+  signal: string;
+  detail: string;
+  phase: Phase;
+  ids: string[];
+  editable: boolean;
+}
+
+export const EMPTY_HALO: HaloRules = { packagePhases: {}, namePhases: [], off: [], retarget: {} };
 
 export interface Weight {
   packageId: string;
@@ -544,7 +596,7 @@ export interface ModFiles {
 }
 
 export const PHASES: { id: Phase; name: string; color: string; note: string }[] = [
-  { id: "prepatch", name: "Before the game", color: "violet", note: "Harmony, Prepatcher, loaders" },
+  { id: "prepatch", name: "Preloads", color: "violet", note: "Harmony, Prepatcher, loaders: before the game itself" },
   { id: "core", name: "Game and DLC", color: "blue", note: "RimWorld's own content" },
   { id: "framework", name: "Libraries", color: "teal", note: "Other mods build on these" },
   { id: "content", name: "Content", color: "green", note: "Things, pawns, biomes, rules" },
@@ -587,6 +639,13 @@ export function describeChange(c: ModChange): string {
   for (const r of c.reasons) if (r !== main && r !== "versionChange" && r !== "filesChanged") parts.push(REASON_LABEL[r]);
   return parts.join(" · ");
 }
+
+/** Bands for a mod's share of the list's estimated loading time. */
+export type LoadBand = "negligible" | "light" | "moderate" | "heavy" | "veryheavy";
+export function loadBand(share: number): LoadBand {
+  return share >= 0.05 ? "veryheavy" : share >= 0.02 ? "heavy" : share >= 0.005 ? "moderate" : share >= 0.001 ? "light" : "negligible";
+}
+export const LOAD_BAND_LABEL: Record<LoadBand, string> = { negligible: "Negligible", light: "Light", moderate: "Moderate", heavy: "Heavy", veryheavy: "Very heavy" };
 
 export function severityOf(i: Issue): Severity {
   switch (i.kind) {

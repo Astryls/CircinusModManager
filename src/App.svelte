@@ -14,6 +14,7 @@
   import AnalyzerView from "./components/AnalyzerView.svelte";
   import DownloadsView from "./components/DownloadsView.svelte";
   import TexturesView from "./components/TexturesView.svelte";
+  import HaloView from "./components/HaloView.svelte";
   import Toast from "./components/Toast.svelte";
   import ContextMenu from "./components/ContextMenu.svelte";
   import CollectionDialog from "./components/CollectionDialog.svelte";
@@ -53,6 +54,8 @@
     <div class="frame two"><Panel name="Sidebar"><Rail /></Panel><Panel name="Downloads"><DownloadsView /></Panel></div>
   {:else if store.view === "textures"}
     <div class="frame two"><Panel name="Sidebar"><Rail /></Panel><Panel name="Textures"><TexturesView /></Panel></div>
+  {:else if store.view === "halo"}
+    <div class="frame two"><Panel name="Sidebar"><Rail /></Panel><Panel name="HALO"><HaloView /></Panel></div>
   {:else}
     <div class="frame">
       <Panel name="Sidebar"><Rail /></Panel>

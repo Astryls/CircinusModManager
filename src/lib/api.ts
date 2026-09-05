@@ -1,6 +1,6 @@
 // Thin wrapper over Tauri's invoke, with a browser mock so the UI can run outside Tauri.
 
-import type { AddResult, AuditReport, CollectionPreview, DdsReport, ImportPreview, Issue, LaunchInfo, Locations, LogAnalysis, LogFile, ModFiles, ModTextures, QueueState, RentryPreview, RestoreResult, Rule, RulesFile, SavedList, Settings, Snapshot, SortResult, SteamCmdStatus, TestOutcome, TexState, UserData } from "./types";
+import type { AddResult, AuditReport, BuiltinRule, CollectionPreview, DdsReport, ImportPreview, Issue, LaunchInfo, Locations, LogAnalysis, LogFile, ModFiles, ModTextures, QueueState, RentryPreview, RestoreResult, Rule, RulesFile, SavedList, Settings, Snapshot, SortResult, SteamCmdStatus, TestOutcome, TexState, UserData } from "./types";
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -85,7 +85,8 @@ export const api = {
   ddsFix: (targets: [string, string[]][]) => invoke<DdsReport>("dds_fix", { targets }),
   importCollection: (text: string) => invoke<CollectionPreview>("import_collection", { text }),
   importRentry: (url: string) => invoke<RentryPreview>("import_rentry", { url }),
-  checkUpdates: () => invoke<number>("check_updates")
+  checkUpdates: () => invoke<number>("check_updates"),
+  haloRules: () => invoke<BuiltinRule[]>("halo_rules")
 };
 
 export async function listen<T>(event: string, handler: (payload: T) => void): Promise<() => void> {

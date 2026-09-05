@@ -63,7 +63,7 @@
     <select class="sel" value={autoAs} onchange={(e) => setAuto(e.currentTarget.value)}>
       <option value="">Nothing: members are chosen by hand</option>
       <option value="official">The game and its DLC</option>
-      {#each PHASES.filter((p) => p.id !== "core") as p}<option value="phase:{p.id}">What HALO files as {p.name.toLowerCase()}</option>{/each}
+      {#each PHASES.filter((p) => p.id !== "core") as p}<option value="phase:{p.id}">HALO: {p.name}</option>{/each}
       <option value="author">Mods by an author…</option>
     </select>
   </label>
@@ -76,14 +76,14 @@
   <label class="fld"><span>Sort members as</span>
     <select class="sel" value={sortAs} onchange={(e) => setSortAs(e.currentTarget.value)}>
       <option value="">Not by group</option>
-      {#each PHASES as p}<option value={p.id}>{p.name}</option>{/each}
+      {#each PHASES as p}<option value={p.id}>HALO: {p.name}</option>{/each}
       <option value="section">Own section</option>
     </select>
   </label>
   {#if group.section}
     <label class="fld"><span>Placed after</span>
       <select class="sel" value={group.phase ?? "content"} onchange={(e) => store.updateGroup(group.id, { phase: e.currentTarget.value as Phase })}>
-        {#each PHASES as p}<option value={p.id}>{p.name}</option>{/each}
+        {#each PHASES as p}<option value={p.id}>HALO: {p.name}</option>{/each}
       </select>
     </label>
     <p class="hint">Members sort together in a section of their own, right after the ordinary {after.name.toLowerCase()} mods. Rules between mods still hold. Up and Down set the order of sections that share a place.</p>

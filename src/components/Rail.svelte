@@ -12,6 +12,7 @@
     { id: "downloads", label: "Downloads", icon: I.cloud, count: () => store.queueCounts.queued || (store.downloads && !store.downloads.steamcmdInstalled && !store.downloads.installing ? "set up" : ""), att: true },
     { id: "textures", label: "Textures", icon: I.image, count: () => (store.tex?.running ? (store.tex.phase === "converting" && store.tex.progress.total ? `${Math.round((store.tex.progress.done / store.tex.progress.total) * 100)}%` : "busy") : store.ddsTotals.mods || ""), att: false },
     { id: "analyzer", label: "Analyzer", icon: I.analyze, count: () => store.stats.errors + store.stats.warnings, att: true },
+    { id: "halo", label: "HALO", icon: I.halo, count: () => Object.keys(store.halo.packagePhases).length + store.halo.namePhases.length + store.halo.off.length + Object.keys(store.halo.retarget).length || "" },
     { id: "settings", label: "Settings", icon: I.gear }
   ];
   let newGroup = $state(false);
@@ -35,7 +36,7 @@
     const r = g.auto;
     if (!r) return "";
     if (r.kind === "official") return "Fills itself with the game and its DLC";
-    if (r.kind === "phase") return `Fills itself with what HALO files as ${store.phaseInfo(r.phase).name.toLowerCase()}`;
+    if (r.kind === "phase") return `Fills itself with HALO: ${store.phaseInfo(r.phase).name}`;
     return r.name.trim() ? `Fills itself with mods by ${r.name.trim()}` : "Fills itself with mods by an author (none named yet)";
   }
   const pct = $derived(store.mods.length ? Math.round((store.active.length / store.mods.length) * 100) : 0);

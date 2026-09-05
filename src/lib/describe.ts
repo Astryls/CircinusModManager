@@ -1,5 +1,21 @@
 import type { Issue, ModInfo } from "./types";
 
+/** Where a mod's estimated loading time comes from: one clause per part that matters. */
+export function explainLoad(m: ModInfo): string[] {
+  const c = m.contents;
+  const l = c.load;
+  if (!l) return [];
+  const mb = (b: number) => `${(b / 1e6).toFixed(1)} MB`;
+  const out: string[] = [];
+  if (c.defs) out.push(`${c.defs} def file${c.defs === 1 ? "" : "s"} (${mb(l.defBytes)})`);
+  if (l.patchOps) out.push(`${l.patchOps} patch operation${l.patchOps === 1 ? "" : "s"}${l.heavyOps ? `, ${l.heavyOps} scanning the whole document` : ""}`);
+  if (l.pngPixels) out.push(`${(l.pngPixels / 1e6).toFixed(1)} megapixels of PNG to decode (${mb(l.pngBytes)})`);
+  if (l.ddsBytes) out.push(`${mb(l.ddsBytes)} of DDS`);
+  if (c.assemblies) out.push(`${c.assemblies} assembl${c.assemblies === 1 ? "y" : "ies"} (${mb(l.dllBytes)})`);
+  if (l.soundBytes) out.push(`${mb(l.soundBytes)} of sound`);
+  return out;
+}
+
 /** Human sentence for an issue, from the point of view of the mod it is attached to. */
 export function describe(i: Issue, byUid: Map<string, ModInfo>, viewer?: string): string {
   const n = (uid: string) => byUid.get(uid)?.name ?? uid;

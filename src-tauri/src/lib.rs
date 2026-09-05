@@ -74,6 +74,64 @@ pub fn run_scan(handle: AppHandle, st: Shared, full: bool) {
     }
 }
 
+/// First launch: most of the screen's work area, within sensible bounds, centred. Later
+/// launches: where the window was, as long as that spot is still on a monitor.
+fn place_window(w: &tauri::WebviewWindow, st: &Shared) {
+    use tauri::{LogicalPosition, LogicalSize};
+    let saved = st.lock().ok().and_then(|app| app.window_state());
+    let monitors = w.available_monitors().unwrap_or_default();
+    if let Some(s) = saved.filter(|s| s.width >= 900 && s.height >= 600) {
+        let on_screen = monitors.iter().any(|m| {
+            let sf = m.scale_factor();
+            let area = m.work_area();
+            let (mx, my) = (area.position.x as f64 / sf, area.position.y as f64 / sf);
+            let (mw, mh) = (area.size.width as f64 / sf, area.size.height as f64 / sf);
+            // Enough of the title bar inside the monitor to grab it.
+            (s.x as f64 + 80.0) < mx + mw && (s.x as f64 + s.width as f64 - 80.0) > mx && s.y as f64 >= my - 8.0 && (s.y as f64) < my + mh - 40.0
+        });
+        if on_screen {
+            let _ = w.set_size(LogicalSize::new(s.width as f64, s.height as f64));
+            let _ = w.set_position(LogicalPosition::new(s.x as f64, s.y as f64));
+            if s.maximized {
+                let _ = w.maximize();
+            }
+            return;
+        }
+    }
+    let Some(m) = w.current_monitor().ok().flatten().or_else(|| w.primary_monitor().ok().flatten()) else { return };
+    let sf = m.scale_factor();
+    let area = m.work_area();
+    let (aw, ah) = (area.size.width as f64 / sf, area.size.height as f64 / sf);
+    // Wide enough for the rail, the list with all its columns, and the inspector.
+    let width = (aw * 0.88).clamp(1180.0, 1880.0).min(aw - 16.0);
+    let height = (ah * 0.9).clamp(720.0, 1160.0).min(ah - 16.0);
+    let _ = w.set_size(LogicalSize::new(width, height));
+    let _ = w.center();
+}
+
+fn remember_window(w: &tauri::WebviewWindow, st: &Shared) {
+    let Ok(sf) = w.scale_factor() else { return };
+    let maximized = w.is_maximized().unwrap_or(false);
+    if maximized {
+        // Keep the last unmaximized geometry; only the flag changes.
+        if let Ok(app) = st.lock() {
+            let mut s = app.window_state().unwrap_or_default();
+            s.maximized = true;
+            if s.width == 0 {
+                s.width = 1440;
+                s.height = 900;
+            }
+            app.store_window_state(&s);
+        }
+        return;
+    }
+    let (Ok(pos), Ok(size)) = (w.outer_position(), w.inner_size()) else { return };
+    let state = state::WindowState { x: (pos.x as f64 / sf).round() as i32, y: (pos.y as f64 / sf).round() as i32, width: (size.width as f64 / sf).round() as u32, height: (size.height as f64 / sf).round() as u32, maximized: false };
+    if let Ok(app) = st.lock() {
+        app.store_window_state(&state);
+    }
+}
+
 pub fn run() {
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env().add_directive("circinus=info".parse().unwrap())).init();
 
@@ -93,6 +151,17 @@ pub fn run() {
             let dl = downloads::Downloads::start(app.handle().clone(), shared.clone());
             app.manage(dl);
             app.manage(textures::Textures::new(app.handle().clone(), shared.clone()));
+            // The window: where it was last time, else a size that suits this screen.
+            if let Some(w) = app.get_webview_window("main") {
+                place_window(&w, &shared);
+                let st = shared.clone();
+                let win = w.clone();
+                w.on_window_event(move |e| {
+                    if matches!(e, tauri::WindowEvent::CloseRequested { .. }) {
+                        remember_window(&win, &st);
+                    }
+                });
+            }
             // First scan in the background so the window appears immediately.
             let handle = app.handle().clone();
             let st = shared.clone();
@@ -110,6 +179,7 @@ pub fn run() {
             commands::deactivate,
             commands::halo,
             commands::validate,
+            commands::halo_rules,
             commands::save_mods_config,
             commands::import_list,
             commands::apply_import,

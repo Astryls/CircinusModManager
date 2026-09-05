@@ -1,9 +1,9 @@
 <script lang="ts">
   import { store } from "$lib/store.svelte";
   import { I, sevIcon } from "$lib/icons";
-  import { describe } from "$lib/describe";
+  import { describe, explainLoad } from "$lib/describe";
   import { api, assetUrl, openUrl, revealPath } from "$lib/api";
-  import { BAND_LABEL, PHASES, SOURCE_LABEL, describeChange, formatBytes, initials, severityOf, type Phase, type Rule } from "$lib/types";
+  import { BAND_LABEL, LOAD_BAND_LABEL, PHASES, SOURCE_LABEL, describeChange, formatBytes, initials, severityOf, type Phase, type Rule } from "$lib/types";
 
   const m = $derived(store.selectedMod);
   const placement = $derived(m ? store.placement(m.uid) : undefined);
@@ -184,6 +184,23 @@
         {:else}
           <div class="wmeta">No figures for this mod yet. A mod gets a figure after 25 clean runs from 10 players.</div>
         {/if}
+      </section>
+    {/if}
+
+    {#if m.contents.load}
+      {@const ld = store.loadOf(m.uid)}
+      <section class="card">
+        <h3>Loading time <span class="aside">estimated from the folder</span></h3>
+        <dl class="kv wkv">
+          {#if ld && store.activeSet.has(m.uid)}
+            <dt>Share of the list</dt><dd class="num"><b>{ld.share >= 0.0005 ? `${(ld.share * 100).toFixed(ld.share < 0.01 ? 2 : 1)} %` : "under 0.05 %"}</b> <span class="band {ld.band}">{LOAD_BAND_LABEL[ld.band]}</span></dd>
+            <dt>About</dt><dd class="num">{ld.ms >= 1000 ? `${(ld.ms / 1000).toFixed(1)} s` : `${ld.ms} ms`} of an estimated {store.loadTotalSeconds >= 60 ? `${(store.loadTotalSeconds / 60).toFixed(1)} min` : `${store.loadTotalSeconds.toFixed(0)} s`}</dd>
+          {:else}
+            <dt>About</dt><dd class="num">{m.contents.load.scoreMs >= 1000 ? `${(m.contents.load.scoreMs / 1000).toFixed(1)} s` : `${m.contents.load.scoreMs} ms`} if it were active</dd>
+          {/if}
+          <dt>From</dt><dd>{explainLoad(m).join(" · ") || "nothing that costs time"}</dd>
+        </dl>
+        <div class="wmeta">A ranking, not a stopwatch: Defs XML, patch operations (those that search the whole document cost far more), PNG textures without DDS, assemblies. Converting textures to DDS takes most of the texture part away.</div>
       </section>
     {/if}
 
