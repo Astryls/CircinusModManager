@@ -77,6 +77,36 @@ Single self-contained binaries; SteamCMD is downloaded on first use rather than 
 - While Circinus is open a watcher polls four mtimes every 8 s (the ACF, ModsConfig.xml, Mods/, the Workshop folder); a change triggers a cached re-read (about 150 ms for 2,000 mods), a toast, and a desktop notification via `tauri-plugin-notification` — so an update Steam applies while the game is starting is not missed.
 - SteamCMD is now visible from everywhere: a status chip in the title bar (not set up / ready / downloading / cooling down / failed), a **set up** hint in the sidebar, a Settings section with paths, **Test SteamCMD** (`+login anonymous +quit`, output in the log — on Windows this also proves the console-log tail works) and **Reinstall**, a first-run banner when the list has mods that are not installed, and **Re-download** on every Workshop mod in the Inspector and in the change list.
 
+## Subscribing through the Steam client
+
+SteamCMD downloads a Workshop item anonymously into `Mods/<workshop id>`; nothing keeps it
+updated and Steam never learns about it. Subscribing is the other half: the item goes to your
+subscriptions, Steam keeps it current, and it lands in the Workshop folder with everything else.
+
+**Circinus subscribes by opening the item's page in the Steam client** (`steam://url/CommunityFilePage/<id>`,
+the web page when no Steam installation is found) and says so plainly: *Steam has been asked;
+press Subscribe on each page.* It does not claim the mod is subscribed, because pressing the
+button is yours to do. What it does afterwards is watch Steam's own record —
+`appworkshop_294100.acf` — for a few minutes and report the moment the item really arrives (or
+really goes), then rescan. The other route, `ISteamUGC::SubscribeItem` through a helper binary
+linked against Valve's `steam_api64.dll`/`.so`, would subscribe with no press at all, but it needs
+that redistributable shipped with Circinus (Valve's SDK licence, not MIT, which is a decision the
+project has not taken), the client running and logged in as the account that owns RimWorld, and it
+fails in several silent ways that each have to be told apart and explained. Opening a page works
+everywhere, needs nothing installed, and never pretends. `steam://subscribe/…` handling exists in
+some client builds and is silently ignored in others, so it is not used.
+
+- Banner, when mods in your list are not installed: **Subscribe in Steam** beside **Download with
+  SteamCMD** — Steam keeps them updated; SteamCMD needs no client.
+- Right-click menu and Inspector: **Unsubscribe**, behind a confirmation that says Steam deletes
+  the mod's folder. Only items Steam actually lists are offered; a SteamCMD or hand-copied copy is
+  named as such instead, because Steam has nothing to remove.
+- A missing dependency that names its Workshop page gets its own **Subscribe in Steam**.
+- Commands: `steam_client_status()`, `subscription_state(ids)`, `subscribe_items(ids)`,
+  `unsubscribe_items(ids)`, `missing_workshop_ids()`. Steam gets eight pages at a time; the rest
+  are reported as not opened rather than silently dropped. Logic and its tests live in
+  `circinus-core::steam::client`.
+
 ## Launching the game
 
 Play starts RimWorld through Steam (`steam://rungameid/294100`) when the game folder is inside a Steam library, and otherwise runs the executable Circinus detects (`RimWorldWin64.exe`, `RimWorldMac.app`, `RimWorldLinux`). Settings → Launching RimWorld lets you force either method, pick the executable by hand (GOG, DRM-free, a copy outside Steam), add arguments such as `-popupwindow`, and choose whether unsaved changes to ModsConfig.xml are written first (default on). Non-standard folders — game, config, local mods, Workshop — are set in Settings → Where RimWorld lives.
@@ -98,7 +128,7 @@ Play starts RimWorld through Steam (`steam://rungameid/294100`) when the game fo
 ## Next milestones
 
 3b. Def/patch flattening (who wins each XML value) and a .NET NativeAOT sidecar that lists Harmony patch targets per assembly.
-4b. Instances/profiles, auto-update, Steam-client subscribe/unsubscribe.
+4b. Instances/profiles, auto-update.
 
 ## Data locations
 

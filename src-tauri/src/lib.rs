@@ -2,6 +2,7 @@ pub mod commands;
 pub mod downloads;
 pub mod logs;
 pub mod state;
+pub mod subscribe;
 pub mod textures;
 pub mod watch;
 
@@ -135,6 +136,11 @@ pub fn run() {
             commands::steamcmd_install,
             commands::steamcmd_status,
             commands::steamcmd_test,
+            subscribe::steam_client_status,
+            subscribe::subscription_state,
+            subscribe::missing_workshop_ids,
+            subscribe::subscribe_items,
+            subscribe::unsubscribe_items,
             commands::acknowledge_changes,
             commands::dds_state,
             commands::dds_overview,

@@ -22,6 +22,7 @@
   const flip = $derived(pos.x + 236 + 230 > (typeof innerWidth === "number" ? innerWidth : 1600));
   let open = $state<"sort" | "group" | "copy" | null>(null);
   let confirmDelete = $state(false);
+  let confirmUnsub = $state(false);
   let newGroup = $state(false);
   let newGroupName = $state("");
 
@@ -29,19 +30,22 @@
     const mm = store.menu;
     open = null;
     confirmDelete = false;
+    confirmUnsub = false;
     newGroup = false;
     if (!mm) return;
     pos = { x: mm.x, y: mm.y };
-    tick().then(() => {
-      if (!el) return;
-      // Keep the menu inside the window.
-      const r = el.getBoundingClientRect();
-      const x = Math.min(mm.x, innerWidth - r.width - 8);
-      const y = Math.min(mm.y, innerHeight - r.height - 8);
-      pos = { x: Math.max(8, x), y: Math.max(8, y) };
-      (el.querySelector("button") as HTMLElement | null)?.focus();
-    });
+    clamp().then(() => (el?.querySelector("button") as HTMLElement | null)?.focus());
   });
+
+  /** Keep the menu inside the window — also after it grows, as a confirmation makes it do. */
+  async function clamp() {
+    await tick();
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const x = Math.min(pos.x, innerWidth - r.width - 8);
+    const y = Math.min(pos.y, innerHeight - r.height - 8);
+    pos = { x: Math.max(8, x), y: Math.max(8, y) };
+  }
 
   function close() {
     store.menu = null;
@@ -78,6 +82,8 @@
   }
   const canDelete = $derived(mods.length > 0 && mods.every((x) => x.source !== "ludeon" && x.source !== "workshop"));
   const workshopOnly = $derived(mods.length > 0 && mods.every((x) => x.source === "workshop"));
+  /** Steam can only unsubscribe from what it put there, so only those are offered. */
+  const subscribed = $derived(mods.filter((x) => x.publishedFileId && x.source === "workshop" && store.subscriptions[x.publishedFileId] !== "absent"));
   const workshopUrl = (x: ModInfo) => (x.publishedFileId ? `https://steamcommunity.com/sharedfiles/filedetails/?id=${x.publishedFileId}` : x.url);
   const redownloadable = $derived(mods.filter((x) => x.publishedFileId && x.source !== "ludeon"));
 </script>
@@ -161,8 +167,13 @@
     {#if redownloadable.length}
       <button class="it" role="menuitem" title="Fetches a fresh copy from the Workshop with SteamCMD into your Mods folder. RimWorld prefers that copy over the Steam one." onclick={() => run(() => store.queueIds(redownloadable.map((x) => x.publishedFileId!)))}>{@html I.download}Force update: re-download{redownloadable.length > 1 ? ` (${redownloadable.length})` : ""}</button>
     {/if}
-    {#if workshopOnly && one?.publishedFileId}
-      <button class="it" role="menuitem" title="Steam owns this folder. This opens the mod's page in Steam, where Unsubscribe is one click; Steam then removes the folder." onclick={() => run(() => openUrl(`steam://url/CommunityFilePage/${one.publishedFileId}`))}>{@html I.minus}Unsubscribe on Steam…</button>
+    {#if workshopOnly && subscribed.length}
+      {#if confirmUnsub}
+        <button class="it danger" role="menuitem" onclick={() => run(() => store.unsubscribeIds(subscribed.map((x) => x.publishedFileId!)))}>{@html I.error}Yes, unsubscribe {one ? "it" : `${subscribed.length} mods`}</button>
+        <div class="foot">Steam deletes the mod's folder when you unsubscribe. Circinus cannot undo that; subscribing again downloads it afresh.</div>
+      {:else}
+        <button class="it danger" role="menuitem" title="Steam owns this folder. This opens the mod's page in Steam, where Unsubscribe is one press; Steam then deletes the folder." onclick={() => { confirmUnsub = true; clamp(); }}>{@html I.minus}Unsubscribe in Steam…</button>
+      {/if}
     {/if}
     {#if canDelete}
       {#if confirmDelete}

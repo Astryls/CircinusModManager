@@ -2,7 +2,7 @@
 // indexes for fast lookups, and the actions the components call.
 
 import { api, listen } from "./api";
-import type { CollectionPreview, Group, ImportPreview, Issue, ModChange, ModInfo, ModTextures, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamCmdStatus, TexState, TrackedCollection, UserData, Weight, LogAnalysis, LogFile, AuditReport } from "./types";
+import type { CollectionPreview, Group, ImportPreview, Issue, ItemState, ModChange, ModInfo, ModTextures, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamClientStatus, SteamCmdStatus, SubscribeOutcome, SubscriptionProgress, TexState, TrackedCollection, UserData, Weight, LogAnalysis, LogFile, AuditReport } from "./types";
 import { GROUP_COLORS, PHASES, primaryUid, severityOf, type Severity } from "./types";
 
 export type View = "order" | "library" | "downloads" | "textures" | "analyzer" | "settings";
@@ -40,6 +40,10 @@ class Store {
   /** Why the download manager could not be reached, when it could not. */
   downloadsError = $state<string | null>(null);
   steamcmd = $state<SteamCmdStatus | null>(null);
+  /** Whether the Steam client is here and running, for the actions that need it. */
+  steamClient = $state<SteamClientStatus | null>(null);
+  /** Workshop id → what Steam says about it, as far as we have looked. */
+  subscriptions = $state<Record<number, ItemState>>({});
   /** Texture optimisation job state (from `dds-progress`). */
   tex = $state<TexState | null>(null);
   texOverview = $state<ModTextures[]>([]);
@@ -219,6 +223,7 @@ class Store {
       await listen<string>("scan-error", (e) => this.say(e, "err"));
       await listen<QueueState>("download-progress", (q) => (this.downloads = q));
       await listen<TexState>("dds-progress", (t) => this.onTex(t));
+      await listen<SubscriptionProgress>("subscription-changed", (p) => this.onSubscription(p));
       log("event listeners ready");
     } catch (e) {
       log(`event listeners failed: ${e}`);
@@ -245,6 +250,7 @@ class Store {
     }
     this.refreshDownloads();
     this.refreshTextures();
+    this.refreshSteamClient();
   }
 
   private onTex(t: TexState) {
@@ -549,6 +555,74 @@ class Store {
       this.say("SteamCMD is ready");
     });
   }
+  // ---- subscriptions, through the Steam client ----
+  refreshSteamClient() {
+    api.steamClientStatus().then((s) => (this.steamClient = s)).catch((e) => console.warn("[circinus] steam_client_status:", e));
+  }
+  /** Remember what Steam says about these ids, so the UI can stop offering what is already done. */
+  async readSubscriptions(ids: number[]) {
+    if (!ids.length) return;
+    try {
+      const states = await api.subscriptionState(ids);
+      const next = { ...this.subscriptions };
+      for (const s of states) next[s.id] = s.state;
+      this.subscriptions = next;
+    } catch (e) {
+      console.warn("[circinus] subscription_state:", e);
+    }
+  }
+  /** What the outcome of a subscribe or unsubscribe request means, said as it is — in one
+   * sentence, because a second toast would replace the first before it could be read. */
+  private reportSubscribe(r: SubscribeOutcome, extra?: string) {
+    for (const s of r.states) this.subscriptions[s.id] = s.state;
+    const parts = [r.note];
+    if (r.skipped.length) parts.push(`${r.skipped.length} left alone: ${r.skipped.slice(0, 2).map(([id, why]) => `${id} — ${why}`).join("; ")}`);
+    if (r.failed.length) parts.push(`${r.failed.length} could not be opened`);
+    if (extra) parts.push(extra);
+    this.say(parts.join(" · "), r.failed.length ? "err" : r.opened.length ? "ok" : "warn");
+    this.steamClient = r.client;
+  }
+  /** Open the Steam page for each id so the user can subscribe. Steam, not Circinus, decides. */
+  async subscribeIds(ids: number[]) {
+    if (!ids.length) return;
+    return this.run("Asking Steam…", async () => {
+      const r = await api.subscribeItems(ids);
+      this.reportSubscribe(r);
+      return r;
+    });
+  }
+  /** The same page, to unsubscribe. Steam deletes the folder; the caller confirms first. */
+  async unsubscribeIds(ids: number[]) {
+    if (!ids.length) return;
+    return this.run("Asking Steam…", async () => {
+      const r = await api.unsubscribeItems(ids);
+      this.reportSubscribe(r);
+      return r;
+    });
+  }
+  /** Subscribe to everything in the list that is not installed and has a Workshop id. */
+  async subscribeMissing() {
+    return this.run("Resolving missing mods…", async () => {
+      const [ids, unresolved] = await api.missingWorkshopIds();
+      if (!ids.length) {
+        this.say(unresolved.length ? `No Workshop id is known for ${unresolved.length === 1 ? "that mod" : "those mods"}: ${unresolved.slice(0, 3).join(", ")}` : "Nothing is missing", "warn");
+        return;
+      }
+      const r = await api.subscribeItems(ids);
+      this.reportSubscribe(r, unresolved.length ? `${unresolved.length} more ${unresolved.length === 1 ? "is" : "are"} not in the Steam database: ${unresolved.slice(0, 3).join(", ")}` : undefined);
+      return r;
+    });
+  }
+  /** Steam's record caught up with what the user pressed. */
+  private onSubscription(p: SubscriptionProgress) {
+    const next = { ...this.subscriptions };
+    for (const s of p.states) next[s.id] = s.state;
+    this.subscriptions = next;
+    if (!p.settled) return;
+    const n = p.states.length;
+    this.say(p.want === "subscribe" ? `Steam has ${n === 1 ? "the mod" : `all ${n} mods`}. Rescanning` : `Steam removed ${n === 1 ? "the mod" : `${n} mods`}. Rescanning`);
+  }
+
   testSteamCmd() {
     return this.run("Testing SteamCMD…", async () => {
       const t = await api.steamcmdTest();

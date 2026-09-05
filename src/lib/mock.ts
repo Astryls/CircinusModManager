@@ -186,6 +186,8 @@ function issues(order: string[]): Issue[] {
   if (has("voult.betterpawncontrol") && has("oskarpotocki.vanillafactionsexpanded.core") && idx("voult.betterpawncontrol") < idx("oskarpotocki.vanillafactionsexpanded.core"))
     out.push({ kind: "orderViolation", uid: uidOf("voult.betterpawncontrol"), targetUid: uidOf("oskarpotocki.vanillafactionsexpanded.core"), rule: "loadAfter", source: "community", comment: "BPC patches VEF work tabs" });
   if (has("bs.performance") && has("razuhl.rimmsqol")) out.push({ kind: "incompatible", uid: uidOf("razuhl.rimmsqol"), otherUid: uidOf("bs.performance"), source: "about" });
+  // A dependency that is not installed but names its Workshop page: the Subscribe action's case.
+  if (has("ceteam.combatextended")) out.push({ kind: "missingDependency", uid: uidOf("ceteam.combatextended"), dependency: "some.missing.mod", displayName: "Some Missing Mod", workshopUrl: "https://steamcommunity.com/sharedfiles/filedetails/?id=999" });
   for (const m of mods) if (order.includes(m.uid) && m.source !== "ludeon" && !m.supportedVersions.includes("1.6")) out.push({ kind: "versionMismatch", uid: m.uid, supported: m.supportedVersions });
   if (has("krkr.rocketman")) {
     const after = order.slice(idx("krkr.rocketman") + 1).filter((u) => phaseOfSeed[u] !== "optimization");
@@ -294,6 +296,25 @@ const queue = {
   log: ["Batch of 3 (batch size 12)", "Loading Steam API...OK", "Connecting anonymously to Steam Public...OK", "Waiting for client config...OK", "Downloading item 818773962 ..."]
 } as const;
 
+/** The Steam client as the preview pretends it is: running, unless the page asks for ?nosteam. */
+function steamClient() {
+  const running = !(typeof location !== "undefined" && location.search.includes("nosteam"));
+  return {
+    installed: true,
+    running,
+    steamDir: "C:\\Program Files (x86)\\Steam",
+    recordsFound: true,
+    detail: running ? "Steam is running, so a Workshop link opens straight away." : "Steam is installed but not running. Opening a Workshop link starts it, which takes a moment."
+  };
+}
+
+/** Workshop mods in the example data came from a subscription; SteamCMD ones did not. */
+function subState(id: number): "subscribed" | "installed" | "absent" {
+  const seed = SEED.find((s) => Number(s[3]) === id);
+  if (!seed) return "absent";
+  return seed[4] === "workshop" ? "subscribed" : seed[4] === "steamcmd" || seed[4] === "local" ? "installed" : "absent";
+}
+
 export async function invoke<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
   await new Promise((r) => setTimeout(r, 30));
   const A = args as Record<string, any>;
@@ -386,6 +407,29 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
       return { installed: !(typeof location !== "undefined" && location.search.includes("nosteamcmd")), installing: false, root: "C:\\Users\\Player\\AppData\\Local\\Circinus\\steamcmd", exe: "C:\\Users\\Player\\AppData\\Local\\Circinus\\steamcmd\\steamcmd\\steamcmd.exe", downloadsDir: "C:\\Users\\Player\\AppData\\Local\\Circinus\\steamcmd\\steam\\steamapps\\workshop\\content\\294100", consoleLog: "C:\\Users\\Player\\AppData\\Local\\Circinus\\steamcmd\\steamcmd\\logs\\console_log.txt", consoleLogBytes: 48211, modsDir: "C:\\RimWorld\\Mods", workshopDir: "C:\\Steam\\steamapps\\workshop\\content\\294100", queued: 3, running: true, paused: false, batchSize: 12, cooldownUntil: null } as T;
     case "steamcmd_test":
       return { loggedIn: true, lines: 14, stalled: false, exitCode: 0, seconds: 4 } as T;
+    // Subscriptions: ?nosteam pretends the client is not running, the other honest case.
+    case "steam_client_status":
+      return steamClient() as T;
+    case "subscription_state":
+      return (A.ids as number[]).map((id) => ({ id, state: subState(id), timeUpdated: subState(id) === "subscribed" ? 1_756_500_000 : undefined })) as T;
+    case "missing_workshop_ids":
+      return [[999], ["some.missing.mod"]] as T;
+    case "subscribe_items":
+    case "unsubscribe_items": {
+      const ids = A.ids as number[];
+      const client = steamClient();
+      const sub = cmd === "subscribe_items";
+      const open = ids.filter((id) => (sub ? subState(id) !== "subscribed" : subState(id) === "subscribed")).slice(0, 8);
+      const skipped: [number, string][] = ids.filter((id) => !open.includes(id)).map((id) => [id, sub ? "Steam already has this one" : "Steam does not list this one, so there is nothing to unsubscribe from"]);
+      const pages = open.length === 1 ? "the page" : `${open.length} pages`;
+      const start = client.running ? "" : "Steam is not running, so it starts first. ";
+      const note = open.length
+        ? sub
+          ? `${start}Steam has been asked for ${pages}. Press Subscribe on each; the mod appears here once Steam has downloaded it.`
+          : `${start}Steam has been asked for ${pages}. Press Unsubscribe on each; Steam then deletes the mod's folder.`
+        : "Nothing to open.";
+      return { opened: open, skipped, failed: [], note, client, states: ids.map((id) => ({ id, state: subState(id) })) } as T;
+    }
     case "acknowledge_changes":
       acknowledged = true;
       return snapshot() as T;
