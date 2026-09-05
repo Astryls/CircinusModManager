@@ -1,8 +1,8 @@
 // Browser-only stand-in for the Rust backend: lets `npm run dev` show the UI with example data.
 // Nothing here ships in the Tauri build path (api.ts only imports it outside Tauri).
 
-import type { BuiltinRule, Issue, ModChange, ModInfo, Phase, Placement, QueueState, Rule, Snapshot, SortResult, Source, TexState, UserData, Weight, Settings } from "./types";
-import { PHASES } from "./types";
+import type { BuiltinRule, Issue, ModChange, ModInfo, ModPatchDetail, ModPatches, PatchJob, PatchReport, PatchSummary, PatchTarget, Patcher, Phase, Placement, QueueState, Rule, Snapshot, SortResult, Source, TargetGroup, TexState, UserData, Weight, Settings } from "./types";
+import { PHASES, patchTargetName } from "./types";
 
 type Seed = [name: string, author: string, pkg: string, pfid: string | null, src: Source, phase: Phase, group: string, ver: string[], size: number, flags?: string];
 
@@ -294,6 +294,198 @@ let ddsIndex: Record<string, Snapshot["dds"][string]> = Object.fromEntries(
   })
 );
 let tex: TexState = { running: false, phase: "idle", progress: { total: 0, done: 0, converted: 0, failed: 0, pngBytes: 0, ddsBytes: 0, current: "" }, startedAt: 0, finishedAt: 0, errors: [], report: null };
+
+// ---- code patches --------------------------------------------------------------------------
+// A stand-in for what the Harmony scanner reports: a few methods several mods fight over, the
+// long tail every code mod adds, and the places static reading cannot follow.
+
+/** [target, kind, priority, declaringType, method]; the target reads `Namespace.Type::Method`. */
+type MockPatch = [string, string, (number | null)?, string?, string?];
+
+const PATCH_SEED: [pkg: string, harmonyId: string, patches: MockPatch[], manual: [string, string, string][]][] = [
+  ["brrainz.harmony", "brrainz.harmony", [["Verse.Root::Start", "prefix", 800, "HarmonyMod.Bootstrap", "Prefix"]], []],
+  [
+    "unlimitedhugs.hugslib",
+    "unlimitedhugs.hugslib",
+    [
+      ["Verse.Game::FinalizeInit", "postfix", null, "HugsLib.Patches.Game_FinalizeInit", "Postfix"],
+      ["RimWorld.Pawn_JobTracker::StartJob", "postfix", null, "HugsLib.Patches.JobTracker", "Postfix"],
+      ["RimWorld.MainMenuDrawer::DoMainMenuControls", "postfix", null, "HugsLib.Patches.MainMenu", "Postfix"],
+      ["Verse.Root_Play::SetupForQuickTestPlay", "prefix", null, "HugsLib.Patches.QuickStart", "Prefix"]
+    ],
+    [["HugsLib.HugsLibController", "EarlyInitialize", "PatchAll() over the calling assembly"]]
+  ],
+  [
+    "oskarpotocki.vanillafactionsexpanded.core",
+    "oskarpotocki.vanillafactionsexpanded",
+    [
+      ["Verse.Pawn_HealthTracker::PreApplyDamage", "prefix", 600, "VFECore.Patch_PreApplyDamage", "Prefix"],
+      ["Verse.Pawn::SpawnSetup", "postfix", null, "VFECore.Patch_SpawnSetup", "Postfix"],
+      ["Verse.Game::FinalizeInit", "postfix", null, "VFECore.Patch_FinalizeInit", "Postfix"],
+      ["Verse.Thing::get_MarketValue", "postfix", null, "VFECore.Patch_MarketValue", "Postfix"],
+      ["RimWorld.Building_Bed::GetGizmos", "postfix", null, "VFECore.Patch_BedGizmos", "Postfix"],
+      ["Verse.GenSpawn::Spawn", "postfix", null, "VFECore.Patch_GenSpawn", "Postfix"],
+      ["Verse.Pawn::.ctor", "postfix", null, "VFECore.Patch_PawnCtor", "Postfix"]
+    ],
+    []
+  ],
+  [
+    "smashphil.vehicleframework",
+    "smashphil.vehicleframework",
+    [
+      ["Verse.PathFinder::FindPath", "transpiler", null, "Vehicles.PathingPatches", "Transpiler"],
+      ["Verse.GenGrid::Walkable", "prefix", 400, "Vehicles.GridPatches", "Prefix"],
+      ["Verse.MapDrawer::DrawMapMesh", "postfix", null, "Vehicles.RenderPatches", "Postfix"],
+      ["Verse.Thing::set_Position", "prefix", null, "Vehicles.PositionPatches", "Prefix"]
+    ],
+    []
+  ],
+  [
+    "ceteam.combatextended",
+    "ceteam.combatextended",
+    [
+      ["Verse.Pawn_HealthTracker::PreApplyDamage", "prefix", null, "CombatExtended.HarmonyCE.Harmony_PreApplyDamage", "Prefix"],
+      ["Verse.DamageWorker_AddInjury::ApplyDamageToPart", "transpiler", null, "CombatExtended.HarmonyCE.Harmony_ApplyDamageToPart", "Transpiler"],
+      ["Verse.AI.JobGiver_Work::TryGiveJob", "transpiler", null, "CombatExtended.HarmonyCE.Harmony_JobGiver_Work", "Transpiler"],
+      ["Verse.Pawn::Tick", "postfix", null, "CombatExtended.HarmonyCE.Harmony_Pawn", "Postfix"],
+      ["RimWorld.Projectile_Explosive::Impact", "prefix", null, "CombatExtended.HarmonyCE.Harmony_Impact", "Prefix"],
+      ["Verse.Thing::get_MarketValue", "postfix", null, "CombatExtended.HarmonyCE.Harmony_MarketValue", "Postfix"],
+      ["RimWorld.WorkGiver_Scanner::HasJobOnThing", "prefix", null, "CombatExtended.HarmonyCE.Harmony_WorkGiver", "Prefix"]
+    ],
+    [["CombatExtended.HarmonyCE.HarmonyBase", ".cctor", "Patch(…) called with a computed target"]]
+  ],
+  [
+    "mehni.pickupandhaul",
+    "mehni.pickupandhaul",
+    [
+      ["Verse.AI.JobGiver_Work::TryGiveJob", "transpiler", null, "PickUpAndHaul.HarmonyPatches", "Transpiler"],
+      ["Verse.AI.Toils_Haul::StartCarryThing", "prefix", null, "PickUpAndHaul.HarmonyPatches", "Prefix"],
+      ["RimWorld.WorkGiver_Scanner::HasJobOnThing", "postfix", null, "PickUpAndHaul.HarmonyPatches", "Postfix"]
+    ],
+    []
+  ],
+  [
+    "krkr.rocketman",
+    "krkr.rocketman",
+    [
+      ["Verse.Pawn::Tick", "prefix", 800, "RocketMan.Optimizations.Pawn_Tick", "Prefix"],
+      ["Verse.GenGrid::Walkable", "transpiler", null, "RocketMan.Optimizations.GenGrid", "Transpiler"],
+      ["Verse.TickManager::DoSingleTick", "prefix", null, "RocketMan.Optimizations.TickManager", "Prefix"],
+      ["Verse.MapDrawer::DrawMapMesh", "prefix", null, "RocketMan.Optimizations.MapDrawer", "Prefix"],
+      ["RimWorld.CompRefuelable::CompTick", "prefix", null, "RocketMan.Optimizations.Refuelable", "Prefix"]
+    ],
+    []
+  ],
+  [
+    "bs.performance",
+    "bs.performancefish",
+    [
+      ["Verse.Pawn::Tick", "prefix", 600, "PerformanceFish.Pawns.PawnTick", "Prefix"],
+      ["Verse.GenGrid::Walkable", "transpiler", null, "PerformanceFish.Pathfinding.GenGridCaching", "Transpiler"],
+      ["Verse.PathFinder::FindPath", "transpiler", null, "PerformanceFish.Pathfinding.PathFinderCaching", "Transpiler"],
+      ["Verse.DefDatabase`1::AddAllInMods", "prefix", null, "PerformanceFish.Defs.DefDatabaseCaching", "Prefix"],
+      ["Verse.Thing::get_MarketValue", "prefix", null, "PerformanceFish.Things.MarketValueCaching", "Prefix"]
+    ],
+    []
+  ],
+  [
+    "dubwise.dubsperformanceanalyzer",
+    "dubwise.dubsanalyzer",
+    [
+      ["Verse.TickManager::DoSingleTick", "transpiler", null, "Analyzer.Profiling.H_TickManager", "Transpiler"],
+      ["Verse.Game::FinalizeInit", "postfix", null, "Analyzer.Profiling.H_FinalizeInit", "Postfix"]
+    ],
+    [["Analyzer.Profiling.MethodTransplanting", "PatchMethods", "Patch(…) called with a target built at runtime"]]
+  ],
+  [
+    "orion.hospitality",
+    "orion.hospitality",
+    [
+      ["RimWorld.Pawn_JobTracker::StartJob", "prefix", null, "Hospitality.Patches.JobTracker_Patch", "Prefix"],
+      ["Verse.Pawn::SpawnSetup", "postfix", null, "Hospitality.Patches.Pawn_Patch", "Postfix"],
+      ["Verse.Game::FinalizeInit", "postfix", null, "Hospitality.Patches.Game_Patch", "Postfix"],
+      ["RimWorld.Building_Bed::GetGizmos", "postfix", null, "Hospitality.Patches.Bed_Patch", "Postfix"]
+    ],
+    []
+  ],
+  [
+    "voult.betterpawncontrol",
+    "voult.betterpawncontrol",
+    [
+      ["RimWorld.Pawn_JobTracker::StartJob", "prefix", 500, "BetterPawnControl.Patches.JobTracker", "Prefix"],
+      ["RimWorld.Pawn_JobTracker::EndCurrentJob", "postfix", null, "BetterPawnControl.Patches.JobTracker", "Postfix"]
+    ],
+    []
+  ],
+  [
+    "razuhl.rimmsqol",
+    "razuhl.rimmsqol",
+    [
+      ["Verse.DefDatabase`1::AddAllInMods", "prefix", 900, "RIMMSqol.DefPatches", "Prefix"],
+      ["Verse.Pawn_HealthTracker::AddHediff", "prefix", null, "RIMMSqol.HealthPatches", "Prefix"]
+    ],
+    [["RIMMSqol.QolBootstrap", "Apply", "Patch(…) called with a computed target"]]
+  ],
+  ["void.charactereditor", "void.charactereditor", [["Verse.Pawn::.ctor", "postfix", null, "CharacterEditor.PawnCtor", "Postfix"], ["Verse.Pawn_HealthTracker::AddHediff", "postfix", null, "CharacterEditor.Health", "Postfix"]], []],
+  ["jaxe.rimhud", "jaxe.rimhud", [["Verse.MapDrawer::DrawMapMesh", "postfix", null, "RimHUD.Patch.MapDrawer", "Postfix"], ["Verse.Pawn::SpawnSetup", "postfix", null, "RimHUD.Patch.Pawn", "Postfix"]], []],
+  ["jaxe.bubbles", "jaxe.bubbles", [["Verse.MapDrawer::DrawMapMesh", "postfix", null, "Bubbles.Patch.MapDrawer", "Postfix"]], []],
+  ["unlimitedhugs.allowtool", "unlimitedhugs.allowtool", [["RimWorld.WorkGiver_Scanner::HasJobOnThing", "postfix", null, "AllowTool.Patches.WorkGiver", "Postfix"], ["Verse.AI.Toils_Haul::StartCarryThing", "postfix", null, "AllowTool.Patches.Toils", "Postfix"]], []],
+  ["brrainz.cameraplus", "brrainz.cameraplus", [["Verse.MapDrawer::DrawMapMesh", "prefix", null, "CameraPlus.Patches", "Prefix"]], []],
+  ["dubwise.dubsbadhygiene", "dubwise.badhygiene", [["Verse.GenSpawn::Spawn", "postfix", null, "DubsBadHygiene.Patches.GenSpawn", "Postfix"], ["RimWorld.CompRefuelable::CompTick", "postfix", null, "DubsBadHygiene.Patches.Refuelable", "Postfix"]], []],
+  ["telardo.graphicssettings", "telardo.graphicssettings", [["Verse.MapDrawer::DrawMapMesh", "transpiler", null, "GraphicsSettings.Patches", "Transpiler"]], []],
+  ["zetrith.prepatcher", "zetrith.prepatcher", [["Verse.Root::Start", "prefix", 900, "Prepatcher.Bootstrap", "Prefix"]], []]
+];
+
+/** `Verse.Pawn::get_HitPoints` back into the fields the scanner reports. */
+function mockTarget(target: string, kind: string, priority: number | null, declaring: string, method: string): PatchTarget {
+  const [type, raw] = target.split("::");
+  const targetKind = raw === ".ctor" ? "constructor" : raw === ".cctor" ? "staticConstructor" : raw.startsWith("get_") ? "getter" : raw.startsWith("set_") ? "setter" : "normal";
+  const targetMethod = targetKind === "constructor" || targetKind === "staticConstructor" ? null : raw.replace(/^(get|set)_/, "");
+  return { declaringType: declaring, method, kind, targetType: type, targetMethod, targetKind, argumentTypes: null, priority, before: [], after: [], source: "attribute" };
+}
+
+/** The report the backend would build: per mod, per method, contested first. */
+function patchReport(): PatchReport {
+  const perMod: ModPatches[] = [];
+  const byTarget = new Map<string, Patcher[]>();
+  for (const [pkg, harmonyId, patches, manual] of PATCH_SEED) {
+    const m = mods.find((x) => x.packageId === pkg);
+    if (!m || !active.includes(m.uid)) continue;
+    const row: ModPatches = { uid: m.uid, name: m.name, assemblies: 1, patches: patches.length, prefixes: 0, postfixes: 0, transpilers: 0, manual: manual.length, harmonyIds: [harmonyId], unreadable: [] };
+    for (const [target, kind, priority, declaring, method] of patches) {
+      if (kind === "prefix") row.prefixes++;
+      else if (kind === "postfix") row.postfixes++;
+      else if (kind === "transpiler") row.transpilers++;
+      const list = byTarget.get(target) ?? [];
+      list.push({ uid: m.uid, modName: m.name, kind, declaringType: declaring ?? "", method: method ?? "", priority: priority ?? null, before: [], after: [] });
+      byTarget.set(target, list);
+    }
+    perMod.push(row);
+  }
+  // One mod prefixing its own target twice is its own business; two mods is a fight.
+  const targets: TargetGroup[] = [...byTarget.entries()].map(([target, patchers]) => ({ target, patchers, contested: new Set(patchers.filter((p) => p.kind === "prefix" || p.kind === "transpiler").map((p) => p.uid)).size > 1 }));
+  targets.sort((a, b) => Number(b.contested) - Number(a.contested) || b.patchers.length - a.patchers.length || a.target.localeCompare(b.target));
+  perMod.sort((a, b) => b.patches - a.patches || a.name.localeCompare(b.name));
+  return { perMod, targets, contested: targets.filter((t) => t.contested).length, scanned: perMod.length };
+}
+
+function patchSummary(r: PatchReport): PatchSummary {
+  return { mods: r.perMod.length, assemblies: r.perMod.reduce((n, m) => n + m.assemblies, 0), targets: r.targets.length, contested: r.contested, unreadable: 0, seconds: 4 };
+}
+
+/** Mock: the scanner is present, and one run has already finished. */
+let patchJob: PatchJob = { running: false, phase: "idle", done: 0, total: 0, current: "", startedAt: 1_757_009_996, finishedAt: 1_757_010_000, cancelled: false, error: null, summary: patchSummary(patchReport()) };
+let patchDone = true;
+
+function patchesForMod(uid: string): ModPatchDetail | null {
+  const report = patchReport();
+  const summary = report.perMod.find((m) => m.uid === uid);
+  if (!summary) return null;
+  const seed = PATCH_SEED.find(([pkg]) => mods.find((m) => m.packageId === pkg)?.uid === uid);
+  const targets = (seed?.[2] ?? []).map(([t, k, p, d, me]) => mockTarget(t, k, p ?? null, d ?? "", me ?? "")).sort((a, b) => patchTargetName(a).localeCompare(patchTargetName(b)));
+  const manual = (seed?.[3] ?? []).map(([declaringType, method, detail]) => ({ declaringType, method, detail }));
+  return { summary, targets, manual, contested: report.targets.filter((t) => t.contested && t.patchers.some((p) => p.uid === uid)) };
+}
 
 let acknowledged = false;
 function changes(): ModChange[] {
@@ -855,6 +1047,29 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
     case "defs_def":
       if (!defsState.report) throw new Error("Nothing has been merged yet. Run it first, then ask.");
       return defTree(String(A.defType), String(A.defName)) as T;
+    case "patches_scanner":
+      // A missing scanner is worth seeing too: ?noscanner shows what the view says without it.
+      return (typeof location !== "undefined" && location.search.includes("noscanner") ? null : "C:\\Users\\Player\\AppData\\Local\\Circinus\\harmony-scan.exe") as T;
+    case "patches_status":
+      return structuredClone(patchJob) as T;
+    case "patches_stop":
+      patchJob = { ...patchJob, running: false, phase: "idle", cancelled: true, finishedAt: Math.floor(Date.now() / 1000) };
+      return undefined as T;
+    case "patches_start": {
+      const r = patchReport();
+      const total = r.perMod.reduce((n, m) => n + m.assemblies, 0);
+      patchJob = { running: true, phase: "scanning", done: Math.floor(total / 3), total, current: "CombatExtended.dll", startedAt: Math.floor(Date.now() / 1000), finishedAt: 0, cancelled: false, error: null, summary: null };
+      setTimeout(() => {
+        patchDone = true;
+        patchJob = { ...patchJob, running: false, phase: "idle", done: total, current: "", finishedAt: Math.floor(Date.now() / 1000), summary: patchSummary(r) };
+      }, 1200);
+      return undefined as T;
+    }
+    case "patches_report":
+      // A finished run in the mock, so the view has something to show on the first look.
+      return (patchDone || !patchJob.running ? patchReport() : null) as T;
+    case "patches_for_mod":
+      return patchesForMod(A.uid as string) as T;
     case "import_collection":
       return { ids: [2009463077, 818773962, 999], installed: [[2009463077, uidOf("brrainz.harmony")], [818773962, uidOf("unlimitedhugs.hugslib")]], missing: [999], names: { "2009463077": "Harmony", "818773962": "HugsLib", "999": "Some Missing Mod" } } as T;
     case "import_rentry":

@@ -2,10 +2,11 @@
 // indexes for fast lookups, and the actions the components call.
 
 import { api, listen } from "./api";
-import type { BuiltinRule, CollectionPreview, DefMatch, DefQuery, DefTree, DefsState, Group, HaloRules, ImportPreview, Issue, ModChange, ModInfo, ModTextures, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamCmdStatus, TexState, TrackedCollection, UserData, Weight, LogAnalysis, LogFile, AuditReport } from "./types";
+import type { AuditReport, BuiltinRule, CollectionPreview, DefMatch, DefQuery, DefsState, DefTree, Group, HaloRules, ImportPreview, Issue, LogAnalysis, LogFile, ModChange, ModInfo, ModPatchDetail, ModTextures, PatchJob, PatchReport, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamCmdStatus, TexState, TrackedCollection, UserData, Weight } from "./types";
 import { EMPTY_HALO, GROUP_COLORS, PHASES, loadBand, primaryUid, severityOf, type LoadBand, type Severity } from "./types";
 
-export type View = "order" | "library" | "downloads" | "textures" | "analyzer" | "defs" | "halo" | "settings";
+export type View = "order" | "library" | "downloads" | "textures" | "defs" | "patches" | "analyzer" | "halo" | "settings";
+
 export type Tab = "active" | "inactive" | "all";
 /** What the list is narrowed to: mods with errors, warnings, HALO notes, conflicts, changes, or moves. */
 export type ShowOnly = "attention" | "error" | "warning" | "note" | "conflict" | "collision" | "heavy" | "slow" | "changed" | "moved" | null;
@@ -45,6 +46,11 @@ class Store {
   texOverview = $state<ModTextures[]>([]);
   /** Last DDS audit: foreign files the game will refuse. */
   audit = $state<AuditReport | null>(null);
+  /** The Harmony scan job (from `patch-progress`), what it found, and where the scanner is.
+   *  `patchScanner` is undefined until it has been asked for, then a path or null. */
+  patchJob = $state<PatchJob | null>(null);
+  patchReport = $state<PatchReport | null>(null);
+  patchScanner = $state<string | null | undefined>(undefined);
   /** Notices closed for this session (they come back next launch if still true). */
   dismissed = $state<string[]>([]);
   /** uid → the list should scroll to it on the next render. */
@@ -298,6 +304,7 @@ class Store {
       await listen<QueueState>("download-progress", (q) => (this.downloads = q));
       await listen<TexState>("dds-progress", (t) => this.onTex(t));
       await listen<DefsState>("defs-progress", (d) => this.onDefs(d));
+      await listen<PatchJob>("patch-progress", (j) => this.onPatchJob(j));
       log("event listeners ready");
     } catch (e) {
       log(`event listeners failed: ${e}`);
@@ -339,6 +346,9 @@ class Store {
     }
     this.refreshDownloads();
     this.refreshTextures();
+    // Cheap when nothing has been scanned, and it is what puts a Patches section in the
+    // Inspector without the user having opened the Patches view first.
+    this.refreshPatches();
   }
 
   private announceChanges(snap: Snapshot) {
@@ -524,6 +534,60 @@ class Store {
       this.defsQuery = null;
       this.defsError = String(e);
     }
+  }
+
+  // ---- code patches ----
+  /** A finished run leaves the report to be fetched; a stopped one keeps whatever it had. */
+  private onPatchJob(j: PatchJob) {
+    const was = this.patchJob;
+    this.patchJob = j;
+    if (was?.running && !j.running && !j.error) {
+      const s = j.summary;
+      if (s) this.say(j.cancelled ? `Stopped after ${s.assemblies} assemblies` : s.contested ? `${s.contested} method${s.contested === 1 ? " is" : "s are"} patched by more than one mod, out of ${s.targets.toLocaleString()} patched in all` : `${s.targets.toLocaleString()} patched methods, none contested`, j.cancelled || s.contested ? "warn" : "ok");
+      this.loadPatchReport();
+    }
+  }
+  /** Ask where the scanner is and what the last run found. Safe to call more than once. */
+  async refreshPatches() {
+    try {
+      this.patchScanner = await api.patchesScanner();
+    } catch {
+      this.patchScanner = null;
+    }
+    if (this.patchScanner == null) return;
+    api.patchesStatus().then((j) => (this.patchJob = j)).catch(() => {});
+    if (!this.patchReport) await this.loadPatchReport();
+  }
+  private async loadPatchReport() {
+    try {
+      this.patchReport = await api.patchesReport();
+    } catch (e) {
+      console.warn("[circinus] patches_report failed", e);
+    }
+  }
+  scanPatches() {
+    return this.run("Reading assemblies…", async () => {
+      await api.patchesStart();
+      this.patchJob = await api.patchesStatus();
+      this.view = "patches";
+    });
+  }
+  stopPatches() {
+    api.patchesStop().catch(() => {});
+  }
+  /** One mod's methods, for a row that expands. */
+  patchesForMod(uid: string) {
+    return api.patchesForMod(uid).catch((e): ModPatchDetail | null => {
+      console.warn("[circinus] patches_for_mod failed", e);
+      return null;
+    });
+  }
+  /** The contested methods a mod takes part in, worst first, straight from the loaded report. */
+  contestedFor(uid: string) {
+    return (this.patchReport?.targets ?? []).filter((t) => t.contested && t.patchers.some((p) => p.uid === uid));
+  }
+  patchesOf(uid: string) {
+    return this.patchReport?.perMod.find((m) => m.uid === uid);
   }
 
   refreshDownloads() {

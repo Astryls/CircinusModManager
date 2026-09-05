@@ -3,7 +3,7 @@
   import { I, sevIcon } from "$lib/icons";
   import { describe, explainLoad } from "$lib/describe";
   import { api, assetUrl, openUrl, revealPath } from "$lib/api";
-  import { BAND_LABEL, LOAD_BAND_LABEL, PHASES, SOURCE_LABEL, describeChange, formatBytes, initials, severityOf, type Phase, type Rule } from "$lib/types";
+  import { BAND_LABEL, LOAD_BAND_LABEL, PHASES, SOURCE_LABEL, describeChange, formatBytes, initials, severityOf, splitTarget, type Phase, type Rule } from "$lib/types";
 
   const m = $derived(store.selectedMod);
   const placement = $derived(m ? store.placement(m.uid) : undefined);
@@ -17,6 +17,9 @@
   const update = $derived(m ? store.updateByUid.get(m.uid) : undefined);
   const canRedownload = $derived(!!m?.publishedFileId && m.source !== "ludeon");
   const dds = $derived(m ? store.ddsOf(m.uid) : undefined);
+  const patches = $derived(m ? store.patchesOf(m.uid) : undefined);
+  /** The methods this mod fights over, worst first: most patchers, then by name. */
+  const patchFights = $derived.by(() => (m ? store.contestedFor(m.uid).slice(0, 3) : []));
   const ddsExcluded = $derived(m ? (store.snap?.user.ddsExcluded ?? []).includes(m.uid) : false);
   const GRAD: Record<Phase, [string, string]> = { core: ["#3b5fd9", "#1b2a5c"], prepatch: ["#8b6cf0", "#3a2a6e"], framework: ["#2ea59e", "#12403e"], content: ["#3fb865", "#173f24"], patch: ["#d9508f", "#5a1f3c"], texture: ["#e39b3a", "#5d3a0f"], late: ["#8fa3c7", "#2f3a4e"], optimization: ["#f07a4d", "#5d2a17"] };
   let preview = $state<string>("");
@@ -204,6 +207,32 @@
       </section>
     {/if}
 
+    {#if patches}
+      <section class="card patches">
+        <h3>Patches <span class="aside">{patches.harmonyIds[0] ?? "no Harmony id"}</span></h3>
+        <dl class="kv wkv">
+          <dt>Methods patched</dt><dd class="num"><b>{patches.patches.toLocaleString()}</b> in {patches.assemblies} assembl{patches.assemblies === 1 ? "y" : "ies"}</dd>
+          <dt>Before / after / rewrites</dt><dd class="num">{patches.prefixes} · {patches.postfixes} · {patches.transpilers}</dd>
+          {#if patches.manual}<dt>Cannot be read</dt><dd>{patches.manual} place{patches.manual === 1 ? "" : "s"} where it works out the target as it runs</dd>{/if}
+          {#if patches.harmonyIds.length > 1}<dt>Harmony ids</dt><dd class="mono">{patches.harmonyIds.join(", ")}</dd>{/if}
+        </dl>
+        {#if patchFights.length}
+          <div class="fights">
+            <div class="fh">Shares these methods with another mod that changes them too:</div>
+            {#each patchFights as t}
+              {@const others = t.patchers.filter((p) => p.uid !== m.uid)}
+              <button class="fr" onclick={() => (store.view = "patches")} title="Open the Patches view">
+                <span class="mono">{splitTarget(t.target)[1]}</span>
+                <span class="ow">with {others.map((p) => p.modName).filter((n, i, a) => a.indexOf(n) === i).join(", ")}</span>
+              </button>
+            {/each}
+          </div>
+        {:else}
+          <div class="muted">No method it patches is changed by another mod.</div>
+        {/if}
+      </section>
+    {/if}
+
     <section class="card">
       <h3>Load order rules <span class="aside">{rules.filter((r) => ruleLine(r).ok).length} of {rules.length} met</span></h3>
       {#if rules.length}
@@ -314,5 +343,12 @@
   .desc summary { cursor: pointer; font-weight: 600; color: var(--text-3); }
   .desc p { white-space: pre-wrap; line-height: 1.5; max-height: 260px; overflow: hidden auto; margin: 8px 0 0; user-select: text; }
   .muted { color: var(--text-3); font-size: 12.5px; }
+  .patches .kv dd.mono { font-size: 11.5px; }
+  .patches .fights { margin-top: 10px; display: flex; flex-direction: column; gap: 2px; }
+  .patches .fh { color: var(--text-3); font-size: 11.5px; line-height: 1.4; margin-bottom: 4px; }
+  .patches .fr { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; text-align: left; padding: 5px 7px; border-radius: 8px; }
+  .patches .fr:hover { background: var(--surface-2); }
+  .patches .fr .mono { font-size: 12px; color: var(--amber); font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .patches .fr .ow { font-size: 11.5px; color: var(--text-3); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .empty-card p { color: var(--text-3); font-size: 13px; line-height: 1.5; margin: 8px 0 0; }
 </style>
