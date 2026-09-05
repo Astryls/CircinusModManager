@@ -53,27 +53,20 @@ the repo, meant for the `TAURI_SIGNING_PRIVATE_KEY` secret; only the public key 
   every PatchOperation applied in load order, then Name/ParentName inheritance — with the origin
   of every node recorded, so "who wins this value" has an answer. `defs::xpath` is XPath 1.0 as
   .NET's `SelectNodes` means it, because that is what RimWorld hands patches to.
-- `harmony`: runs `tools/harmony-scan` (a .NET sidecar that reads assembly metadata and IL and
-  never loads a mod assembly) and groups the result into what one mod patches and who else
-  patches the same method.
+- `clr`: reads .NET assemblies (PE, ECMA-335 metadata, custom attribute blobs, IL) without a
+  .NET runtime and without ever loading a mod's code. `harmony` caches those readings and groups
+  them into what one mod patches and who else patches the same method.
 
 ## Packaging
 
-`npm run release` is what makes an installer for players: it builds the Harmony scanner for the
-host platform (`scripts/sidecar.mjs`, needs the .NET 8 SDK) into
-`src-tauri/binaries/harmony-scan-<triple>`, then runs `tauri build` with
-`src-tauri/tauri.release.conf.json` merged in, which carries it as an `externalBin`. Tauri
-strips the triple at bundle time, so the app finds `harmony-scan(.exe)` beside its own
-executable. Players never touch .NET.
+`npm run release` makes the installer players download: `tauri build`, nothing else. Rust and
+Node are the whole toolchain. `.github/workflows/release.yml` does it per platform on a tag.
 
-Plain `npm run tauri build` stays sidecar-free on purpose: naming the scanner in the main
-config makes its absence a hard build failure, and nobody should need the .NET SDK to compile
-Circinus. `npm run tauri dev` runs `scripts/sidecar.mjs --optional` first, which builds the
-scanner when .NET is there (skipped when nothing under `tools/harmony-scan/` changed) and copies
-it beside the debug executable in the cargo target directory; when .NET is missing or the
-build fails it says so in one line and exits 0, so the dev build never depends on it.
-`.github/workflows/release.yml` does the whole thing per platform on a tag and fails if the
-scanner is missing from the output.
+There used to be a .NET sidecar for reading mod assemblies. It is gone: `circinus-core::clr`
+reads ECMA-335 in Rust, so the Patches view works in every build with nothing to ship or place.
+`tools/harmony-scan` survives only as the test oracle — the C# implementation the Rust reader is
+checked against (`crates/circinus-core/tests/clr_reader.rs`). Nothing in the app or the build
+runs it. Do not reintroduce a build-time dependency on the .NET SDK.
 
 ## House style
 

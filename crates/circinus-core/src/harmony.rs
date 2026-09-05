@@ -2,19 +2,19 @@
 //!
 //! A C# mod changes the game by attaching Harmony patches to its methods. Two mods that prefix
 //! the same method, or transpile the same method, are the usual reason a pair "doesn't work
-//! together" — and until now that only became visible in a crash log. `tools/harmony-scan` is a
-//! .NET sidecar that reads the metadata and IL of an assembly (it never loads or runs one, which
-//! would be both unsafe and impossible from a Rust process) and says what it patches. This
-//! module runs it, caches its answers by file hash, and turns them into the two views worth
-//! having: what one mod patches, and who else patches the same thing.
+//! together" — and until now that only became visible in a crash log. `crate::clr` reads the
+//! metadata and IL of an assembly directly (it never loads or runs one, which would be both
+//! unsafe and pointless from a Rust process) and says what it patches. This module caches those
+//! readings by file stamp and turns them into the two views worth having: what one mod patches,
+//! and who else patches the same thing.
 
 use crate::cache::Cache;
 use crate::model::ModInfo;
-use crate::{Error, Result};
+use crate::Result;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 /// The sidecar's JSON. Every field defaults, so a newer Circinus reads an older sidecar's output
 /// and the other way round.
@@ -91,79 +91,16 @@ pub struct ManualPatch {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Running the sidecar
+// Reading the assemblies
 // ---------------------------------------------------------------------------------------------
 
-const EXE: &str = if cfg!(windows) { "harmony-scan.exe" } else { "harmony-scan" };
-
-/// Where the sidecar is: beside the running executable, in the data folder, or on PATH.
-pub fn scanner_path(app_dir: &Path) -> Option<PathBuf> {
-    scanner_candidates(app_dir).into_iter().find(|p| p.is_file())
-}
-
-/// Every place `scanner_path` looks, in the order it looks, whether or not anything is there.
-/// The Patches view shows this list when the scanner is missing, so that "it is not installed"
-/// comes with "and here is where it would have to be".
-pub fn scanner_candidates(app_dir: &Path) -> Vec<PathBuf> {
-    let mut tries: Vec<PathBuf> = Vec::new();
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            // Beside the executable is where an installer puts it, and where `scripts/sidecar.mjs`
-            // puts a copy for a development build (the cargo target directory's `debug/`).
-            tries.push(dir.join(EXE));
-            // A cargo target directory keeps the tool one level up during development.
-            tries.push(dir.join("harmony-scan").join(EXE));
-        }
-    }
-    tries.push(app_dir.join(EXE));
-    if let Some(paths) = std::env::var_os("PATH") {
-        tries.extend(std::env::split_paths(&paths).filter(|p| !p.as_os_str().is_empty()).map(|p| p.join(EXE)));
-    }
-    // PATH often repeats itself, and may name the executable's own folder; each place once.
-    let mut seen = std::collections::HashSet::new();
-    tries.retain(|p| seen.insert(p.clone()));
-    tries
-}
-
-/// Run the sidecar over some assemblies. It is given every path at once: starting the process is
-/// most of the cost, and it reports per-file failures itself rather than giving up.
-pub fn scan(scanner: &Path, dlls: &[PathBuf]) -> Result<ScanOutput> {
-    if dlls.is_empty() {
-        return Ok(ScanOutput { version: 0, assemblies: Vec::new() });
-    }
-    let mut cmd = std::process::Command::new(scanner);
-    cmd.args(dlls);
-    cmd.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
-    let out = cmd.output().map_err(|e| Error::Other(format!("could not run the Harmony scanner at {}: {e}", scanner.display())))?;
-    if !out.status.success() {
-        let msg = String::from_utf8_lossy(&out.stderr);
-        return Err(Error::Other(format!("the Harmony scanner failed: {}", msg.trim())));
-    }
-    serde_json::from_slice(&out.stdout).map_err(|e| Error::Other(format!("the Harmony scanner's output could not be read: {e}")))
-}
-
-/// The same, giving up after `timeout`. A scan of two thousand assemblies is seconds, so a
-/// process still running after a minute is stuck rather than busy.
-pub fn scan_with_timeout(scanner: &Path, dlls: &[PathBuf], timeout: Duration) -> Result<ScanOutput> {
-    let (tx, rx) = std::sync::mpsc::channel();
-    let (s, d) = (scanner.to_path_buf(), dlls.to_vec());
-    std::thread::spawn(move || {
-        let _ = tx.send(scan(&s, &d));
-    });
-    match rx.recv_timeout(timeout) {
-        Ok(r) => r,
-        Err(_) => Err(Error::Other(format!("the Harmony scanner did not finish within {} seconds", timeout.as_secs()))),
-    }
-}
-
-// ---------------------------------------------------------------------------------------------
-// Caching
-// ---------------------------------------------------------------------------------------------
-
-/// Cache key for one assembly: its size and mtime, which change whenever a mod updates. Kept in
-/// the existing key/value table rather than a table of its own, so `cache.rs` stays the one
-/// place that owns the schema.
+/// Cache key for one assembly: its path, size and mtime, which change whenever a mod updates.
+/// `PARSER` is part of it so that improving the reader re-reads everything rather than serving
+/// yesterday's answers. Kept in the existing key/value table so `cache.rs` stays the one place
+/// that owns the schema.
 fn stamp(path: &Path) -> String {
+    /// Bumped whenever `clr` learns to see something it did not see before.
+    const PARSER: u32 = 1;
     let meta = std::fs::metadata(path).ok();
     let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
     let mtime = meta
@@ -173,36 +110,35 @@ fn stamp(path: &Path) -> String {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let hash = xxhash_rust::xxh3::xxh3_64(path.to_string_lossy().as_bytes());
-    format!("harmony:{hash:016x}:{size}:{mtime}")
+    format!("harmony:{PARSER}:{hash:016x}:{size}:{mtime}")
 }
 
-/// Scan the assemblies whose cached entry is stale, and return an entry for every one of them.
-pub fn scan_cached(cache: &Cache, scanner: &Path, dlls: &[PathBuf]) -> Result<Vec<AssemblyPatches>> {
+/// Read some assemblies, taking cached answers where the file has not changed. Reading is a few
+/// milliseconds each and rayon spreads a batch across cores, so a two-thousand-mod folder is
+/// seconds on a first run and instant afterwards.
+pub fn scan_cached(cache: &Cache, dlls: &[PathBuf]) -> Result<Vec<AssemblyPatches>> {
     let mut out: Vec<AssemblyPatches> = Vec::with_capacity(dlls.len());
-    let mut todo: Vec<PathBuf> = Vec::new();
-    let mut keys: HashMap<String, String> = HashMap::new();
+    let mut todo: Vec<(PathBuf, String)> = Vec::new();
     for p in dlls {
         let key = stamp(p);
         match cache.get::<AssemblyPatches>(&key) {
             Ok(Some(hit)) => out.push(hit),
-            _ => {
-                keys.insert(p.to_string_lossy().to_string(), key);
-                todo.push(p.clone());
-            }
+            _ => todo.push((p.clone(), key)),
         }
     }
-    if !todo.is_empty() {
-        let fresh = scan_with_timeout(scanner, &todo, Duration::from_secs(180))?;
-        for a in fresh.assemblies {
-            if let Some(key) = keys.get(&a.path) {
-                if let Err(e) = cache.set(key, &a) {
-                    tracing::warn!("could not cache a Harmony scan: {e}");
-                }
-            }
-            out.push(a);
+    let fresh: Vec<(String, AssemblyPatches)> = todo.par_iter().map(|(path, key)| (key.clone(), crate::clr::scan_assembly(path))).collect();
+    for (key, a) in fresh {
+        if let Err(e) = cache.set(&key, &a) {
+            tracing::warn!("could not cache an assembly reading: {e}");
         }
+        out.push(a);
     }
     Ok(out)
+}
+
+/// Read one assembly, ignoring the cache. For tests and one-off questions.
+pub fn scan_one(path: &Path) -> AssemblyPatches {
+    crate::clr::scan_assembly(path)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -442,29 +378,30 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_scanner_is_an_error_not_a_panic() {
-        let e = scan(Path::new("/no/such/harmony-scan"), &[PathBuf::from("x.dll")]).unwrap_err();
-        assert!(e.to_string().contains("could not run the Harmony scanner"), "{e}");
-        // nothing to scan is not an error
-        assert_eq!(scan(Path::new("/no/such/harmony-scan"), &[]).unwrap().assemblies.len(), 0);
+    fn a_file_that_is_not_an_assembly_is_an_entry_with_a_reason_not_a_failure() {
+        let a = scan_one(Path::new("/no/such/file.dll"));
+        assert!(a.error.is_some(), "a missing file is reported, not panicked over");
+        assert!(a.patches.is_empty());
     }
 
     #[test]
-    fn the_places_looked_are_listed_in_order_and_once_each() {
-        let app_dir = std::env::temp_dir().join(format!("circinus-harmony-{}", std::process::id()));
-        let tries = scanner_candidates(&app_dir);
-        // Beside the executable comes first (the test binary has one), the data folder after it.
-        let exe_dir = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)).unwrap();
-        assert_eq!(tries[0], exe_dir.join(EXE));
-        let data = tries.iter().position(|p| *p == app_dir.join(EXE)).expect("the data folder is looked in");
-        assert!(data > 0, "the executable's folder is looked in before the data folder");
-        // Every entry names the scanner by its file name, and none is listed twice.
-        assert!(tries.iter().all(|p| p.file_name().map(|n| n == EXE).unwrap_or(false)), "{tries:?}");
-        let mut unique = tries.clone();
-        unique.sort();
-        unique.dedup();
-        assert_eq!(unique.len(), tries.len(), "{tries:?}");
-        // The lookup is exactly the first of these that exists (usually none, on a test machine).
-        assert_eq!(scanner_path(&app_dir), tries.iter().find(|p| p.is_file()).cloned());
+    fn a_reading_is_cached_by_the_file_and_re_read_when_it_changes() {
+        let cache = Cache::in_memory().expect("cache");
+        let dir = std::env::temp_dir().join(format!("circinus-clr-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let dll = dir.join("Nope.dll");
+        std::fs::write(&dll, b"not an assembly").expect("write");
+        let first = scan_cached(&cache, &[dll.clone()]).expect("scan");
+        assert_eq!(first.len(), 1);
+        assert!(first[0].error.is_some(), "a file that is not an assembly says so rather than failing");
+        // Same file, same answer, and now from the cache.
+        assert_eq!(scan_cached(&cache, &[dll.clone()]).expect("scan").len(), 1);
+        // A changed file is a different stamp, so it is read again rather than served stale.
+        std::fs::write(&dll, b"still not an assembly, but longer").expect("write");
+        assert_ne!(stamp(&dll), {
+            std::fs::write(&dll, b"not an assembly").expect("write");
+            stamp(&dll)
+        });
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

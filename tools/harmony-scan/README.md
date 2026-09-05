@@ -1,115 +1,82 @@
-# harmony-scan
+# harmony-scan — the test oracle
 
-Says what a mod's assemblies patch, without running them.
+**This is not part of Circinus.** It is a reference implementation, kept so that the Rust
+assembly reader in `circinus-core::clr` can be checked against something written independently.
+Nothing in the app runs it, no build needs it, and a player never sees it. If you are looking for
+the code that actually reads assemblies, it is `crates/circinus-core/src/clr/`.
 
-A C# RimWorld mod changes the game by attaching [Harmony](https://github.com/pardeike/Harmony)
-patches to its methods. Two mods that *prefix* the same method, or *transpile* the same method,
-are the usual reason a pair "doesn't work together" — and normally that only becomes visible in a
-crash log, after the fact. This tool reads the metadata and IL of an assembly and reports the
-patches it declares, so Circinus can put "who patches what" next to the load order.
+It exists because a from-scratch ECMA-335 reader is easy to get subtly wrong, and "subtly wrong"
+here means quietly telling somebody two mods are fine together when they are not. This tool uses
+.NET's own `System.Reflection.Metadata` to answer the same questions, and the Rust reader must
+agree with it exactly.
 
-Nothing here loads an assembly. Mod assemblies target a runtime this tool is not, and running
-somebody else's code to find out what it does is not a thing a mod manager should do — so the
-whole scanner is `System.Reflection.Metadata` plus a small IL reader, and a corrupt or native DLL
-costs one entry's `error` field rather than the run.
+## Why the app does not use it any more
+
+It shipped as a sidecar: a NativeAOT binary built by `dotnet publish` and carried inside the
+installer. That worked, but it put the .NET SDK between a contributor and a working build, and
+every seam in it — NuGet sources, the AOT toolchain, which folder cargo used, whether the
+binary was stale — was a way for the Patches view to be silently empty. Reading ECMA-335 needs
+no runtime, so the reader moved into `circinus-core` and the seams went with it.
+
+The Rust reader also sees more. Frameworks like Vehicle Framework and SmashTools patch through
+their own helpers rather than calling `Harmony.Patch`, which this tool cannot follow: it reports
+zero patches for `Vehicles.dll`. The Rust reader also records `AccessTools` lookups, which finds
+266 real targets in the same file.
 
 ## Running it
 
 ```
-harmony-scan [--pretty] <assembly-or-folder>...
+dotnet build -c Release                       # needs the .NET 8 SDK and nuget.org
+dotnet bin/Release/net8.0/harmony-scan.dll --pretty <assembly-or-folder>...
 ```
 
-Paths may be `.dll` files or folders to search recursively. The JSON goes to stdout, diagnostics
-to stderr, and the exit code is 0 whenever the scan ran at all.
+`NuGet.offline.config` clears the package sources for a build with no network. Do not make it the
+default: with the sources cleared, publishing fails with NU1100 errors that read like a broken
+project rather than a missing source.
 
-## What it reports, per assembly
+## Refreshing the oracle
 
-- **Attribute patches** — `[HarmonyPatch]` in all its constructor shapes (by `Type`, by type name,
-  with a method name, with `argumentTypes` for an overload, with a `MethodType` for a getter,
-  setter, constructor or static constructor). Attributes on the class supply defaults and
-  attributes on the method refine them field by field, the way Harmony layers them. The patch kind
-  comes from `[HarmonyPrefix]`, `[HarmonyPostfix]`, `[HarmonyTranspiler]`, `[HarmonyFinalizer]`,
-  `[HarmonyReversePatch]` or the method's name, and `[HarmonyPriority]`, `[HarmonyBefore]` and
-  `[HarmonyAfter]` come along with it.
-- **Harmony ids** — the string in `new Harmony("…")`, found in IL.
-- **Manual patching** — `Patch(…)`, `PatchAll()`, `Unpatch(…)` and friends. When the target is a
-  plain `ldstr`/`ldtoken` the tool can resolve, it becomes an ordinary patch entry with
-  `"source": "manual"`; when it is computed at runtime, the method that does it is named instead,
-  because the honest answer is "something here patches, go and look" rather than silence.
-- **Context** — `[StaticConstructorOnStartup]` types and `Verse.Mod` subclasses.
-
-## The JSON contract
-
-Circinus deserializes this in `circinus-core::harmony`; both sides default every field, so an
-older tool and a newer app (or the reverse) still understand each other.
-
-```json
-{"version":1,"assemblies":[{
-  "path":"…/Assemblies/VehicleFramework.dll","name":"VehicleFramework","mvid":"…","error":null,
-  "harmonyIds":["smashphil.vehicleframework"],
-  "patches":[{"declaringType":"Vehicles.HarmonyPatches","method":"Prefix","kind":"prefix",
-              "targetType":"RimWorld.Pawn","targetMethod":"Tick","targetKind":"normal",
-              "argumentTypes":null,"priority":600,"before":[],"after":[],"source":"attribute"}],
-  "manualPatches":[{"declaringType":"…","method":".cctor","detail":"Patch(…) called with a computed target"}],
-  "startupClasses":["Vehicles.VehicleMod"],"modClasses":["Vehicles.VehicleMod"]
-}]}
-```
-
-## Building
-
-A plain build needs no packages — everything used ships in the .NET shared framework:
+`crates/circinus-core/tests/clr/` holds a few assemblies and, beside each, this tool's answer as
+`<name>.expected.json`. `crates/circinus-core/tests/clr_reader.rs` asserts the Rust reader
+matches them field by field. To add an assembly to the set, or to refresh one after teaching this
+tool something new:
 
 ```
-dotnet build -c Release
+dotnet bin/Release/net8.0/harmony-scan.dll --pretty path/to/Some.dll > \
+  ../../crates/circinus-core/tests/clr/Some.expected.json
+cp path/to/Some.dll ../../crates/circinus-core/tests/clr/
 ```
 
-Publishing does need nuget.org, for the AOT compiler and the runtime pack:
+Only add assemblies whose licence allows redistribution: the set holds `FixtureMod.dll` (ours),
+and Harmony's `0Harmony.dll` and `HarmonyMod.dll` (MIT, pardeike/HarmonyRimWorld). To check
+against mods you have installed without committing them, point the ignored test at a folder:
 
 ```
-dotnet publish -c Release -r win-x64 -p:Aot=true
+CIRCINUS_CLR_REAL=/path/to/folder cargo test -p circinus-core --test clr_reader \
+  real_assemblies_report -- --ignored --nocapture
 ```
 
-`NuGet.offline.config` clears the package sources for building with no network at all. It is
-deliberately not the default: with the sources cleared, a publish fails with a wall of NU1100
-"unable to resolve" errors that read like a broken project rather than a missing source.
-
-## Shipping it with Circinus
-
-**Players never build this, and never see .NET.** `npm run release` at the repo root builds the
-scanner for the machine it runs on and hands it to Tauri as an `externalBin`, so it travels
-inside the installer and lands beside the app's own executable; Circinus looks for it there,
-in its data folder, and on `PATH`. `.github/workflows/release.yml` does the same for Windows,
-macOS and Linux on a tag.
-
-The script behind it is `scripts/sidecar.mjs`:
-
-```
-node scripts/sidecar.mjs                 # this machine, AOT, falling back to self-contained
-node scripts/sidecar.mjs --no-aot        # skip AOT (it needs MSVC, or clang and zlib headers)
-node scripts/sidecar.mjs --skip-build    # place a binary built elsewhere
-```
-
-It writes `src-tauri/binaries/harmony-scan-<target triple>[.exe]` and clears Tauri's cached
-copies under `src-tauri/target/`, which it does not refresh on its own — a known way to ship a
-stale scanner without noticing.
-
-The main `tauri.conf.json` deliberately does not name the scanner: `externalBin` and
-`bundle.resources` both fail the build when the file is absent, which would mean nobody could
-compile Circinus without installing the .NET SDK first. `src-tauri/tauri.release.conf.json`
-adds it, and `npm run release` merges the two. A build made without it is a build with one
-feature turned off — the Patches view says what is missing and how to get it.
+The folder wants each `Some.dll` beside its `Some.expected.json`. The test prints timings, what
+each file yielded, and any field where the two disagree.
 
 ## The fixture
 
 `testdata/Fixture` is a stand-in for a mod assembly: it declares its own `HarmonyLib` and `Verse`
-types, so it needs no NuGet package and no copy of RimWorld, and the scanner reads it by name
-exactly as it reads the real thing. It covers class-level defaults refined per method, an overload
-picked out by `argumentTypes`, a property getter, a constructor, a type named by string, priority
-and before/after, a Harmony id, a `PatchAll()`, and a `Patch(…)` whose target is computed.
+types, so it needs no NuGet package and no copy of RimWorld. It covers class-level defaults
+refined per method, an overload picked out by `argumentTypes`, a property getter, a constructor,
+a type named by string, priority and before/after, a Harmony id, a `PatchAll()`, and a `Patch(…)`
+whose target is computed. Six patches, one Harmony id, two manual entries, one `Verse.Mod` class.
 
 ```
 dotnet build testdata/Fixture -c Release
 dotnet bin/Release/net8.0/harmony-scan.dll --pretty testdata/Fixture/bin/Release/net8.0/FixtureMod.dll
 ```
 
-Six patches, one Harmony id, two manual entries, one `Verse.Mod` class.
+## What it reports
+
+Per assembly: `[HarmonyPatch]` attributes in all their constructor shapes (class-level supplying
+defaults that method-level attributes refine), the patch kind and `[HarmonyPriority]`,
+`[HarmonyBefore]`, `[HarmonyAfter]`; Harmony ids from `new Harmony("…")` in IL; manual
+`Patch`/`PatchAll`/`Unpatch` calls, resolved when the target is a plain `ldstr`/`ldtoken` and
+named as unfollowable when it is computed; `[StaticConstructorOnStartup]` types and `Verse.Mod`
+subclasses. The JSON shape is in `Model.cs` and is what `circinus-core::harmony` deserializes.

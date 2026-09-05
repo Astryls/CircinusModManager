@@ -275,7 +275,6 @@ pub fn run() {
             patches::patches_stop,
             patches::patches_report,
             patches::patches_for_mod,
-            patches::patches_scanner,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Circinus");

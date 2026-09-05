@@ -23,37 +23,28 @@ macOS: Xcode command line tools).
 
 ```sh
 npm install
-npm run tauri dev        # full app: Rust backend + hot-reloading UI (builds the Harmony scanner too, if .NET is installed)
+npm run tauri dev        # full app: Rust backend + hot-reloading UI
 npm run dev              # UI only, in the browser, with example data
-npm run sidecar          # build the Harmony scanner by hand (needs the .NET 8 SDK; --force rebuilds an unchanged one)
 cargo test -p circinus-core
 npm run check            # svelte-check
 ```
 
 `npm run tauri dev` builds a debug binary that loads the UI from Vite's dev server, so it only
-runs while that command is running — it is not a standalone exe. Before it starts Vite it runs
-`node scripts/sidecar.mjs --optional`: with the .NET 8 SDK installed that builds the Harmony
-scanner and puts a copy beside the debug executable, so the Patches view works in a dev build;
-without .NET (or without network for NuGet) it prints one line and the build goes on, and the
-Patches view says the scanner is missing. The build is skipped when the placed binary is newer
-than everything under `tools/harmony-scan/`, so a restart costs nothing. For a standalone exe,
-build a release:
+runs while that command is running — it is not a standalone exe. Every feature works in it,
+including the Patches view: there is nothing to install alongside. For a standalone exe, build a
+release:
 
 ## Release builds
 
 ```sh
-npm run release                           # the installer players download, Harmony scanner included
-npm run tauri build                       # the same, without the scanner (no .NET needed)
+npm run release                           # the installer players download
 npm run tauri build -- --bundles dmg      # macOS: .dmg (run on a Mac; sign + notarize with an Apple Developer ID)
 ```
 
-`npm run release` builds the Harmony scanner for this machine (`scripts/sidecar.mjs`, which needs the .NET 8 SDK), puts it in `src-tauri/binaries/harmony-scan-<target triple>`, and hands Tauri a config that carries it as an `externalBin`. Tauri strips the triple when it bundles, so the scanner lands beside `circinus.exe` inside the installer and the app finds it there. **A player installs one file and never sees .NET.**
-
-The two commands are separate on purpose. Naming the scanner in the main `tauri.conf.json` would make its absence a hard build failure — `externalBin` and `bundle.resources` both refuse to build when the file is not there — so nobody could compile Circinus without first installing the .NET SDK. `npm run tauri build` therefore still works on a machine with no .NET; it just produces a build whose Patches view explains that the scanner is missing, which is one feature turned off rather than a broken app.
-
-`.github/workflows/release.yml` does all of this for Windows, macOS (Intel and Apple silicon) and Linux on a tag: it installs .NET, builds the scanner, runs it over the test fixture to check it works, runs the tests, builds the bundle, and fails if the scanner is not in the output — a release that quietly lost its sidecar looks exactly like a working one until somebody opens the Patches view.
-
-Every build is signed for the updater: `tauri.conf.json` carries the public key and `createUpdaterArtifacts`, so `tauri build` writes a `.sig` beside each installer and needs `TAURI_SIGNING_PRIVATE_KEY` in the environment (on CI, a secret). The app asks `https://circinus.sh/modmanager` for a newer build a few seconds after launch (Settings, Updates turns that off) and installs one only when the user presses *Install and restart*. `docs/update-feed.md` is the contract the site implements.
+One command, one toolchain: Rust and Node. Everything Circinus does is in the binary — reading
+assemblies included — so there is nothing to build alongside it, nothing to place, and nothing a
+build can silently lose. `.github/workflows/release.yml` does it for Windows, macOS (Intel and
+Apple silicon) and Linux on a tag.
 
 Single self-contained binaries; SteamCMD is downloaded on first use rather than bundled (Valve's terms).
 
@@ -146,7 +137,7 @@ Play starts RimWorld through Steam (`steam://rungameid/294100`) when the game fo
 ## Milestone 3b (what the game really ends up with)
 
 - **Def flattening** in `circinus-core::defs`. Circinus builds the document the game builds: every active mod's `Defs/` into one arena in load order, every mod's `PatchOperation`s over it in load order, then `Name`/`ParentName` inheritance — RimWorld's order, so the answer is the game's answer. `tree` is a mutable arena holding the parts of .NET's `XmlDocument` a patch can observe, with the origin that created it on every node. `xpath` is XPath 1.0 as .NET's `SelectNodes` means it (all thirteen axes, positional predicates that count the way reverse axes require, the core function library, the conversion rules), because a patch means whatever that language says it means; `Defs/Type[defName="X"]` — nearly every patch ever written — is answered from an index rather than a scan. `flatten` writes down what happened: every value one mod took from another with both values and the operation that did it, patches whose xpath matches nothing, patch files the game silently ignores, duplicate defs, defs whose `ParentName` names nothing, and per-mod wins and losses. `MayRequire` nodes for absent mods are dropped; `Sequence`, `Conditional`, `FindMod` and `Test` behave as the game's do; an operation from another mod's patch framework is named rather than skipped in silence.
-- **Harmony patch targets** from a .NET sidecar, `tools/harmony-scan`: it reads assembly metadata and IL — it never loads or runs a mod assembly — and reports `[HarmonyPatch]` targets in all their shapes, Harmony ids, manual `Patch(…)` calls, `[StaticConstructorOnStartup]` and `Verse.Mod` classes. `circinus-core::harmony` runs it, caches per assembly, and groups the results two ways: what one mod patches, and who else patches the same method. Two mods prefixing or transpiling one method is *contested* — the usual shape of "these two don't work together"; two postfixes stack and are not.
+- **Harmony patch targets**, read from the assemblies themselves. `circinus-core::clr` reads ECMA-335 — the PE and .NET metadata format — directly in Rust: no .NET runtime, no companion binary, and it never loads or runs a mod's code. It reports `[HarmonyPatch]` targets in all their shapes, Harmony ids and manual `Patch` calls from IL, `[StaticConstructorOnStartup]` and `Verse.Mod` classes, and the `AccessTools` lookups that frameworks like Vehicle Framework patch through (which a reader of attributes alone misses entirely — 266 real targets in `Vehicles.dll` against zero). `circinus-core::harmony` caches a reading per assembly and groups the results two ways: what one mod patches, and who else patches the same method. Two mods prefixing or transpiling one method is *contested* — the usual shape of "these two don't work together"; two postfixes stack and are not. `tools/harmony-scan`, the C# tool this replaced, stays as the test oracle: `crates/circinus-core/tests/clr_reader.rs` asserts the Rust reader agrees with it field for field on Harmony's own 2.4 MB assembly.
 - **Where the Patches view is, and what it needs.** *Patches* is in the left sidebar, under the list. It needs the scanner, `harmony-scan(.exe)`, beside the Circinus executable, in the data folder, or on PATH; without it the view says so, lists every place it looked, and offers *Look again*. There are two ways of getting the scanner. A player gets it from the installer, which `npm run release` builds with the scanner inside — a Patches view saying it is missing means an incomplete install. A developer runs `npm run sidecar` once (it needs the .NET 8 SDK) or simply starts `npm run tauri dev`, which runs the same script and puts a copy beside the debug build.
 
 ## Milestone 4b (instances, and Steam)

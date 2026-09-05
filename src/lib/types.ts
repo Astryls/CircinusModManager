@@ -1073,7 +1073,7 @@ export interface ModPatches {
   /** Places that patch in a way static reading cannot follow. */
   manual: number;
   harmonyIds: string[];
-  /** Assemblies the scanner could not read, with the reason. */
+  /** Assemblies that could not be read, with the reason. */
   unreadable: string[];
 }
 
@@ -1091,12 +1091,6 @@ export interface PatchSummary {
   contested: number;
   unreadable: number;
   seconds: number;
-}
-
-/** Where the Harmony scanner is (`path` null when it is not installed) and every place looked. */
-export interface ScannerStatus {
-  path: string | null;
-  tried: string[];
 }
 
 export interface PatchJob {

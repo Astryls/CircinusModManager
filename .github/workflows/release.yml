@@ -1,9 +1,5 @@
 # Build the installers players download.
 #
-# Each runner builds the Harmony scanner for its own platform first, then the Tauri bundle with
-# the scanner inside it. That is the whole answer to "how does a player get the scanner": they
-# do not build anything, and they never see .NET — it is already in the installer.
-#
 # Push a tag (`v0.2.0`) to make a draft release, or run it by hand from the Actions tab to get
 # the installers as artifacts without publishing anything.
 
@@ -45,9 +41,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
-                                  build-essential curl wget file libssl-dev libxdo-dev libgtk-3-dev \
-                                  clang zlib1g-dev
-        # clang and zlib headers are for the scanner's AOT build, not for Tauri.
+                                  build-essential curl wget file libssl-dev libxdo-dev libgtk-3-dev
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -58,32 +52,12 @@ jobs:
           node-version: 20
           cache: npm
 
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "8.0.x"
-
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
           key: ${{ matrix.target }}
 
       - run: npm ci
-
-      # The scanner, for this platform. It lands in src-tauri/binaries/ with the target triple
-      # in its name, which is what Tauri's externalBin wants.
-      - name: Build the Harmony scanner
-        run: node scripts/sidecar.mjs --target ${{ matrix.target }}
-
-      - name: Check the scanner runs
-        shell: bash
-        run: |
-          dotnet build tools/harmony-scan/testdata/Fixture -c Release --nologo -v quiet
-          bin=$(ls src-tauri/binaries/harmony-scan-*)
-          "$bin" --pretty tools/harmony-scan/testdata/Fixture/bin/Release/net8.0/FixtureMod.dll > scan.json
-          node -e "const r=require('./scan.json').assemblies[0];
-            if (r.patches.length !== 6) { console.error('expected 6 patches, got', r.patches.length); process.exit(1); }
-            if (!r.harmonyIds.includes('fixture.mod.id')) { console.error('no Harmony id'); process.exit(1); }
-            console.log('scanner ok:', r.patches.length, 'patches,', r.manualPatches.length, 'manual');"
 
       - name: Tests
         run: |
@@ -110,17 +84,6 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-
-      # Prove the scanner is actually inside what we are about to hand people. A release that
-      # quietly lost its sidecar looks exactly like a working one until somebody opens the
-      # Patches view.
-      - name: Check the scanner is in the bundle
-        shell: bash
-        run: |
-          root=src-tauri/target/release
-          found=$(find "$root/bundle" "$root" -maxdepth 4 -name 'harmony-scan*' -not -path '*/deps/*' 2>/dev/null | head -5)
-          if [ -z "$found" ]; then echo "the scanner is not in the build output"; exit 1; fi
-          echo "$found"
 
       # And that every file the updater can be handed has its signature. An installer without
       # one is fine for a person to download and useless to the update feed, and the two look

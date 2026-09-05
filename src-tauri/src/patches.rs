@@ -1,5 +1,5 @@
 //! What every active mod's code patches, as a background job: find the assemblies, hand them to
-//! the Harmony scanner a batch at a time, and fold the answers into the report the UI shows.
+//! their assemblies a batch at a time through the reader, and fold the answers into the report.
 //!
 //! Reading two thousand assemblies takes seconds rather than milliseconds, so this follows the
 //! texture job's shape — the state behind a mutex, progress as an event, a stop flag — and the
@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 
-/// Assemblies per call to the scanner. Starting the process is most of the per-call cost, so
+/// Assemblies per batch. Reading is a few milliseconds each and rayon spreads a batch over cores,
 /// bigger is faster; small enough that progress moves and Stop is answered within a moment.
 const BATCH: usize = 64;
 
@@ -83,11 +83,7 @@ pub struct Patches {
 fn now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
-
 /// The message every command gives when the sidecar is not on this machine. The view explains
-/// how to get it and where it was looked for (`patches_scanner`); this is what anything else says.
-const NO_SCANNER: &str = "The Harmony scanner is not installed. Circinus reads what mods patch with a small tool that ships beside it; without it there is nothing to report.";
-
 impl Patches {
     pub fn new(handle: AppHandle, app: Shared) -> Arc<Patches> {
         Arc::new(Patches { state: Mutex::new(PatchJob { phase: "idle".into(), ..PatchJob::default() }), cancel: AtomicBool::new(false), handle, app, last: Mutex::new(None) })
@@ -103,12 +99,6 @@ impl Patches {
 
     pub fn stop(&self) {
         self.cancel.store(true, Ordering::Relaxed);
-    }
-
-    /// Where the sidecar is, or None when it is not installed.
-    pub fn scanner(&self) -> Option<PathBuf> {
-        let dir = self.app.lock().ok()?.data_dir.clone();
-        harmony::scanner_path(&dir)
     }
 
     fn begin(&self) -> Result<(), String> {
@@ -178,7 +168,6 @@ impl Patches {
         self.begin()?;
         self.emit();
         let started = std::time::Instant::now();
-        let Some(scanner) = self.scanner() else { return self.fail(NO_SCANNER.into()) };
         let mods = match self.collect() {
             Ok(m) => m,
             Err(e) => return self.fail(e),
@@ -212,7 +201,7 @@ impl Patches {
             // the store, so the lock is held for one batch at a time — long enough to read
             // sixty-odd assemblies, short enough that nothing else waits noticeably.
             let batch_result = match self.app.lock() {
-                Ok(app) => harmony::scan_cached(&app.cache, &scanner, batch),
+                Ok(app) => harmony::scan_cached(&app.cache, batch),
                 Err(_) => return self.fail("state lock poisoned".into()),
             };
             match batch_result {
@@ -334,9 +323,6 @@ pub async fn patches_start(pat: Pat<'_>) -> CmdResult<()> {
     if pat.snapshot().running {
         return Err("A patch scan is already running".into());
     }
-    if pat.scanner().is_none() {
-        return Err(NO_SCANNER.into());
-    }
     let p = pat.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         if let Err(e) = p.run() {
@@ -359,38 +345,13 @@ pub fn patches_stop(pat: Pat<'_>) {
 /// The last run's report, or None when nothing has been read yet.
 #[tauri::command]
 pub fn patches_report(pat: Pat<'_>) -> CmdResult<Option<PatchReport>> {
-    if pat.scanner().is_none() {
-        return Err(NO_SCANNER.into());
-    }
     Ok(pat.report())
 }
 
 /// One mod's patches: the counts, its methods, and the contested ones it is part of.
 #[tauri::command]
 pub fn patches_for_mod(pat: Pat<'_>, uid: String) -> CmdResult<Option<ModPatchDetail>> {
-    if pat.scanner().is_none() {
-        return Err(NO_SCANNER.into());
-    }
     Ok(pat.for_mod(&uid))
-}
-
-/// Where the scanner is, and every place that was looked. `path` is None when it is not
-/// installed; `tried` is then what the Patches view shows, so a developer whose debug build
-/// cannot see the scanner learns which folder it is expected in rather than guessing.
-#[derive(Debug, Clone, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ScannerStatus {
-    pub path: Option<String>,
-    pub tried: Vec<String>,
-}
-
-/// Where the scanner is (or None when it is not installed), and where it was looked for.
-#[tauri::command]
-pub fn patches_scanner(pat: Pat<'_>) -> ScannerStatus {
-    let Some(dir) = pat.app.lock().ok().map(|a| a.data_dir.clone()) else { return ScannerStatus::default() };
-    let tried = harmony::scanner_candidates(&dir);
-    let path = tried.iter().find(|p| p.is_file()).map(|p| p.to_string_lossy().to_string());
-    ScannerStatus { path, tried: tried.iter().map(|p| p.to_string_lossy().to_string()).collect() }
 }
 
 #[cfg(test)]
