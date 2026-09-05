@@ -34,8 +34,8 @@
     { key: "cost", w: 64, show: store.showWeight },
     { key: "load", w: 58, show: on.has("load") },
     { key: "versions", w: 64, show: on.has("versions") },
-    { key: "phase", w: 46, show: on.has("phase") },
-    { key: "group", w: 46, show: on.has("group") }
+    { key: "phase", w: 106, show: on.has("phase") },
+    { key: "group", w: 106, show: on.has("group") }
   ]);
   const shown = $derived(optional.filter((c) => c.show));
   const BADGES = 232;
@@ -381,8 +381,8 @@
           {/if}
           {#if on.has("load")}<span class="load">{#if ld && m.contents.load}<span class="band {ld.band}" title="Expected share of loading time: {ld.share >= 0.0005 ? (ld.share * 100).toFixed(ld.share < 0.01 ? 2 : 1) : 'under 0.05'} % ({LOAD_BAND_LABEL[ld.band].toLowerCase()}), about {ld.ms >= 1000 ? `${(ld.ms / 1000).toFixed(1)} s` : `${ld.ms} ms`} of an estimated {store.loadTotalSeconds >= 60 ? `${(store.loadTotalSeconds / 60).toFixed(1)} min` : `${store.loadTotalSeconds.toFixed(0)} s`} for the list.&#10;{explainLoad(m).join('\n')}&#10;&#10;Estimated from the folder; a ranking, not a stopwatch.">{ld.share >= 0.001 ? `${(ld.share * 100).toFixed(ld.share < 0.01 ? 2 : 1)} %` : "<0.1 %"}</span>{:else if !it.inactive && m.contents.load == null}<span class="band unknown" title="Not read yet: the folder is still being inspected">…</span>{/if}</span>{/if}
           {#if on.has("versions")}<span class="vers">{#each versions as v}<span class:off={!(m.supportedVersions ?? []).includes(v)}>{v}</span>{/each}</span>{/if}
-          {#if on.has("phase")}<span class="phz">{#if pl}<span class="dot c-{store.phaseInfo(pl.phase).color}" title="{store.phaseInfo(pl.phase).name} · {pl.reason}"></span>{/if}</span>{/if}
-          {#if on.has("group")}<span class="g">{#if grp}<span class="dot c-{grp.color}" title="{grp.name}{grp.auto && !store.snap?.user.modGroups[m.uid] ? ' (by the group’s own rule)' : ''}"></span>{/if}</span>{/if}
+          {#if on.has("phase")}<span class="phz">{#if pl}{@const ph = store.phaseInfo(pl.phase)}<span class="tag" title="{ph.name} · {pl.reason}"><span class="dot c-{ph.color}"></span><em>{ph.name}</em></span>{/if}</span>{/if}
+          {#if on.has("group")}<span class="g">{#if grp}<span class="tag" title="{grp.name}{grp.auto && !store.snap?.user.modGroups[m.uid] ? ' (by the group’s own rule)' : ''}"><span class="dot c-{grp.color}"></span><em>{grp.name}</em></span>{/if}</span>{/if}
           <span class="badges">
             <span class="b">{#if chg}<span class="flag chg" title="Changed since you last opened Circinus: {describeChange(chg)}">{@html chg.kind === "added" ? I.plus : I.change}</span>{/if}</span>
             <span class="b">{#if upd}<span class="flag" title="A newer version is on the Workshop, updated {new Date(upd.remoteUpdated * 1000).toLocaleDateString()}">{@html I.up}</span>{/if}</span>
@@ -417,7 +417,7 @@
   .hdr { position: sticky; top: 0; z-index: 4; height: 34px; background: var(--surface); border-bottom: 1px solid var(--surface-3); margin: 0 -6px; padding-left: 10px; padding-right: 14px; }
   .hdr .h { font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; position: relative; }
   .hdr .idx, .hdr .vers, .hdr .delta, .hdr .wt, .hdr .load { text-align: right; }
-  .hdr .phz, .hdr .g { text-align: center; }
+  .hdr .phz, .hdr .g { text-align: left; }
   .hdr .h.name, .hdr .h.pkg { overflow: visible; }
   .hdr .grab { position: absolute; top: -8px; bottom: -8px; right: -6px; width: 11px; cursor: col-resize; touch-action: none; z-index: 1; }
   .hdr .grab::after { content: ""; position: absolute; top: 8px; bottom: 8px; left: 5px; width: 1px; background: var(--surface-4); }
@@ -452,8 +452,13 @@
   .row .wt, .row .load { display: flex; justify-content: flex-end; }
   .row .load .band.unknown { color: var(--text-4); }
   .vers { justify-content: flex-end; }
-  .row .phz, .row .g { display: grid; place-items: center; }
-  .row .phz .dot, .row .g .dot { width: 8px; height: 8px; }
+  /* A column called Phase has to be readable without hovering: the dot carries the colour
+     everything else in the app uses for it, the name says which one it is. */
+  .row .phz, .row .g { min-width: 0; display: flex; align-items: center; }
+  .tag { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .tag .dot { width: 8px; height: 8px; flex: none; }
+  .tag em { font-style: normal; font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row:hover .tag em, .row.sel .tag em { color: var(--text-2); }
   /* Six fixed slots, one per kind of badge, so nothing ever draws over anything else — in the
      header as in the rows, from the same grid, so the labels sit over their own icons. */
   .badges { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0; align-items: center; min-width: 0; }
