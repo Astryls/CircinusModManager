@@ -9,3 +9,6 @@ Thumbs.db
 app-icon.png
 tools/loadtest/*.json
 tools/loadtest/*.png
+
+# agent worktrees
+.claude/
