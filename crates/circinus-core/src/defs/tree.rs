@@ -489,7 +489,9 @@ impl Doc {
         let via = if via != 0 { via } else { src.via };
         match src.kind {
             Kind::Text => {
-                let id = self.new_text(&self.text[src.a as usize..(src.a + src.b) as usize].to_string(), origin);
+                // Copy the text out first: storing it needs `&mut self`.
+                let text: String = self.text[src.a as usize..(src.a + src.b) as usize].to_string();
+                let id = self.new_text(&text, origin);
                 self.nodes[id as usize].via = via;
                 id
             }
@@ -827,7 +829,8 @@ mod tests {
         let xml = d.to_xml(def);
         assert!(xml.contains("<ThingDef Name=\"Base\" Abstract=\"True\">"), "{xml}");
         assert!(xml.contains("<li Class=\"CompX\" />"));
-        assert_eq!(d.descendants(def).count(), 10);
+        // defName, "Wall", statBases, MaxHitPoints, "100", comps, li, li, "two"
+        assert_eq!(d.descendants(def).count(), 9);
     }
 
     #[test]
@@ -839,14 +842,16 @@ mod tests {
         d.insert_before(b, c);
         let names: Vec<&str> = d.element_children(root).map(|n| d.name(n)).collect();
         assert_eq!(names, ["A", "C", "B"]);
-        d.prepend_child(root, d.new_element_named("Z", 2));
+        let z = d.new_element_named("Z", 2);
+        d.prepend_child(root, z);
         let names: Vec<&str> = d.element_children(root).map(|n| d.name(n)).collect();
         assert_eq!(names, ["Z", "A", "C", "B"]);
         d.remove(a);
         assert!(d.nodes[a as usize].dead);
         let names: Vec<&str> = d.element_children(root).map(|n| d.name(n)).collect();
         assert_eq!(names, ["Z", "C", "B"]);
-        d.insert_after(c, d.new_element_named("D", 2));
+        let dd = d.new_element_named("D", 2);
+        d.insert_after(c, dd);
         let names: Vec<&str> = d.element_children(root).map(|n| d.name(n)).collect();
         assert_eq!(names, ["Z", "C", "D", "B"]);
         assert_eq!(d.last_child(root).map(|n| d.name(n)), Some("B"));
@@ -890,10 +895,11 @@ mod tests {
         let b = d.element_children(copy).next().unwrap();
         assert_eq!(d.nodes[b as usize].via, 4);
         assert_eq!(d.value(b).as_deref(), Some("t"));
-        assert!(d.set_attr(copy, d.syms.intern("z"), "3"));
-        assert!(!d.set_attr(copy, d.syms.intern("x"), "10"));
+        let (z, x, y) = (d.syms.intern("z"), d.syms.intern("x"), d.syms.intern("y"));
+        assert!(d.set_attr(copy, z, "3"));
+        assert!(!d.set_attr(copy, x, "10"));
         assert_eq!(d.attr_str(copy, "x"), Some("10"));
-        assert!(d.remove_attr(copy, d.syms.intern("y")));
+        assert!(d.remove_attr(copy, y));
         let names: Vec<&str> = d.attrs(copy).map(|i| d.syms.get(d.attr_name_at(i))).collect();
         assert_eq!(names, ["x", "z"]);
         assert_eq!(d.string_value(a), "t");

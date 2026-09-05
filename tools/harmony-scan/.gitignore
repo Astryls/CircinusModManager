@@ -1,0 +1,4 @@
+bin/
+obj/
+testdata/**/bin/
+testdata/**/obj/

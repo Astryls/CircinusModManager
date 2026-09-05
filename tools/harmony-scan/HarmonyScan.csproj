@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>harmony-scan</AssemblyName>
+    <RootNamespace>Circinus.HarmonyScan</RootNamespace>
+
+    <!-- Circinus ships this as a single self-contained native binary beside the app: no
+         .NET runtime on the player's machine, no JIT, a few milliseconds to start. -->
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <IlcOptimizationPreference>Size</IlcOptimizationPreference>
+
+    <!-- Everything used here (System.Reflection.Metadata, System.Text.Json's writer) is in
+         the shared framework, so there are no NuGet dependencies and nothing to trim badly. -->
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>full</TrimMode>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- testdata/ holds a separate fixture project; it must never be compiled into the tool. -->
+    <Compile Remove="testdata/**" />
+    <None Remove="testdata/**" />
+  </ItemGroup>
+
+</Project>
