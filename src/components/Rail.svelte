@@ -32,8 +32,8 @@
 
 <aside class="rail">
   <section class="card inst">
-    <div class="ver">RimWorld {snap?.gameVersion.majorMinor ?? "not found"}</div>
-    <div class="sub">{snap?.gameVersion.full ?? "Set the game folder in Settings"}{snap?.locations.workshopDir ? " · Steam" : ""}</div>
+    <div class="ver"><span class="dot" style="--c: {snap?.locations.gameDir ? 'var(--green)' : 'var(--red)'}"></span>RimWorld {snap?.gameVersion.majorMinor ?? "not found"}</div>
+    <div class="sub" title={snap?.locations.gameDir ?? ""}>{snap?.locations.gameDir ? `${snap.gameVersion.full}${snap.locations.workshopDir ? " · Steam" : ""}` : "Set the game folder in Settings"}</div>
     <div class="row"><span class="num">{store.active.length} active</span><span class="num">{store.mods.length} installed</span></div>
     <div class="meter c-blue" style="--v:{pct}%"><i></i></div>
     <div class="row"><span>ModsConfig.xml</span><span class:att={snap?.dirty}>{snap?.dirty ? "not saved" : "saved"}</span></div>
@@ -71,7 +71,8 @@
 <style>
   .rail { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: hidden auto; }
   .rail .card { padding: 12px; flex: none; }
-  .inst .ver { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
+  .inst .ver { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; display: flex; align-items: center; gap: 8px; }
+  .inst .ver .dot { width: 8px; height: 8px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent); }
   .inst .sub { color: var(--text-2); font-size: 12px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .inst .row { display: flex; justify-content: space-between; margin-top: 9px; font-size: 12px; color: var(--text-3); }
   .inst .row .att { color: var(--amber); font-weight: 700; }

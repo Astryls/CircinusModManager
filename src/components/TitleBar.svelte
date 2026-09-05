@@ -3,7 +3,6 @@
   import { I } from "$lib/icons";
 
   const total = $derived(store.mods.length);
-  const gameDir = $derived(store.snap?.locations.gameDir ?? null);
   const q = $derived(store.downloads);
   let now = $state(Math.floor(Date.now() / 1000));
   $effect(() => {
@@ -31,10 +30,18 @@
 
 <header class="title">
   <div class="brand">
-    <span class="mark" aria-hidden="true"><i></i></span><b>Circinus</b>
-    <span class="pill" title={gameDir ?? "RimWorld not found. Set the game folder in Settings."}>
-      <span class="dot" style="--c: {gameDir ? 'var(--green)' : 'var(--red)'}"></span>{store.snap ? `RimWorld ${store.snap.gameVersion.majorMinor}` : "loading"}{store.snap?.dirty ? " · not saved" : ""}
-    </span>
+    <button class="mark" title="Back to the load order" aria-label="Circinus: back to the load order" onclick={() => { store.view = "order"; store.tab = "active"; }}>
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <defs><linearGradient id="ctile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b2b30"/><stop offset="1" stop-color="#17171a"/></linearGradient></defs>
+        <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#ctile)" stroke="#3a3a40" stroke-width="1.5"/>
+        <circle cx="32" cy="32" r="19" fill="none" stroke="#e9a23b" stroke-width="4"/>
+        <path d="M32 8v4M32 52v4M8 32h4M52 32h4" stroke="#e9a23b" stroke-width="3" stroke-linecap="round"/>
+        <path d="M32 15 38 32H26z" fill="#e9a23b"/>
+        <path d="M32 49 26 32h12z" fill="#7d7f86"/>
+        <circle cx="32" cy="32" r="4" fill="#f3f3f5"/>
+        <circle cx="32" cy="32" r="1.6" fill="#17171a"/>
+      </svg>
+    </button>
   </div>
   <div class="search">
     {@html I.search}
@@ -58,9 +65,10 @@
 <style>
   .title { display: flex; align-items: center; gap: 16px; padding: 0 18px; background: var(--bg); min-width: 0; }
   .brand { display: flex; align-items: center; gap: 10px; flex: 1 1 0; min-width: 0; }
-  .mark { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(160deg, #2a2a30, #161619); box-shadow: var(--shadow-card); display: grid; place-items: center; }
-  .mark i { width: 12px; height: 12px; border-radius: 50%; border: 3px solid var(--amber); box-sizing: border-box; display: block; }
-  .brand b { font-weight: 800; font-size: 15px; letter-spacing: -0.01em; }
+  .mark { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; transition: transform 0.12s; }
+  .mark svg { width: 34px; height: 34px; display: block; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45)); }
+  .mark:hover { transform: scale(1.06); }
+  .mark:active { transform: scale(0.98); }
   .search { position: relative; flex: 1 1 520px; max-width: 520px; min-width: 160px; }
   .search input { width: 100%; height: 34px; border: 0; border-radius: 10px; background: var(--surface); color: var(--text); padding: 0 64px 0 36px; font-size: 13.5px; box-shadow: var(--shadow-card); }
   .search input::placeholder { color: var(--text-3); }
