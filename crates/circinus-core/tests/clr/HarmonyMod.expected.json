@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "assemblies": [
+    {
+      "path": "/tmp/claude-0/-home-claude/c3363ffd-b505-5451-8b3b-d5cb21c763c7/scratchpad/real/HarmonyMod.dll",
+      "name": "HarmonyMod",
+      "mvid": "dc156e18-c1bf-4ec8-acd4-7176558400e1",
+      "error": null,
+      "harmonyIds": [
+        "net.pardeike.rimworld.lib.harmony"
+      ],
+      "patches": [
+        {
+          "declaringType": "HarmonyMod.VersionControl_DrawInfoInCorner_Patch",
+          "method": "Postfix",
+          "kind": "postfix",
+          "targetType": "RimWorld.VersionControl",
+          "targetMethod": "DrawInfoInCorner",
+          "targetKind": "normal",
+          "argumentTypes": null,
+          "priority": null,
+          "before": [],
+          "after": [],
+          "source": "attribute"
+        },
+        {
+          "declaringType": "HarmonyMod.Environment_GetStackTrace_Patch",
+          "method": "Prefix",
+          "kind": "prefix",
+          "targetType": "System.Environment",
+          "targetMethod": "GetStackTrace",
+          "targetKind": "normal",
+          "argumentTypes": null,
+          "priority": null,
+          "before": [],
+          "after": [],
+          "source": "attribute"
+        },
+        {
+          "declaringType": "HarmonyMod.Log_ResetMessageCount_Patch",
+          "method": "Postfix",
+          "kind": "postfix",
+          "targetType": "Verse.Log",
+          "targetMethod": "ResetMessageCount",
+          "targetKind": "normal",
+          "argumentTypes": null,
+          "priority": null,
+          "before": [],
+          "after": [],
+          "source": "attribute"
+        }
+      ],
+      "manualPatches": [
+        {
+          "declaringType": "HarmonyMod.Main",
+          "method": ".cctor",
+          "detail": "PatchAll() applies every [HarmonyPatch] in the assembly"
+        }
+      ],
+      "startupClasses": [
+        "HarmonyMod.Main"
+      ],
+      "modClasses": [
+        "HarmonyMod.Main"
+      ]
+    }
+  ]
+}

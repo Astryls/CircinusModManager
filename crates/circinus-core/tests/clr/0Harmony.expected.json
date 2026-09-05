@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "assemblies": [
+    {
+      "path": "/tmp/claude-0/-home-claude/c3363ffd-b505-5451-8b3b-d5cb21c763c7/scratchpad/real/0Harmony.dll",
+      "name": "0Harmony",
+      "mvid": "e5339928-9d9b-419d-83f9-f5b02c5cf609",
+      "error": null,
+      "harmonyIds": [],
+      "patches": [],
+      "manualPatches": [
+        {
+          "declaringType": "HarmonyLib.Harmony",
+          "method": "PatchAll",
+          "detail": "PatchAll() applies every [HarmonyPatch] in the assembly"
+        },
+        {
+          "declaringType": "HarmonyLib.Harmony",
+          "method": "PatchAllUncategorized",
+          "detail": "PatchAll() applies every [HarmonyPatch] in the assembly"
+        },
+        {
+          "declaringType": "HarmonyLib.Harmony",
+          "method": "PatchCategory",
+          "detail": "PatchCategory(\u2026) called with a computed target"
+        },
+        {
+          "declaringType": "HarmonyLib.Harmony",
+          "method": "UnpatchCategory",
+          "detail": "UnpatchCategory() removes patches at runtime"
+        },
+        {
+          "declaringType": "HarmonyLib.Harmony\u002B\u003C\u003Ec__DisplayClass17_1",
+          "method": "\u003CUnpatchAll\u003Eb__1",
+          "detail": "Unpatch(\u2026) called with a computed target"
+        },
+        {
+          "declaringType": "HarmonyLib.Harmony\u002B\u003C\u003Ec__DisplayClass17_1",
+          "method": "\u003CUnpatchAll\u003Eb__2",
+          "detail": "Unpatch(\u2026) called with a computed target"
+        },
+        {
+          "declaringType": "HarmonyLib.Harmony\u002B\u003C\u003Ec__DisplayClass17_1",
+          "method": "\u003CUnpatchAll\u003Eb__3",
+          "detail": "Unpatch(\u2026) called with a computed target"
+        },
+        {
+          "declaringType": "HarmonyLib.Harmony\u002B\u003C\u003Ec__DisplayClass17_1",
+          "method": "\u003CUnpatchAll\u003Eb__4",
+          "detail": "Unpatch(\u2026) called with a computed target"
+        },
+        {
+          "declaringType": "HarmonyLib.Harmony\u002B\u003C\u003Ec__DisplayClass17_1",
+          "method": "\u003CUnpatchAll\u003Eb__5",
+          "detail": "Unpatch(\u2026) called with a computed target"
+        },
+        {
+          "declaringType": "HarmonyLib.Harmony\u002B\u003C\u003Ec__DisplayClass17_1",
+          "method": "\u003CUnpatchAll\u003Eb__6",
+          "detail": "Unpatch(\u2026) called with a computed target"
+        },
+        {
+          "declaringType": "HarmonyLib.PatchClassProcessor",
+          "method": "ReversePatch",
+          "detail": "CreateReversePatcher(\u2026) called with a computed target"
+        }
+      ],
+      "startupClasses": [],
+      "modClasses": []
+    }
+  ]
+}

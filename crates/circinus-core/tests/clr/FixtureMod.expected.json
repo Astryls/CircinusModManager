@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "assemblies": [
+    {
+      "path": "crates/circinus-core/tests/clr/FixtureMod.dll",
+      "name": "FixtureMod",
+      "mvid": "185d291f-4f76-4221-8e96-6cfbd0e36e14",
+      "error": null,
+      "harmonyIds": [
+        "fixture.mod.id"
+      ],
+      "patches": [
+        {
+          "declaringType": "FixtureMod.PawnTickPatch",
+          "method": "Before",
+          "kind": "prefix",
+          "targetType": "RimWorld.Pawn",
+          "targetMethod": "Tick",
+          "targetKind": "normal",
+          "argumentTypes": null,
+          "priority": 600,
+          "before": [
+            "other.mod"
+          ],
+          "after": [],
+          "source": "attribute"
+        },
+        {
+          "declaringType": "FixtureMod.PawnTickPatch",
+          "method": "After",
+          "kind": "postfix",
+          "targetType": "RimWorld.Pawn",
+          "targetMethod": "Tick",
+          "targetKind": "normal",
+          "argumentTypes": null,
+          "priority": null,
+          "before": [],
+          "after": [
+            "another.mod"
+          ],
+          "source": "attribute"
+        },
+        {
+          "declaringType": "FixtureMod.OverloadPatch",
+          "method": "Transpile",
+          "kind": "transpiler",
+          "targetType": "RimWorld.Pawn",
+          "targetMethod": "Tick",
+          "targetKind": "normal",
+          "argumentTypes": [
+            "System.Int32"
+          ],
+          "priority": null,
+          "before": [],
+          "after": [],
+          "source": "attribute"
+        },
+        {
+          "declaringType": "FixtureMod.PropertyAndCtor",
+          "method": "Getter",
+          "kind": "postfix",
+          "targetType": "RimWorld.Pawn",
+          "targetMethod": "HitPoints",
+          "targetKind": "getter",
+          "argumentTypes": null,
+          "priority": null,
+          "before": [],
+          "after": [],
+          "source": "attribute"
+        },
+        {
+          "declaringType": "FixtureMod.PropertyAndCtor",
+          "method": "Ctor",
+          "kind": "prefix",
+          "targetType": "RimWorld.Pawn",
+          "targetMethod": null,
+          "targetKind": "constructor",
+          "argumentTypes": null,
+          "priority": null,
+          "before": [],
+          "after": [],
+          "source": "attribute"
+        },
+        {
+          "declaringType": "FixtureMod.ByName",
+          "method": "Fin",
+          "kind": "finalizer",
+          "targetType": "RimWorld.Building",
+          "targetMethod": "SpawnSetup",
+          "targetKind": "normal",
+          "argumentTypes": null,
+          "priority": null,
+          "before": [],
+          "after": [],
+          "source": "attribute"
+        }
+      ],
+      "manualPatches": [
+        {
+          "declaringType": "FixtureMod.FixtureModEntry",
+          "method": ".cctor",
+          "detail": "PatchAll() applies every [HarmonyPatch] in the assembly"
+        },
+        {
+          "declaringType": "FixtureMod.FixtureModEntry",
+          "method": ".cctor",
+          "detail": "Patch(\u2026) called with a computed target"
+        }
+      ],
+      "startupClasses": [
+        "FixtureMod.FixtureModEntry"
+      ],
+      "modClasses": [
+        "FixtureMod.FixtureModEntry"
+      ]
+    }
+  ]
+}

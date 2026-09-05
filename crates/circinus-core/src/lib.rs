@@ -7,6 +7,7 @@
 pub mod about;
 pub mod cache;
 pub mod changes;
+pub mod clr;
 pub mod dds;
 pub mod defs;
 pub mod fsx;
