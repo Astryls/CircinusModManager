@@ -55,7 +55,10 @@
   const pct = $derived(job && job.total ? Math.round((job.done / job.total) * 100) : 0);
   /** Mods fighting over a method, worst first: the ones that rewrite or run before it. */
   const fighters = (t: TargetGroup) => [...t.patchers].sort((a, b) => Number(b.kind === "prefix" || b.kind === "transpiler") - Number(a.kind === "prefix" || a.kind === "transpiler") || (b.priority ?? 400) - (a.priority ?? 400));
-  const PUBLISH = "dotnet publish -c Release -r win-x64 -p:Aot=true";
+  /** Where the app looked for the scanner, in order: two places beside its executable, the data
+   *  folder, then every folder on PATH (`harmony::scanner_candidates`). */
+  const tried = $derived(store.patchScannerTried);
+  const onPath = $derived(Math.max(0, tried.length - 3));
 </script>
 
 <main class="center">
@@ -64,11 +67,29 @@
       <h3>The scanner is not installed</h3>
       <p class="lead">
         A C# mod changes the game by attaching Harmony patches to its methods, and two mods that change the same method are the usual reason a pair does not work together. Circinus can tell you which methods those are, but it needs a small companion tool to read them:
-        <b>harmony-scan</b>. The tool opens each assembly and reads its metadata and instructions. It never loads or runs a mod's code.
+        <b>harmony-scan</b>. The tool opens each assembly and reads its metadata and instructions. It never loads or runs a mod's code. Circinus looked for it and found nothing, so this page has nothing to show yet.
       </p>
-      <p class="lead">Build it from <span class="mono">tools/harmony-scan</span> in the Circinus source and put the result next to Circinus, in its data folder, or anywhere on your PATH:</p>
-      <pre class="cmd">{PUBLISH}</pre>
-      <p class="hint">That writes <span class="mono">bin/Release/net8.0/win-x64/publish/harmony-scan.exe</span>. Swap <span class="mono">win-x64</span> for <span class="mono">linux-x64</span> or <span class="mono">osx-arm64</span> on those systems. Circinus looks for it again every time you open this page.</p>
+      <div class="audiences">
+        <div class="case">
+          <h4>If you installed Circinus</h4>
+          <p>The installer includes the scanner and puts it beside Circinus. If you are seeing this, the install is incomplete: run the installer again, or copy <span class="mono">harmony-scan{tried[0]?.endsWith(".exe") ? ".exe" : ""}</span> from a working install into the first folder below.</p>
+        </div>
+        <div class="case">
+          <h4>If you built Circinus from source</h4>
+          <p>Run <span class="mono">npm run sidecar</span> once in the Circinus folder (it needs the .NET 8 SDK), then restart <span class="mono">npm run tauri dev</span>. That builds the scanner and puts a copy beside the debug build; a dev start does it for you when .NET is installed.</p>
+        </div>
+      </div>
+      {#if tried.length}
+        <details class="looked">
+          <summary>Where Circinus looked{onPath ? `, including ${onPath} folder${onPath === 1 ? "" : "s"} on your PATH` : ""}</summary>
+          <ol class="mono">
+            {#each tried as t, i}
+              <li><span class="path">{t}</span>{#if i <= 1}<span class="why">beside Circinus itself</span>{:else if i === 2}<span class="why">the data folder</span>{:else if i > 2}<span class="why">on PATH</span>{/if}</li>
+            {/each}
+          </ol>
+        </details>
+      {/if}
+      <p class="hint">Circinus looks again every time you open this page.</p>
       <button class="btn" onclick={() => store.refreshPatches()}>{@html I.refresh}Look again</button>
     </section>
   {:else}
@@ -264,8 +285,19 @@
   .pl { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; color: var(--text-2); min-width: 0; }
   .pl b { font-size: 14px; color: var(--text); }
   .cur { color: var(--text-3); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .missing .cmd { font: 12.5px/1.6 var(--mono); background: var(--well); color: var(--text-2); border-radius: 10px; padding: 10px 12px; margin: 0 0 10px; overflow-x: auto; user-select: text; }
   .missing .btn { margin-top: 10px; }
+  .audiences { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; margin: 0 0 12px; max-width: 96ch; }
+  .case { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+  .case h4 { margin: 0 0 4px; font-size: 12.5px; font-weight: 700; color: var(--text); }
+  .case p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-2); overflow-wrap: anywhere; }
+  .looked { max-width: 96ch; font-size: 12.5px; color: var(--text-2); }
+  .looked summary { cursor: pointer; color: var(--text-2); user-select: none; }
+  .looked summary:hover { color: var(--text); }
+  .looked ol { margin: 8px 0 0; padding: 8px 12px 8px 32px; background: var(--well); border-radius: 10px; font-size: 12px; line-height: 1.7; user-select: text; }
+  .looked li { display: flex; gap: 12px; align-items: baseline; min-width: 0; }
+  .looked li::marker { color: var(--text-3); }
+  .looked .path { overflow-wrap: anywhere; min-width: 0; }
+  .looked .why { color: var(--text-3); font: 11px var(--font); white-space: nowrap; margin-left: auto; }
 
   /* contested */
   .fights { display: flex; flex-direction: column; gap: 3px; }

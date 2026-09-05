@@ -1045,6 +1045,12 @@ export interface PatchSummary {
   seconds: number;
 }
 
+/** Where the Harmony scanner is (`path` null when it is not installed) and every place looked. */
+export interface ScannerStatus {
+  path: string | null;
+  tried: string[];
+}
+
 export interface PatchJob {
   running: boolean;
   phase: "idle" | "collecting" | "scanning";

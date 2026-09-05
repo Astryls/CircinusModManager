@@ -84,8 +84,8 @@ fn now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
-/// The message every command gives when the sidecar is not on this machine. The view offers the
-/// publish command; this is what anything else says.
+/// The message every command gives when the sidecar is not on this machine. The view explains
+/// how to get it and where it was looked for (`patches_scanner`); this is what anything else says.
 const NO_SCANNER: &str = "The Harmony scanner is not installed. Circinus reads what mods patch with a small tool that ships beside it; without it there is nothing to report.";
 
 impl Patches {
@@ -374,10 +374,23 @@ pub fn patches_for_mod(pat: Pat<'_>, uid: String) -> CmdResult<Option<ModPatchDe
     Ok(pat.for_mod(&uid))
 }
 
-/// Where the scanner is, or None when it is not installed.
+/// Where the scanner is, and every place that was looked. `path` is None when it is not
+/// installed; `tried` is then what the Patches view shows, so a developer whose debug build
+/// cannot see the scanner learns which folder it is expected in rather than guessing.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScannerStatus {
+    pub path: Option<String>,
+    pub tried: Vec<String>,
+}
+
+/// Where the scanner is (or None when it is not installed), and where it was looked for.
 #[tauri::command]
-pub fn patches_scanner(pat: Pat<'_>) -> Option<String> {
-    pat.scanner().map(|p| p.to_string_lossy().to_string())
+pub fn patches_scanner(pat: Pat<'_>) -> ScannerStatus {
+    let Some(dir) = pat.app.lock().ok().map(|a| a.data_dir.clone()) else { return ScannerStatus::default() };
+    let tried = harmony::scanner_candidates(&dir);
+    let path = tried.iter().find(|p| p.is_file()).map(|p| p.to_string_lossy().to_string());
+    ScannerStatus { path, tried: tried.iter().map(|p| p.to_string_lossy().to_string()).collect() }
 }
 
 #[cfg(test)]

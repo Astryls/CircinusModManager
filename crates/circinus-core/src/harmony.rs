@@ -98,9 +98,18 @@ const EXE: &str = if cfg!(windows) { "harmony-scan.exe" } else { "harmony-scan" 
 
 /// Where the sidecar is: beside the running executable, in the data folder, or on PATH.
 pub fn scanner_path(app_dir: &Path) -> Option<PathBuf> {
+    scanner_candidates(app_dir).into_iter().find(|p| p.is_file())
+}
+
+/// Every place `scanner_path` looks, in the order it looks, whether or not anything is there.
+/// The Patches view shows this list when the scanner is missing, so that "it is not installed"
+/// comes with "and here is where it would have to be".
+pub fn scanner_candidates(app_dir: &Path) -> Vec<PathBuf> {
     let mut tries: Vec<PathBuf> = Vec::new();
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
+            // Beside the executable is where an installer puts it, and where `scripts/sidecar.mjs`
+            // puts a copy for a development build (the cargo target directory's `debug/`).
             tries.push(dir.join(EXE));
             // A cargo target directory keeps the tool one level up during development.
             tries.push(dir.join("harmony-scan").join(EXE));
@@ -108,9 +117,12 @@ pub fn scanner_path(app_dir: &Path) -> Option<PathBuf> {
     }
     tries.push(app_dir.join(EXE));
     if let Some(paths) = std::env::var_os("PATH") {
-        tries.extend(std::env::split_paths(&paths).map(|p| p.join(EXE)));
+        tries.extend(std::env::split_paths(&paths).filter(|p| !p.as_os_str().is_empty()).map(|p| p.join(EXE)));
     }
-    tries.into_iter().find(|p| p.is_file())
+    // PATH often repeats itself, and may name the executable's own folder; each place once.
+    let mut seen = std::collections::HashSet::new();
+    tries.retain(|p| seen.insert(p.clone()));
+    tries
 }
 
 /// Run the sidecar over some assemblies. It is given every path at once: starting the process is
@@ -435,5 +447,24 @@ mod tests {
         assert!(e.to_string().contains("could not run the Harmony scanner"), "{e}");
         // nothing to scan is not an error
         assert_eq!(scan(Path::new("/no/such/harmony-scan"), &[]).unwrap().assemblies.len(), 0);
+    }
+
+    #[test]
+    fn the_places_looked_are_listed_in_order_and_once_each() {
+        let app_dir = std::env::temp_dir().join(format!("circinus-harmony-{}", std::process::id()));
+        let tries = scanner_candidates(&app_dir);
+        // Beside the executable comes first (the test binary has one), the data folder after it.
+        let exe_dir = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)).unwrap();
+        assert_eq!(tries[0], exe_dir.join(EXE));
+        let data = tries.iter().position(|p| *p == app_dir.join(EXE)).expect("the data folder is looked in");
+        assert!(data > 0, "the executable's folder is looked in before the data folder");
+        // Every entry names the scanner by its file name, and none is listed twice.
+        assert!(tries.iter().all(|p| p.file_name().map(|n| n == EXE).unwrap_or(false)), "{tries:?}");
+        let mut unique = tries.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), tries.len(), "{tries:?}");
+        // The lookup is exactly the first of these that exists (usually none, on a test machine).
+        assert_eq!(scanner_path(&app_dir), tries.iter().find(|p| p.is_file()).cloned());
     }
 }

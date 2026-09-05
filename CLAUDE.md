@@ -67,8 +67,12 @@ executable. Players never touch .NET.
 
 Plain `npm run tauri build` stays sidecar-free on purpose: naming the scanner in the main
 config makes its absence a hard build failure, and nobody should need the .NET SDK to compile
-Circinus. `.github/workflows/release.yml` does the whole thing per platform on a tag and fails
-if the scanner is missing from the output.
+Circinus. `npm run tauri dev` runs `scripts/sidecar.mjs --optional` first, which builds the
+scanner when .NET is there (skipped when nothing under `tools/harmony-scan/` changed) and copies
+it beside the debug executable in the cargo target directory; when .NET is missing or the
+build fails it says so in one line and exits 0, so the dev build never depends on it.
+`.github/workflows/release.yml` does the whole thing per platform on a tag and fails if the
+scanner is missing from the output.
 
 ## House style
 

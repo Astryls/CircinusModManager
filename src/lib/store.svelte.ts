@@ -51,10 +51,12 @@ class Store {
   /** Last DDS audit: foreign files the game will refuse. */
   audit = $state<AuditReport | null>(null);
   /** The Harmony scan job (from `patch-progress`), what it found, and where the scanner is.
-   *  `patchScanner` is undefined until it has been asked for, then a path or null. */
+   *  `patchScanner` is undefined until it has been asked for, then a path or null; when it is
+   *  null, `patchScannerTried` is every place the app looked, for the view to show. */
   patchJob = $state<PatchJob | null>(null);
   patchReport = $state<PatchReport | null>(null);
   patchScanner = $state<string | null | undefined>(undefined);
+  patchScannerTried = $state<string[]>([]);
   /** Notices closed for this session (they come back next launch if still true). */
   dismissed = $state<string[]>([]);
   /** uid → the list should scroll to it on the next render. */
@@ -559,7 +561,9 @@ class Store {
   /** Ask where the scanner is and what the last run found. Safe to call more than once. */
   async refreshPatches() {
     try {
-      this.patchScanner = await api.patchesScanner();
+      const s = await api.patchesScanner();
+      this.patchScanner = s.path;
+      this.patchScannerTried = s.tried;
     } catch {
       this.patchScanner = null;
     }
