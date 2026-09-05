@@ -56,6 +56,20 @@ button in Settings, and an install-and-restart banner.
   never loads a mod assembly) and groups the result into what one mod patches and who else
   patches the same method.
 
+## Packaging
+
+`npm run release` is what makes an installer for players: it builds the Harmony scanner for the
+host platform (`scripts/sidecar.mjs`, needs the .NET 8 SDK) into
+`src-tauri/binaries/harmony-scan-<triple>`, then runs `tauri build` with
+`src-tauri/tauri.release.conf.json` merged in, which carries it as an `externalBin`. Tauri
+strips the triple at bundle time, so the app finds `harmony-scan(.exe)` beside its own
+executable. Players never touch .NET.
+
+Plain `npm run tauri build` stays sidecar-free on purpose: naming the scanner in the main
+config makes its absence a hard build failure, and nobody should need the .NET SDK to compile
+Circinus. `.github/workflows/release.yml` does the whole thing per platform on a tag and fails
+if the scanner is missing from the output.
+
 ## House style
 
 Comments explain *why*, in prose, and the code is written to be read. User-facing text is plain

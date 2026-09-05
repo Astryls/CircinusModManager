@@ -35,9 +35,16 @@ runs while that command is running — it is not a standalone exe. For one, buil
 ## Release builds
 
 ```sh
-npm run tauri build                       # Windows: .exe (NSIS) and .msi under src-tauri/target/release/bundle
+npm run release                           # the installer players download, Harmony scanner included
+npm run tauri build                       # the same, without the scanner (no .NET needed)
 npm run tauri build -- --bundles dmg      # macOS: .dmg (run on a Mac; sign + notarize with an Apple Developer ID)
 ```
+
+`npm run release` builds the Harmony scanner for this machine (`scripts/sidecar.mjs`, which needs the .NET 8 SDK), puts it in `src-tauri/binaries/harmony-scan-<target triple>`, and hands Tauri a config that carries it as an `externalBin`. Tauri strips the triple when it bundles, so the scanner lands beside `circinus.exe` inside the installer and the app finds it there. **A player installs one file and never sees .NET.**
+
+The two commands are separate on purpose. Naming the scanner in the main `tauri.conf.json` would make its absence a hard build failure — `externalBin` and `bundle.resources` both refuse to build when the file is not there — so nobody could compile Circinus without first installing the .NET SDK. `npm run tauri build` therefore still works on a machine with no .NET; it just produces a build whose Patches view explains that the scanner is missing, which is one feature turned off rather than a broken app.
+
+`.github/workflows/release.yml` does all of this for Windows, macOS (Intel and Apple silicon) and Linux on a tag: it installs .NET, builds the scanner, runs it over the test fixture to check it works, runs the tests, builds the bundle, and fails if the scanner is not in the output — a release that quietly lost its sidecar looks exactly like a working one until somebody opens the Patches view.
 
 Single self-contained binaries; SteamCMD is downloaded on first use rather than bundled (Valve's terms).
 

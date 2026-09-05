@@ -57,56 +57,47 @@ older tool and a newer app (or the reverse) still understand each other.
 
 ## Building
 
-A plain build needs no network: everything used ships in the .NET shared framework, and
-`NuGet.config` clears the package sources so a stray dependency fails the build rather than
-appearing quietly.
+A plain build needs no packages — everything used ships in the .NET shared framework:
 
 ```
 dotnet build -c Release
 ```
 
-Circinus ships the tool as a single native binary beside the app — no .NET runtime on the
-player's machine, no JIT, a few milliseconds to start. The AOT compiler and the trimmer arrive as
-NuGet packages, so they are asked for only when you publish with `-p:Aot=true`, and that step
-does need network (and, on Linux, `clang` and `zlib` development headers):
-
-```
-dotnet publish -c Release -r win-x64   -p:Aot=true
-dotnet publish -c Release -r linux-x64 -p:Aot=true
-dotnet publish -c Release -r osx-arm64 -p:Aot=true
-```
-
-Each writes `bin/Release/net8.0/<rid>/publish/harmony-scan(.exe)`. Circinus looks for that binary
-beside its own executable, in its data folder, and on `PATH`.
-
-## Shipping it with Circinus
-
-**This is a release step, not part of the app build.** Publish the scanner for the platform being
-released and copy it next to the bundled executable before the installer is made:
+Publishing does need nuget.org, for the AOT compiler and the runtime pack:
 
 ```
 dotnet publish -c Release -r win-x64 -p:Aot=true
-copy bin\Release\net8.0\win-x64\publish\harmony-scan.exe ..\..\src-tauri\target\release\
 ```
 
-`src-tauri/tauri.conf.json` deliberately does not name the scanner. Tauri's two ways of carrying
-an extra file both make its absence fatal: `bundle.externalBin` wants
-`harmony-scan-<target-triple>.exe` and fails the build when that file is not there, and
-`bundle.resources` fails just as hard — a glob that matches nothing is
-`GlobPathNotFound`, not "nothing to copy". Naming it either way would mean nobody could build
-Circinus without first installing the .NET SDK and publishing this tool, which needs a network,
-and on Linux `clang` and zlib headers besides. So the copy stays here, in the release notes,
-where it costs one line.
+`NuGet.offline.config` clears the package sources for building with no network at all. It is
+deliberately not the default: with the sources cleared, a publish fails with a wall of NU1100
+"unable to resolve" errors that read like a broken project rather than a missing source.
 
-When publishing the scanner becomes part of the release script, add it as a resource then:
+## Shipping it with Circinus
 
-```json
-"bundle": { "resources": ["harmony-scan.exe"] }
+**Players never build this, and never see .NET.** `npm run release` at the repo root builds the
+scanner for the machine it runs on and hands it to Tauri as an `externalBin`, so it travels
+inside the installer and lands beside the app's own executable; Circinus looks for it there,
+in its data folder, and on `PATH`. `.github/workflows/release.yml` does the same for Windows,
+macOS and Linux on a tag.
+
+The script behind it is `scripts/sidecar.mjs`:
+
+```
+node scripts/sidecar.mjs                 # this machine, AOT, falling back to self-contained
+node scripts/sidecar.mjs --no-aot        # skip AOT (it needs MSVC, or clang and zlib headers)
+node scripts/sidecar.mjs --skip-build    # place a binary built elsewhere
 ```
 
-with the path relative to `src-tauri`, and the file present before `tauri build` runs. A player
-who has no scanner sees the Patches view explain what it is and how to get one, so a build
-without it is a build with one feature turned off rather than a broken one.
+It writes `src-tauri/binaries/harmony-scan-<target triple>[.exe]` and clears Tauri's cached
+copies under `src-tauri/target/`, which it does not refresh on its own — a known way to ship a
+stale scanner without noticing.
+
+The main `tauri.conf.json` deliberately does not name the scanner: `externalBin` and
+`bundle.resources` both fail the build when the file is absent, which would mean nobody could
+compile Circinus without installing the .NET SDK first. `src-tauri/tauri.release.conf.json`
+adds it, and `npm run release` merges the two. A build made without it is a build with one
+feature turned off — the Patches view says what is missing and how to get it.
 
 ## The fixture
 

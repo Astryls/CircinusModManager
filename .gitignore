@@ -12,3 +12,6 @@ tools/loadtest/*.png
 
 # agent worktrees
 .claude/
+
+# the Harmony scanner, built for a release by scripts/sidecar.mjs
+src-tauri/binaries/
