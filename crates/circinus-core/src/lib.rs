@@ -8,6 +8,7 @@ pub mod about;
 pub mod cache;
 pub mod changes;
 pub mod dds;
+pub mod fsx;
 pub mod game;
 pub mod import;
 pub mod model;

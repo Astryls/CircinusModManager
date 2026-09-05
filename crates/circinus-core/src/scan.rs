@@ -3,6 +3,7 @@
 
 use crate::about::{parse_about, parse_load_folders, parse_manifest};
 use crate::cache::Cache;
+use crate::fsx::{folder_at, real_root, rel_str, walk};
 use crate::game::GameVersion;
 use crate::model::*;
 use crate::paths::Locations;
@@ -14,7 +15,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::UNIX_EPOCH;
-use walkdir::WalkDir;
 
 /// Bump when the parser changes so cached entries are re-parsed.
 const PARSER_VERSION: u32 = 3;
@@ -54,6 +54,17 @@ pub struct ScanOutput {
     pub shallow: Vec<String>,
     /// uid → cache stamp for entries not yet written to the cache.
     pub stamps: HashMap<String, String>,
+    /// Entries in a mod folder that could not be read as folders: links to nowhere, links
+    /// of a kind this platform cannot open. Files are not listed.
+    pub unreadable: Vec<Unreadable>,
+}
+
+/// A Mods folder entry the scan had to leave out, with the reason in plain words.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Unreadable {
+    pub path: PathBuf,
+    pub reason: String,
 }
 
 /// Result of walking one mod folder.
@@ -75,18 +86,21 @@ fn mtime_secs(md: &std::fs::Metadata) -> u64 {
     md.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0)
 }
 
-/// Case-insensitive lookup of a direct child entry.
+/// Case-insensitive lookup of a direct child entry. A link is resolved to what it points at.
 fn find_entry(dir: &Path, name: &str) -> Option<PathBuf> {
     let direct = dir.join(name);
     if direct.exists() {
-        return Some(direct);
+        return Some(real_root(&direct));
     }
     let rd = std::fs::read_dir(dir).ok()?;
-    rd.filter_map(|e| e.ok()).map(|e| e.path()).find(|p| p.file_name().map(|f| f.to_string_lossy().eq_ignore_ascii_case(name)).unwrap_or(false))
+    rd.filter_map(|e| e.ok()).map(|e| e.path()).find(|p| p.file_name().map(|f| f.to_string_lossy().eq_ignore_ascii_case(name)).unwrap_or(false)).map(|p| real_root(&p))
 }
 
 struct Candidate {
+    /// The entry in the mod folder, the path RimWorld reports; the mod's uid.
     path: PathBuf,
+    /// Where the files really are: `path` itself, or the target when `path` is a link.
+    real: PathBuf,
     source: Source,
     about_xml: Option<PathBuf>,
     stamp: String,
@@ -94,50 +108,64 @@ struct Candidate {
     modified: u64,
 }
 
-fn candidates_in(root: &Path, source: Source, game_version: &str, workshop_updated: &HashMap<u64, u64>) -> Vec<Candidate> {
+fn candidates_in(root: &Path, source: Source, game_version: &str, workshop_updated: &HashMap<u64, u64>, unreadable: &mut Vec<Unreadable>) -> Vec<Candidate> {
     let Ok(rd) = std::fs::read_dir(root) else { return Vec::new() };
     let mut out = Vec::new();
     for entry in rd.filter_map(|e| e.ok()) {
         let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
         let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         if name.starts_with('.') || name.eq_ignore_ascii_case("__MACOSX") {
             continue;
         }
-        let about_dir = find_entry(&path, "About");
+        // The entry's own type comes free with the listing. A plain folder is used as is; a
+        // link (a symlink, or a junction on Windows) is read through to the folder it names,
+        // because RimWorld loads the mod behind it and because opening a link and letting the
+        // OS follow it fails on some Windows setups.
+        let kind = entry.file_type().ok();
+        let real = if kind.map(|t| t.is_dir()).unwrap_or(false) {
+            path.clone()
+        } else if kind.map(|t| t.is_file()).unwrap_or(false) {
+            continue;
+        } else {
+            match folder_at(&path) {
+                Ok(real) => real,
+                Err(reason) => {
+                    tracing::warn!(path = %path.display(), %reason, "mod folder entry left out");
+                    unreadable.push(Unreadable { path, reason });
+                    continue;
+                }
+            }
+        };
+        let about_dir = find_entry(&real, "About");
         let about_xml = about_dir.as_ref().and_then(|d| find_entry(d, "About.xml"));
-        let dir_mtime = std::fs::metadata(&path).map(|m| mtime_secs(&m)).unwrap_or(0);
+        let dir_mtime = std::fs::metadata(&real).map(|m| mtime_secs(&m)).unwrap_or(0);
         let about_mtime = about_xml.as_ref().and_then(|p| std::fs::metadata(p).ok()).map(|m| mtime_secs(&m)).unwrap_or(0);
         // Workshop folders are named after the item id; Steam's own record of when it last
         // updated the item is the only reliable sign of an in-place update.
         let ws_updated = if source == Source::Workshop { name.parse::<u64>().ok().and_then(|id| workshop_updated.get(&id).copied()).unwrap_or(0) } else { 0 };
         let stamp = if ws_updated > 0 { format!("{PARSER_VERSION}:{game_version}:{dir_mtime}:{about_mtime}:{ws_updated}") } else { format!("{PARSER_VERSION}:{game_version}:{dir_mtime}:{about_mtime}") };
-        out.push(Candidate { source, path, about_xml, stamp, modified: dir_mtime.max(about_mtime).max(ws_updated) });
+        out.push(Candidate { source, path, real, about_xml, stamp, modified: dir_mtime.max(about_mtime).max(ws_updated) });
     }
     out
 }
 
-/// Walk a mod folder once: counts, sizes, newest mtime and the file inventory.
+/// Walk a mod folder once: counts, sizes, newest mtime and the file inventory. `root` may be a
+/// link, and so may folders inside; both are read through.
 fn inspect_folder(root: &Path) -> (Contents, ModFiles, u64) {
     let mut c = Contents::default();
     let mut f = ModFiles::default();
     let mut newest = 0u64;
     let mut language_dirs = std::collections::HashSet::new();
-    let walker = WalkDir::new(root).follow_links(false).into_iter().filter_entry(|e| {
-        let n = e.file_name().to_string_lossy();
-        !(e.depth() > 0 && (n == ".git" || n.eq_ignore_ascii_case("Source") || n == ".vs" || n.eq_ignore_ascii_case("obj")))
-    });
-    for entry in walker.filter_map(|e| e.ok()) {
-        let Ok(md) = entry.metadata() else { continue };
-        newest = newest.max(mtime_secs(&md));
+    let found = walk(root, &|n| n == ".git" || n.eq_ignore_ascii_case("Source") || n == ".vs" || n.eq_ignore_ascii_case("obj"));
+    for entry in &found {
+        let md = &entry.meta;
+        newest = newest.max(mtime_secs(md));
         if !md.is_file() {
             continue;
         }
         c.size_bytes += md.len();
-        let rel = entry.path().strip_prefix(root).unwrap_or(entry.path());
-        let rel_s = rel.to_string_lossy().replace('\\', "/").to_ascii_lowercase();
+        let rel = entry.rel.as_path();
+        let rel_s = rel_str(rel).to_ascii_lowercase();
         let segs: Vec<&str> = rel_s.split('/').collect();
         let ext = rel.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
         let has_seg = |s: &str| segs[..segs.len().saturating_sub(1)].iter().any(|x| *x == s);
@@ -223,6 +251,7 @@ fn parse_quick(c: &Candidate, gv: &GameVersion) -> ModInfo {
     let uid = c.path.to_string_lossy().to_string();
     let about_dir = c.about_xml.as_ref().and_then(|p| p.parent().map(|p| p.to_path_buf()));
     let mut info = ModInfo { uid: uid.clone(), path: c.path.clone(), source: c.source, ..Default::default() };
+    info.link_target = (c.real != c.path).then(|| c.real.clone());
     info.modified = c.modified;
 
     match &c.about_xml {
@@ -243,7 +272,7 @@ fn parse_quick(c: &Candidate, gv: &GameVersion) -> ModInfo {
             }
         },
         None => {
-            let rsc = std::fs::read_dir(&c.path)
+            let rsc = std::fs::read_dir(&c.real)
                 .ok()
                 .map(|rd| rd.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.extension().map(|e| e == "rsc").unwrap_or(false)).collect::<Vec<_>>())
                 .unwrap_or_default();
@@ -279,11 +308,13 @@ fn parse_quick(c: &Candidate, gv: &GameVersion) -> ModInfo {
         info.name = if !info.package_id.is_empty() { info.package_id.clone() } else { c.path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default() };
     }
     info.published_file_id = if info.source == Source::Ludeon { None } else { read_published_file_id(about_dir.as_deref(), &c.path) };
+    // A git checkout stays a git checkout even when the author's PublishedFileId.txt is in
+    // it; only then does the file mark a SteamCMD download.
+    if info.source == Source::Local && c.real.join(".git").exists() {
+        info.source = Source::Git;
+    }
     if info.source == Source::Local && info.published_file_id.is_some() && about_dir.as_ref().and_then(|d| find_entry(d, "PublishedFileId.txt")).is_some() {
         info.source = Source::SteamCmd;
-    }
-    if info.source == Source::Local && c.path.join(".git").exists() {
-        info.source = Source::Git;
     }
     info.preview = about_dir.as_ref().and_then(|d| find_entry(d, "Preview.png"));
     if let Some(mp) = about_dir.as_ref().and_then(|d| find_entry(d, "Manifest.xml")) {
@@ -291,7 +322,7 @@ fn parse_quick(c: &Candidate, gv: &GameVersion) -> ModInfo {
             info.manifest = Some(m);
         }
     }
-    if let Some(lf) = find_entry(&c.path, "LoadFolders.xml") {
+    if let Some(lf) = find_entry(&c.real, "LoadFolders.xml") {
         if let Ok(Some(folders)) = read_text(&lf).and_then(|t| parse_load_folders(&t, &lf, &gv.major_minor)) {
             info.load_folders = Some(folders);
         }
@@ -351,14 +382,15 @@ pub fn scan(opts: &ScanOptions, cache: Option<&Cache>, deep: bool, progress: &(d
     let loc = &opts.locations;
     let gv = &opts.game_version;
     let mut cands: Vec<Candidate> = Vec::new();
+    let mut unreadable = Vec::new();
     if let Some(data) = loc.data_dir() {
-        cands.extend(candidates_in(&data, Source::Ludeon, &gv.major_minor, &opts.workshop_updated));
+        cands.extend(candidates_in(&data, Source::Ludeon, &gv.major_minor, &opts.workshop_updated, &mut unreadable));
     }
     if let Some(local) = &loc.local_mods_dir {
-        cands.extend(candidates_in(local, Source::Local, &gv.major_minor, &opts.workshop_updated));
+        cands.extend(candidates_in(local, Source::Local, &gv.major_minor, &opts.workshop_updated, &mut unreadable));
     }
     if let Some(ws) = &loc.workshop_dir {
-        cands.extend(candidates_in(ws, Source::Workshop, &gv.major_minor, &opts.workshop_updated));
+        cands.extend(candidates_in(ws, Source::Workshop, &gv.major_minor, &opts.workshop_updated, &mut unreadable));
     }
     let total = cands.len();
     let cached: HashMap<String, (String, String)> = match (opts.use_cache, cache) {
@@ -393,7 +425,7 @@ pub fn scan(opts: &ScanOptions, cache: Option<&Cache>, deep: bool, progress: &(d
         })
         .collect();
 
-    let mut out = ScanOutput::default();
+    let mut out = ScanOutput { unreadable, ..Default::default() };
     let mut to_store: Vec<(String, String, String)> = Vec::new();
     for ((info, files, from_cache, inspected), cand) in results.into_iter().zip(cands.iter()) {
         if from_cache {
@@ -424,7 +456,8 @@ pub fn scan(opts: &ScanOptions, cache: Option<&Cache>, deep: bool, progress: &(d
     let mut seen_uids = std::collections::HashSet::new();
     out.mods.retain(|m| seen_uids.insert(m.uid.clone()));
     out.mods.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    tracing::info!(mods = out.mods.len(), from_cache = out.from_cache, parsed = out.parsed, shallow = out.shallow.len(), ms = started.elapsed().as_millis() as u64, "scan");
+    let linked = out.mods.iter().filter(|m| m.link_target.is_some()).count();
+    tracing::info!(mods = out.mods.len(), linked, unreadable = out.unreadable.len(), from_cache = out.from_cache, parsed = out.parsed, shallow = out.shallow.len(), ms = started.elapsed().as_millis() as u64, "scan");
     Ok(out)
 }
 
@@ -487,6 +520,73 @@ mod tests {
         assert_eq!(walls.load_folders.as_ref().unwrap().len(), 2);
         let junk = out.mods.iter().find(|m| m.name == "Junk").unwrap();
         assert!(junk.invalid.is_some());
+    }
+
+    #[cfg(unix)]
+    fn link_dir(target: &Path, link: &Path) {
+        std::os::unix::fs::symlink(target, link).unwrap();
+    }
+    #[cfg(windows)]
+    fn link_dir(target: &Path, link: &Path) {
+        let out = std::process::Command::new("cmd").args(["/C", "mklink", "/J"]).arg(link).arg(target).output().unwrap();
+        assert!(out.status.success(), "mklink: {}", String::from_utf8_lossy(&out.stderr));
+    }
+
+    /// Modmixer and Circinus Dev Tools keep a mod in a workspace and put a link named after a
+    /// hash in the Mods folder. RimWorld loads the mod through the link; so must the scan.
+    #[test]
+    fn linked_mod_folders_are_found_and_read_through() {
+        let tmp = tempfile::tempdir().unwrap();
+        let loc = fixture_game(tmp.path());
+        let work = tmp.path().join("workspace/Mods/6eb6cb0b799f");
+        write(
+            &work.join("About/About.xml"),
+            "<ModMetaData><packageId>example.linked</packageId><name>Linked Mod</name><supportedVersions><li>1.6</li></supportedVersions></ModMetaData>",
+        );
+        write(&work.join("About/PublishedFileId.txt"), "3000000001\n");
+        write(&work.join(".git/HEAD"), "ref: refs/heads/main");
+        write(&work.join("Assemblies/LinkedMod.dll"), "x");
+        write(&work.join("Defs/Things.xml"), "<Defs/>");
+        // textures shared through a link inside the mod as well
+        write(&tmp.path().join("shared/Textures/Things/Wall.png"), "png");
+        link_dir(&tmp.path().join("shared/Textures"), &work.join("Textures"));
+        let link = tmp.path().join("Mods/6eb6cb0b799f");
+        link_dir(&work, &link);
+        // a link to nowhere must not break the scan, only be reported
+        link_dir(&tmp.path().join("gone"), &tmp.path().join("Mods/deadbeef0000"));
+
+        let opts = ScanOptions { locations: loc, game_version: GameVersion::parse("1.6.4530 rev1235").unwrap(), use_cache: false, workshop_updated: HashMap::new() };
+        let out = scan(&opts, None, true, &|_, _| {}).unwrap();
+        let m = out.mods.iter().find(|m| m.package_id == "example.linked").expect("the linked mod is listed");
+        assert_eq!(m.path, link, "known by the entry in the Mods folder, as RimWorld reports it");
+        assert_eq!(m.uid, link.to_string_lossy());
+        assert_eq!(m.link_target.as_deref(), Some(work.as_path()));
+        assert_eq!(m.name, "Linked Mod");
+        assert_eq!(m.source, Source::Git, "a git checkout, even with a PublishedFileId.txt in it");
+        assert_eq!(m.published_file_id, Some(3000000001));
+        assert_eq!(m.contents.assemblies, 1);
+        assert_eq!(m.contents.defs, 1);
+        assert_eq!(m.contents.textures, 1, "read through the link inside the mod");
+        assert_eq!(m.kind, ModKind::Code);
+        assert_eq!(out.files[&m.uid].textures, vec!["textures/things/wall.png".trim_end_matches(".png").to_string()]);
+        assert!(m.modified > 0);
+        assert_eq!(out.unreadable.len(), 1, "{:?}", out.unreadable);
+        assert!(out.unreadable[0].path.ends_with("deadbeef0000"));
+        assert!(out.unreadable[0].reason.contains("gone"), "{}", out.unreadable[0].reason);
+        assert!(out.mods.iter().all(|m| !m.uid.ends_with("deadbeef0000")));
+        // the quick scan sees the same mod, and the cache serves it afterwards
+        let cache = Cache::open(&tmp.path().join("cache.sqlite")).unwrap();
+        let opts = ScanOptions { use_cache: true, ..opts };
+        let mut quick = scan(&opts, Some(&cache), false, &|_, _| {}).unwrap();
+        let q = quick.mods.iter().find(|m| m.package_id == "example.linked").unwrap();
+        assert_eq!(q.link_target.as_deref(), Some(work.as_path()));
+        let shallow: Vec<ModInfo> = quick.mods.iter().filter(|m| quick.shallow.contains(&m.uid)).cloned().collect();
+        let ins = inspect_mods(&shallow, &|_, _| {});
+        apply_inspections(&mut quick.mods, &mut quick.files, &quick.stamps, ins, Some(&cache)).unwrap();
+        assert_eq!(quick.mods, out.mods);
+        let again = scan(&opts, Some(&cache), false, &|_, _| {}).unwrap();
+        assert_eq!(again.from_cache, out.mods.len());
+        assert_eq!(again.mods.iter().find(|m| m.package_id == "example.linked").unwrap().contents.textures, 1);
     }
 
     #[test]

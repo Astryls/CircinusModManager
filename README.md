@@ -44,6 +44,7 @@ Single self-contained binaries; SteamCMD is downloaded on first use rather than 
 ## What works today (milestone 1)
 
 - Finds RimWorld through Steam (`steamlocate`) or a chosen folder; reads `Version.txt`, `Data/`, `Mods/`, and the Workshop content folder in parallel with an mtime-keyed SQLite cache.
+- Linked mod folders. A `Mods/` entry that is a symlink or (on Windows) a junction, the way Modmixer, Circinus Dev Tools and hand-made `mklink` links deploy a mod, is read through to the folder it names, as are links inside a mod; RimWorld loads such mods and so must we. The link target is read directly (`circinus-core::fsx`) rather than left to the OS to follow, because opening a link and letting Windows resolve it fails in some setups. The mod keeps the Mods-folder path as its identity (the one RimWorld reports), the details panel says where the files are, and links to nowhere are listed under Settings rather than silently dropped.
 - Parses `About.xml` including `*ByVersion` blocks (which replace, not extend, the base lists — RimWorld semantics), `forceLoadAfter/Before`, dependencies with alternatives; Fluffy's `About/Manifest.xml`; `LoadFolders.xml`; `PublishedFileId.txt`; counts assemblies, patches, defs and textures.
 - Reads and writes `ModsConfig.xml` (keeps a `.bak`, handles the `_steam` duplicate convention and `knownExpansions`).
 - Imports lists from ModsConfig.xml, `.rws` saves (plain, gzip or zstd), `.rml`, RimSort/RimPy JSON and pasted text.

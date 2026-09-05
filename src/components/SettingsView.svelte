@@ -54,6 +54,8 @@
     if (!s) return;
     await store.updateSettings({ dbSources: s.dbSources.map((d) => (d.id === id ? { ...d, enabled: !d.enabled } : d)) });
   }
+  const linked = $derived((store.snap?.mods ?? []).filter((m) => m.linkTarget).length);
+  const unreadable = $derived(store.snap?.unreadable ?? []);
   const withNumber = $derived(Object.values(store.snap?.weights ?? {}).filter((w) => w.share != null).length);
   const fetchedAgo = $derived.by(() => {
     const at = store.snap?.weightsFetchedAt ?? 0;
@@ -80,6 +82,15 @@
         <button class="btn" onclick={() => store.rescan(true)}>{@html I.refresh}Read every mod again</button>
         <span class="hint">Forgets what it knows and reads every folder. A normal Refresh only reads folders that changed.</span>
       </div>
+      {#if linked}<p class="hint">{linked} {linked === 1 ? "entry is a link" : "entries are links"} to a folder kept elsewhere (Modmixer, a dev tool, or a link you made). Circinus reads them the way RimWorld does; the mod's details say where the files are.</p>{/if}
+      {#if unreadable.length}
+        <div class="unread">
+          <b>{unreadable.length} {unreadable.length === 1 ? "entry" : "entries"} left out</b>
+          <span class="hint">RimWorld cannot load these either. A link whose target was moved or deleted is the usual cause.</span>
+          {#each unreadable.slice(0, 20) as u}<div class="ur"><span class="mono" title={u.path}>{u.path.split(/[\\/]/).pop()}</span><span>{u.reason}</span></div>{/each}
+          {#if unreadable.length > 20}<span class="hint">and {unreadable.length - 20} more</span>{/if}
+        </div>
+      {/if}
     </section>
 
     <section class="card">
@@ -190,10 +201,15 @@
   .loc { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
   .loc:last-of-type { border-bottom: 0; }
   .lt b { display: block; font-size: 13px; }
-  .lt span { display: block; font-size: 11.5px; color: var(--text-3); }
+  .lt span { display: block; font-size: 11.5px; color: var(--text-3); overflow-wrap: anywhere; }
   .lv { display: flex; gap: 6px; align-items: center; min-width: 0; }
   .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); background: var(--surface-2); padding: 5px 8px; border-radius: 7px; user-select: text; }
   .row { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+  .unread { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+  .unread b { color: var(--amber); }
+  .unread .hint { margin: 0 0 4px; }
+  .unread .ur { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: 10px; color: var(--text-2); overflow-wrap: anywhere; }
+  .unread .ur .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hint { color: var(--text-3); font-size: 12.5px; line-height: 1.45; margin: 6px 0 0; }
   .dbrow { display: flex; align-items: center; gap: 12px; padding: 6px 0; font-weight: 500; }
   .dbt { display: flex; flex-direction: column; min-width: 0; }

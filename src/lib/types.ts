@@ -39,7 +39,10 @@ export interface Contents {
 
 export interface ModInfo {
   uid: string;
+  /** The entry in the mod folder, the path RimWorld reports for the mod. */
   path: string;
+  /** Where the files really are when `path` is a link to a folder kept elsewhere. */
+  linkTarget?: string;
   packageId: string;
   name: string;
   authors: string[];
@@ -212,6 +215,8 @@ export interface Snapshot {
   scannedAt: number;
   /** Mods whose folders are still being inspected in the background. */
   inspecting: number;
+  /** Entries in a mod folder the scan had to leave out, with the reason. */
+  unreadable?: { path: string; reason: string }[];
   /** Texture collisions left out of `issues` to keep the payload small. */
   issuesTruncated: number;
   /** Installed workshop mods with a newer version on the Workshop (from the last check). */

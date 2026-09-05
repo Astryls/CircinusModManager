@@ -10,13 +10,13 @@
 //! it as `.dds.circinus-orig`, and Revert puts it back.
 
 use super::encode::{self, Format, Options, PARAMS_VERSION};
-use super::job::{hash, put_in_place, Entry, BACKUP_SUFFIX};
+use super::job::{hash, not_textures, put_in_place, Entry, BACKUP_SUFFIX};
 use super::validate::{self, DdsInfo};
+use crate::fsx::{real_root, rel_str, walk};
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use walkdir::WalkDir;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
@@ -149,25 +149,20 @@ pub fn judge(bytes: &[u8]) -> (Option<Header>, Option<Problem>) {
 /// `ours` holds the DDS paths (relative, forward slashes) the manifest accounts for.
 pub fn audit(mod_root: &Path, ours: &HashSet<String>) -> Vec<Finding> {
     let mut out = Vec::new();
-    let walker = WalkDir::new(mod_root).follow_links(false).into_iter().filter_entry(|e| {
-        let n = e.file_name().to_string_lossy();
-        !(e.depth() > 0 && (n.starts_with('.') || n.eq_ignore_ascii_case("Source") || n.eq_ignore_ascii_case("About") || n.eq_ignore_ascii_case("obj")))
-    });
-    for entry in walker.filter_map(|e| e.ok()) {
-        let Ok(md) = entry.metadata() else { continue };
+    for entry in walk(mod_root, &not_textures) {
+        let md = &entry.meta;
         if !md.is_file() {
             continue;
         }
-        let path = entry.path();
+        let path = entry.path.as_path();
         if !path.extension().map(|e| e.eq_ignore_ascii_case("dds")).unwrap_or(false) {
             continue;
         }
-        let rel_path = path.strip_prefix(mod_root).unwrap_or(path);
-        let segs: Vec<String> = rel_path.iter().map(|s| s.to_string_lossy().to_string()).collect();
+        let segs: Vec<String> = entry.rel.iter().map(|s| s.to_string_lossy().to_string()).collect();
         if segs.len() < 2 || !segs[..segs.len() - 1].iter().any(|s| s.eq_ignore_ascii_case("textures")) {
             continue;
         }
-        let rel = segs.join("/");
+        let rel = rel_str(&entry.rel);
         if ours.contains(&rel) {
             continue;
         }
@@ -216,7 +211,7 @@ fn judge_with_len(head: &[u8], file_len: u64) -> (Option<Header>, Option<Problem
 /// backup is kept over a newer one), the new file goes in its place, and the manifest entry
 /// records both so revalidation and Revert know what happened.
 pub fn fix_one(mod_root: &Path, f: &Finding, opts: &Options, now: i64) -> Result<Entry> {
-    let dds = mod_root.join(&f.rel);
+    let dds = real_root(mod_root).join(&f.rel);
     let png = dds.with_extension("png");
     let original = std::fs::read(&dds)?;
     let (img, rel, src_len, src_mtime, src_hash) = if png.is_file() {

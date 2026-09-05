@@ -140,7 +140,12 @@ pub struct Contents {
 #[serde(rename_all = "camelCase")]
 pub struct ModInfo {
     pub uid: String,
+    /// The entry in the mod folder, the path RimWorld reports for the mod.
     pub path: PathBuf,
+    /// Where the files really are when `path` is a link (a symlink, or a junction on Windows)
+    /// to a folder kept elsewhere, as Modmixer and other dev tools do it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_target: Option<PathBuf>,
     /// Lowercased packageId. Empty when About.xml lacks one.
     pub package_id: String,
     pub name: String,

@@ -85,6 +85,12 @@ function mod(s: Seed): ModInfo {
 }
 
 const mods: ModInfo[] = SEED.map(mod);
+// A mod deployed by a dev tool: a hash-named link in the Mods folder pointing at a workspace.
+{
+  const m = mods.find((m) => m.packageId === "community.hospitality.casino")!;
+  m.path = "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld\\Mods\\6eb6cb0b799f";
+  m.linkTarget = "C:\\Users\\Player\\AppData\\Roaming\\Modmixer\\workspace\\Mods\\6eb6cb0b799f";
+}
 const uidOf = (pkg: string) => mods.find((m) => m.packageId === pkg)!.uid;
 let active: string[] = SEED.filter((s) => !(s[9] ?? "").includes("off")).map((s) => uidOf(s[2]));
 // ?abovecore puts a framework above Core, the shape of list that made RimWorld reset itself.
@@ -201,6 +207,7 @@ function snapshot(): Snapshot {
     dbLoaded: ["communityRules.json (7,412 rules)", "steamDB.json (31,988 items)"],
     scannedAt: 1_757_000_000,
     inspecting: 0,
+    unreadable: [{ path: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld\\Mods\\deadbeef0000", reason: "links to C:\\Users\\Player\\AppData\\Roaming\\Modmixer\\workspace\\Mods\\deadbeef0000, which cannot be read: The system cannot find the path specified" }],
     issuesTruncated: 0,
     updates: [{ uid: uidOf("krkr.rocketman"), publishedFileId: 2479389928, name: "RocketMan", localModified: 1_750_000_000, remoteUpdated: 1_756_500_000, source: "workshop" }],
     updatesCheckedAt: 1_757_000_000,

@@ -11,7 +11,7 @@ use circinus_core::modsconfig::{self, ModsConfig, SavedList};
 use circinus_core::order::{self, Context, UserOverrides};
 use circinus_core::paths::{app_data_dir, Locations};
 use circinus_core::rules::{self, Databases, DbSource, RulesFile};
-use circinus_core::scan::{self, Inspection, ModFiles, ScanOptions};
+use circinus_core::scan::{self, Inspection, ModFiles, ScanOptions, Unreadable};
 use circinus_core::steam::webapi::WorkshopItem;
 use circinus_core::weight::{self, Weight};
 use circinus_core::Result;
@@ -160,6 +160,9 @@ pub struct Snapshot {
     pub scanned_at: i64,
     /// Mods whose folders are still being inspected in the background.
     pub inspecting: usize,
+    /// Entries in a mod folder the scan had to leave out, with the reason.
+    #[serde(default)]
+    pub unreadable: Vec<Unreadable>,
     /// Texture-collision issues left out of `issues` to keep the payload small (0 = none).
     pub issues_truncated: usize,
     /// Installed workshop mods with a newer version on the Workshop (from the last check).
@@ -225,6 +228,8 @@ pub struct App {
     /// uids not yet inspected, and the cache stamps to write once they are.
     pub shallow: Vec<String>,
     pub pending_stamps: HashMap<String, String>,
+    /// Mod folder entries the last scan could not read (links to nowhere, mostly).
+    pub unreadable: Vec<Unreadable>,
     pub updates: Vec<UpdateInfo>,
     pub updates_checked_at: i64,
     /// What the previous session last saw; `changes` is the diff against it.
@@ -288,6 +293,7 @@ impl App {
             scanned_at: 0,
             shallow: Vec::new(),
             pending_stamps: HashMap::new(),
+            unreadable: Vec::new(),
             updates: Vec::new(),
             updates_checked_at: 0,
             baseline,
@@ -388,6 +394,7 @@ impl App {
         self.files = out.files;
         self.shallow = out.shallow;
         self.pending_stamps = out.stamps;
+        self.unreadable = out.unreadable;
         self.scanned_at = now();
         self.recompile();
         self.read_mods_config();
@@ -557,6 +564,7 @@ impl App {
             db_loaded: self.db.loaded.clone(),
             scanned_at: self.scanned_at,
             inspecting: self.shallow.len(),
+            unreadable: self.unreadable.clone(),
             issues_truncated,
             updates: self.updates.clone(),
             updates_checked_at: self.updates_checked_at,

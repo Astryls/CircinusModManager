@@ -56,6 +56,13 @@
   function workshopUrl() {
     return m?.publishedFileId ? `https://steamcommunity.com/sharedfiles/filedetails/?id=${m.publishedFileId}` : m?.url;
   }
+  const folderName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
+  /** The last two parts of a path; the whole thing is in the tooltip. */
+  function shortPath(p: string) {
+    const parts = p.split(/[\\/]/).filter(Boolean);
+    const sep = p.includes("\\") ? "\\" : "/";
+    return parts.length > 2 ? "…" + sep + parts.slice(-2).join(sep) : p;
+  }
 </script>
 
 <aside class="inspector">
@@ -76,6 +83,7 @@
         <dt>Size</dt><dd class="num">{formatBytes(m.contents.sizeBytes)}</dd>
         <dt>Contains</dt><dd>{[m.contents.assemblies ? `${m.contents.assemblies} code file${m.contents.assemblies === 1 ? "" : "s"}` : null, m.contents.defs ? `${m.contents.defs} def files` : null, m.contents.patches ? `${m.contents.patches} patch files` : null, m.contents.textures + m.contents.dds ? `${(m.contents.textures + m.contents.dds).toLocaleString()} textures` : null].filter(Boolean).join(", ") || "nothing the game loads"}</dd>
         <dt>Last changed</dt><dd>{m.modified ? new Date(m.modified * 1000).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "unknown"}</dd>
+        <dt>Folder</dt><dd class="fld" title={m.linkTarget ? `${m.path}\nis a link to\n${m.linkTarget}` : m.path}><span class="mono">{folderName(m.path)}</span>{#if m.linkTarget}<span class="lt">a link to <span class="mono">{shortPath(m.linkTarget)}</span></span>{/if}</dd>
         {#if m.contents.textures + m.contents.dds > 0 || dds}
           <dt>Textures</dt>
           <dd>{m.contents.textures.toLocaleString()} PNG{m.contents.dds ? ` · ${m.contents.dds.toLocaleString()} DDS` : ""}{dds ? ` (${dds.count.toLocaleString()} by Circinus, ${formatBytes(dds.ddsBytes)})` : ""}{ddsExcluded ? " · excluded" : ""}</dd>
@@ -181,7 +189,7 @@
     <section class="card">
       <h3>Actions</h3>
       <div class="acts">
-        <button class="btn" onclick={() => revealPath(m.path)}>{@html I.folder}Open folder</button>
+        <button class="btn" title={m.linkTarget ? "Shows the folder the link points at, where the files are" : "Shows the mod's folder in your file manager"} onclick={() => revealPath(m.linkTarget ?? m.path)}>{@html I.folder}Open folder</button>
         <button class="btn" disabled={!workshopUrl()} onclick={() => openUrl(workshopUrl()!)}>Workshop page</button>
         {#if canRedownload && !change && !update}<button class="btn" title="Fetch a fresh copy from the Workshop with SteamCMD, into your Mods folder" onclick={() => store.queueIds([m.publishedFileId!])}>{@html I.download}Re-download</button>{/if}
         {#if m.contents.textures > 0 && !ddsExcluded && m.source !== "ludeon"}<button class="btn" title="Convert this mod's PNG textures to DDS" disabled={store.tex?.running} onclick={() => store.optimizeTextures([m.uid])}>{@html I.image}Make DDS</button>{/if}
@@ -217,6 +225,7 @@
   .hero .t .mono { margin-top: 6px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 12.5px; margin: 12px 0 0; }
   .kv dt { color: var(--text-3); margin: 0; white-space: nowrap; } .kv dd { margin: 0; text-align: right; color: var(--text-2); min-width: 0; overflow-wrap: anywhere; }
+  .kv dd.fld .lt { display: block; color: var(--text-3); font-size: 11.5px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .wkv { margin-top: 0; }
   .wkv b { color: var(--text); font-size: 14px; }
   .wkv .band { margin-left: 6px; vertical-align: middle; }

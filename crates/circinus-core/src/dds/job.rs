@@ -6,6 +6,7 @@
 
 use super::encode::{self, Encoded, Format, Options, PARAMS_VERSION};
 use super::validate;
+use crate::fsx::{real_root, rel_str, walk};
 use crate::{Error, Result};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -13,7 +14,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
-use walkdir::WalkDir;
 
 /// Suffix of the copy kept when Circinus replaces a DDS someone else wrote.
 pub const BACKUP_SUFFIX: &str = ".circinus-orig";
@@ -71,30 +71,30 @@ pub fn hash(bytes: &[u8]) -> u64 {
     xxhash_rust::xxh3::xxh3_64(bytes)
 }
 
+/// Folders no texture lives in: hidden ones, sources, About (Preview.png is not a texture).
+pub(super) fn not_textures(name: &str) -> bool {
+    name.starts_with('.') || name.eq_ignore_ascii_case("Source") || name.eq_ignore_ascii_case("About") || name.eq_ignore_ascii_case("obj")
+}
+
 /// Every PNG that lives under a `Textures` directory anywhere in the mod (root, version
-/// folders, LoadFolders targets). `About/Preview.png` and the like are not textures.
+/// folders, LoadFolders targets), read through links like RimWorld does.
 pub fn find_pngs(mod_root: &Path) -> Vec<Candidate> {
     let mut out = Vec::new();
-    let walker = WalkDir::new(mod_root).follow_links(false).into_iter().filter_entry(|e| {
-        let n = e.file_name().to_string_lossy();
-        !(e.depth() > 0 && (n.starts_with('.') || n.eq_ignore_ascii_case("Source") || n.eq_ignore_ascii_case("About") || n.eq_ignore_ascii_case("obj")))
-    });
-    for entry in walker.filter_map(|e| e.ok()) {
-        let Ok(md) = entry.metadata() else { continue };
+    for entry in walk(mod_root, &not_textures) {
+        let md = &entry.meta;
         if !md.is_file() {
             continue;
         }
-        let path = entry.path();
+        let path = entry.path.as_path();
         if !path.extension().map(|e| e.eq_ignore_ascii_case("png")).unwrap_or(false) {
             continue;
         }
-        let rel_path = path.strip_prefix(mod_root).unwrap_or(path);
-        let segs: Vec<String> = rel_path.iter().map(|s| s.to_string_lossy().to_string()).collect();
+        let segs: Vec<String> = entry.rel.iter().map(|s| s.to_string_lossy().to_string()).collect();
         if segs.len() < 2 || !segs[..segs.len() - 1].iter().any(|s| s.eq_ignore_ascii_case("textures")) {
             continue;
         }
-        let rel = segs.join("/");
-        out.push(Candidate { rel, png: path.to_path_buf(), dds: path.with_extension("dds"), len: md.len(), mtime: mtime_ms(&md) });
+        let rel = rel_str(&entry.rel);
+        out.push(Candidate { rel, png: path.to_path_buf(), dds: path.with_extension("dds"), len: md.len(), mtime: mtime_ms(md) });
     }
     out.sort_by(|a, b| a.rel.cmp(&b.rel));
     out
@@ -279,6 +279,7 @@ fn is_ours(dds: &Path, e: &Entry) -> bool {
 /// this runs for changed mods only, and a Workshop update can rewrite a file in place.
 pub fn revalidate(mod_root: &Path, entries: &[Entry]) -> Revalidation {
     let mut r = Revalidation::default();
+    let mod_root = &real_root(mod_root);
     for e in entries {
         let dds = mod_root.join(e.dds_rel());
         let backup = e.replaced.as_ref().map(|b| mod_root.join(b));
@@ -330,6 +331,7 @@ pub struct Reverted {
 /// put back any original it replaced.
 pub fn revert(mod_root: &Path, entries: &[Entry]) -> Reverted {
     let mut r = Reverted::default();
+    let mod_root = &real_root(mod_root);
     for e in entries {
         let dds = mod_root.join(e.dds_rel());
         if !dds.is_file() {
