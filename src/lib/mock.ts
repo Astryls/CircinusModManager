@@ -103,14 +103,16 @@ let dirty = false;
 
 let user: UserData = {
   groups: [
-    { id: "core", name: "Core", color: "blue" },
-    { id: "frameworks", name: "Frameworks", color: "teal" },
+    { id: "core", name: "Core", color: "blue", auto: { kind: "official" } },
+    { id: "frameworks", name: "Frameworks", color: "teal", auto: { kind: "phase", phase: "framework" } },
     { id: "qol", name: "Quality of life", color: "green" },
     { id: "visual", name: "Visual", color: "amber" },
-    { id: "performance", name: "Performance", color: "coral", phase: "optimization" },
+    { id: "performance", name: "Performance", color: "coral", phase: "optimization", auto: { kind: "phase", phase: "optimization" } },
+    { id: "oskar", name: "Oskar's", color: "pink", auto: { kind: "author", name: "Oskar" } },
     { id: "rjw-x1y2", name: "Adult content", color: "violet", phase: "content", section: true }
   ],
-  modGroups: { ...Object.fromEntries(SEED.map((s) => [uidOf(s[2]), s[6]])), [uidOf("orion.hospitality")]: "rjw-x1y2", [uidOf("dubwise.rimatomics")]: "rjw-x1y2" },
+  // Core, Frameworks and Performance fill themselves; the rest is assigned by hand.
+  modGroups: { ...Object.fromEntries(SEED.filter((s) => !["core", "frameworks", "performance"].includes(s[6]) && !s[1].includes("Oskar")).map((s) => [uidOf(s[2]), s[6]])), [uidOf("orion.hospitality")]: "rjw-x1y2", [uidOf("dubwise.rimatomics")]: "rjw-x1y2" },
   pinned: [],
   phaseOverrides: {},
   notes: {},
@@ -137,6 +139,7 @@ let settings: Settings = {
   includeLocalRuns: true,
   alphabeticalWithinPhase: false,
   updateDatabasesOnStart: false,
+  listByPhase: typeof location !== "undefined" && location.search.includes("byphase"),
   dds: { alphaFormat: "bc7", quality: "balanced", mipmaps: true, threads: 0, auto: false },
   launch: { method: "auto", executable: null, args: "", saveFirst: true }
 };
@@ -224,7 +227,7 @@ function snapshot(): Snapshot {
     updates: [{ uid: uidOf("krkr.rocketman"), publishedFileId: 2479389928, name: "RocketMan", localModified: 1_750_000_000, remoteUpdated: 1_756_500_000, source: "workshop" }],
     updatesCheckedAt: 1_757_000_000,
     changes: acknowledged ? [] : changes(),
-    listChange: acknowledged ? null : { added: ["voult.betterpawncontrol"], removed: ["some.missing.mod"], reordered: false },
+    listChange: acknowledged ? null : { added: ["voult.betterpawncontrol"], removed: ["some.missing.mod"], reordered: true, moves: [{ packageId: "krkr.rocketman", from: 41, to: 12 }, { packageId: "jaxe.rimhud", from: 9, to: 30 }] },
     changesSince: 1_756_900_000,
     dds: ddsIndex,
     listReset: resetSimulated ? { previousCount: 44, restoreFrom: savedLists[0] } : null
@@ -481,16 +484,23 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
       tex = { ...tex, running: true, phase: "converting", startedAt: Math.floor(Date.now() / 1000), progress: { total, done: Math.floor(total / 3), converted: Math.floor(total / 3), failed: 0, pngBytes: total * 20_000, ddsBytes: total * 14_000, current: "Textures/Things/Building/Wall_Atlas.png" }, errors: [] };
       setTimeout(() => {
         for (const u of uids) { const m = mods.find((x) => x.uid === u); if (m) ddsIndex[u] = { count: m.contents.textures, ddsBytes: m.contents.textures * 42_000, pngBytes: m.contents.textures * 60_000, vramBefore: m.contents.textures * 350_000, newest: Math.floor(Date.now() / 1000) }; }
-        tex = { ...tex, running: false, phase: "idle", finishedAt: Math.floor(Date.now() / 1000), report: { mods: uids.length, converted: total, failed: 0, current: 0, shipped: 2, pngBytes: total * 60_000, ddsBytes: total * 42_000, seconds: 3, cancelled: false, reverted: 0, bytesFreed: 0 } };
+        tex = { ...tex, running: false, phase: "idle", finishedAt: Math.floor(Date.now() / 1000), report: { kind: "convert", mods: uids.length, converted: total, failed: 0, current: 0, shipped: 2, pngBytes: total * 60_000, ddsBytes: total * 42_000, seconds: 3, cancelled: false, reverted: 0, bytesFreed: 0 } };
       }, 1500);
       return undefined as T;
     }
     case "dds_cancel":
       return undefined as T;
     case "dds_revert": {
-      let n = 0, b = 0;
-      for (const u of A.uids as string[]) { if (ddsIndex[u]) { n += ddsIndex[u].count; b += ddsIndex[u].ddsBytes; delete ddsIndex[u]; } }
-      return { mods: (A.uids as string[]).length, converted: 0, failed: 0, current: 0, shipped: 0, pngBytes: 0, ddsBytes: 0, seconds: 1, cancelled: false, reverted: n, bytesFreed: b } as T;
+      // A background job like a conversion: progress first, the report a moment later.
+      const uids = A.uids as string[];
+      const total = uids.reduce((n, u) => n + (ddsIndex[u]?.count ?? 0), 0);
+      tex = { ...tex, running: true, phase: "reverting", startedAt: Math.floor(Date.now() / 1000), progress: { total, done: Math.floor(total / 2), converted: 0, failed: 0, pngBytes: 0, ddsBytes: 0, current: mods.find((m) => m.uid === uids[0])?.name ?? "" }, errors: [] };
+      setTimeout(() => {
+        let n = 0, b = 0;
+        for (const u of uids) { if (ddsIndex[u]) { n += ddsIndex[u].count; b += ddsIndex[u].ddsBytes; delete ddsIndex[u]; } }
+        tex = { ...tex, running: false, phase: "idle", finishedAt: Math.floor(Date.now() / 1000), progress: { ...tex.progress, done: total }, report: { kind: "revert", mods: uids.length, converted: 0, failed: 0, current: 0, shipped: 0, pngBytes: 0, ddsBytes: 0, seconds: 1, cancelled: false, reverted: n, bytesFreed: b } };
+      }, 1200);
+      return undefined as T;
     }
     case "dds_audit": {
       const uids = A.uids as string[];

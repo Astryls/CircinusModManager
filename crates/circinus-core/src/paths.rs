@@ -26,8 +26,19 @@ impl Locations {
             loc.game_dir = Some(game);
             loc.workshop_dir = Some(workshop);
         }
+        // Steam's own record of itself (the registry on Windows) can be missing or belong to
+        // another account — a first launch straight from an installer runs as whoever ran the
+        // installer. The library list in the usual Steam folders says the same thing.
+        if loc.game_dir.is_none() {
+            if let Some((game, workshop)) = detect_from_library_files() {
+                loc.game_dir = Some(game);
+                loc.workshop_dir = Some(workshop);
+            }
+        }
         if loc.game_dir.is_none() {
             loc.game_dir = fallback_game_dirs().into_iter().find(|p| p.join("Version.txt").is_file());
+            // A game folder inside a Steam library has its Workshop content two folders over.
+            loc.workshop_dir = loc.game_dir.as_deref().and_then(workshop_dir_for_game);
         }
         loc.config_dir = default_config_dir().filter(|p| p.is_dir());
         loc.fill_derived();
@@ -158,6 +169,93 @@ fn detect_steam() -> Option<(PathBuf, PathBuf)> {
     Some((game, workshop))
 }
 
+/// `<library>/steamapps/workshop/content/294100` for a game folder that sits in a Steam library
+/// (`<library>/steamapps/common/RimWorld`); None for any other folder.
+pub fn workshop_dir_for_game(game: &Path) -> Option<PathBuf> {
+    let common = game.parent()?;
+    let steamapps = common.parent()?;
+    if !common.file_name().map(|n| n.eq_ignore_ascii_case("common")).unwrap_or(false) || !steamapps.file_name().map(|n| n.eq_ignore_ascii_case("steamapps")).unwrap_or(false) {
+        return None;
+    }
+    Some(steamapps.join("workshop").join("content").join(RIMWORLD_APP_ID.to_string()))
+}
+
+/// Library roots listed in a `libraryfolders.vdf` (`"path"  "D:\\SteamLibrary"` lines), in order.
+pub fn parse_library_folders(text: &str) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        let Some(rest) = line.strip_prefix("\"path\"") else { continue };
+        let value = rest.trim().trim_matches('"').replace("\\\\", "\\");
+        if !value.is_empty() {
+            out.push(PathBuf::from(value));
+        }
+    }
+    out
+}
+
+/// Where Steam usually lives; each is a library root itself and may list more in
+/// `steamapps/libraryfolders.vdf`.
+fn steam_roots() -> Vec<PathBuf> {
+    let mut v = Vec::new();
+    #[cfg(target_os = "windows")]
+    {
+        for var in ["ProgramFiles(x86)", "ProgramFiles"] {
+            if let Ok(p) = std::env::var(var) {
+                v.push(PathBuf::from(p).join("Steam"));
+            }
+        }
+        v.push(PathBuf::from("C:\\Program Files (x86)\\Steam"));
+        v.push(PathBuf::from("C:\\Program Files\\Steam"));
+        for drive in ["C", "D", "E", "F", "G", "H"] {
+            for dir in ["Steam", "SteamLibrary", "Games\\Steam"] {
+                v.push(PathBuf::from(format!("{drive}:\\{dir}")));
+            }
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(h) = dirs::home_dir() {
+            v.push(h.join("Library/Application Support/Steam"));
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(h) = dirs::home_dir() {
+            for root in [".steam/steam", ".local/share/Steam", ".steam/debian-installation", ".var/app/com.valvesoftware.Steam/.local/share/Steam"] {
+                v.push(h.join(root));
+            }
+        }
+    }
+    v.dedup();
+    v
+}
+
+/// Find RimWorld through the library lists in the usual Steam folders, without asking Steam
+/// (or the registry) where it is.
+fn detect_from_library_files() -> Option<(PathBuf, PathBuf)> {
+    let mut libraries: Vec<PathBuf> = Vec::new();
+    for root in steam_roots() {
+        if !root.join("steamapps").is_dir() {
+            continue;
+        }
+        libraries.push(root.clone());
+        if let Ok(text) = std::fs::read_to_string(root.join("steamapps").join("libraryfolders.vdf")) {
+            libraries.extend(parse_library_folders(&text));
+        }
+    }
+    for lib in libraries {
+        let game = lib.join("steamapps").join("common").join("RimWorld");
+        let game = if cfg!(target_os = "macos") { std::fs::read_dir(&game).ok().and_then(|rd| rd.filter_map(|e| e.ok()).map(|e| e.path()).find(|p| p.extension().map(|e| e == "app").unwrap_or(false))).unwrap_or(game) } else { game };
+        let is_game = if cfg!(target_os = "macos") { game.extension().map(|e| e == "app").unwrap_or(false) } else { game.join("Version.txt").is_file() };
+        if is_game {
+            let workshop = lib.join("steamapps").join("workshop").join("content").join(RIMWORLD_APP_ID.to_string());
+            return Some((game, workshop));
+        }
+    }
+    None
+}
+
 fn fallback_game_dirs() -> Vec<PathBuf> {
     let mut v = Vec::new();
     #[cfg(target_os = "windows")]
@@ -230,6 +328,57 @@ mod tests {
         assert!(is_steam_install(Path::new("D:\\SteamLibrary\\steamapps\\common\\RimWorld")));
         assert!(is_steam_install(Path::new("/home/x/.steam/steam/steamapps/common/RimWorld")));
         assert!(!is_steam_install(Path::new("C:\\Games\\RimWorld")));
+        // The Workshop folder follows from a game folder inside a library, and only from one.
+        let ws = workshop_dir_for_game(Path::new("/lib/steamapps/common/RimWorld")).unwrap();
+        assert_eq!(ws, PathBuf::from("/lib/steamapps/workshop/content/294100"));
+        assert!(workshop_dir_for_game(Path::new("/games/RimWorld")).is_none());
+        assert!(workshop_dir_for_game(Path::new("/lib/steamapps/RimWorld")).is_none());
+    }
+
+    #[test]
+    fn library_folders_are_read_from_the_vdf() {
+        let vdf = r#""libraryfolders"
+{
+	"0"
+	{
+		"path"		"C:\\Program Files (x86)\\Steam"
+		"label"		""
+		"apps"
+		{
+			"228980"		"267880374"
+		}
+	}
+	"1"
+	{
+		"path"		"D:\\SteamLibrary"
+		"apps"
+		{
+			"294100"		"6255543018"
+		}
+	}
+}"#;
+        assert_eq!(parse_library_folders(vdf), vec![PathBuf::from("C:\\Program Files (x86)\\Steam"), PathBuf::from("D:\\SteamLibrary")]);
+        assert!(parse_library_folders("").is_empty());
+    }
+
+    /// Without Steam's registry entry, RimWorld is still found through a library list on disk.
+    #[test]
+    fn game_is_found_through_a_library_list() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = tmp.path().join("SteamLibrary");
+        let game = lib.join("steamapps").join("common").join("RimWorld");
+        std::fs::create_dir_all(&game).unwrap();
+        std::fs::write(game.join("Version.txt"), "1.6.4530 rev1235").unwrap();
+        let root = tmp.path().join("Steam");
+        std::fs::create_dir_all(root.join("steamapps")).unwrap();
+        let listed = lib.to_string_lossy().replace('\\', "\\\\");
+        std::fs::write(root.join("steamapps").join("libraryfolders.vdf"), format!("\"libraryfolders\"\n{{\n\t\"0\"\n\t{{\n\t\t\"path\"\t\t\"{listed}\"\n\t}}\n}}\n")).unwrap();
+        let text = std::fs::read_to_string(root.join("steamapps").join("libraryfolders.vdf")).unwrap();
+        let libs = parse_library_folders(&text);
+        assert_eq!(libs, vec![lib.clone()]);
+        let found = libs.iter().map(|l| l.join("steamapps").join("common").join("RimWorld")).find(|g| g.join("Version.txt").is_file()).unwrap();
+        assert_eq!(found, game);
+        assert_eq!(workshop_dir_for_game(&found).unwrap(), lib.join("steamapps").join("workshop").join("content").join("294100"));
     }
 }
 

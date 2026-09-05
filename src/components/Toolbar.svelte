@@ -48,9 +48,15 @@
   <div class="seg" role="tablist">
     {#each tabs as t}<button role="tab" class:on={store.tab === t.id} aria-selected={store.tab === t.id} onclick={() => (store.tab = t.id)}>{t.label} <span class="num">{t.count()}</span></button>{/each}
   </div>
+  {#if store.tab !== "inactive"}
+    <div class="seg arr" role="radiogroup" aria-label="Arrangement">
+      <button role="radio" class:on={!store.byPhase} aria-checked={!store.byPhase} title="The list exactly as ModsConfig.xml has it, top to bottom" onclick={() => store.byPhase && store.setByPhase(false)}>Load order</button>
+      <button role="radio" class:on={store.byPhase} aria-checked={store.byPhase} title="The same mods, gathered under the phase HALO files them in" onclick={() => !store.byPhase && store.setByPhase(true)}>By phase</button>
+    </div>
+  {/if}
   <div class="filter" bind:this={menu}>
     <button class="btn" class:on={narrowing > 0} onclick={() => (open = !open)} aria-haspopup="menu" aria-expanded={open} title="Narrow the list to mods with errors, warnings, conflicts, HALO notes or changes">
-      {@html I.search}Show: {currentLabel}{#if narrowing > 1}<span class="cnt">+{narrowing - 1}</span>{/if}
+      {@html I.search}<span class="lbl">Show: {currentLabel}</span>{#if narrowing > 1}<span class="cnt">+{narrowing - 1}</span>{/if}
     </button>
     {#if open}
       <div class="menu card" role="menu">
@@ -71,8 +77,8 @@
     {/if}
   </div>
   <span class="sp"></span>
-  <button class="btn" onclick={() => (store.showImport = true)} title="Import a mod list (Ctrl I)">{@html I.download}Import</button>
-  <button class="btn" onclick={() => store.rescan(false)} title="Read the mod folders again">{@html I.refresh}Refresh</button>
+  <button class="btn" onclick={() => (store.showImport = true)} title="Import a mod list (Ctrl I)">{@html I.download}<span class="opt-lbl">Import</span></button>
+  <button class="btn" onclick={() => store.rescan(false)} title="Read the mod folders again">{@html I.refresh}<span class="opt-lbl">Refresh</span></button>
   {#if store.preview}
     <button class="btn" onclick={() => (store.preview = null)}>Discard</button>
     <button class="btn primary" onclick={() => store.haloApply()}>{@html I.check}Apply {previewCount} move{previewCount === 1 ? "" : "s"}</button>
@@ -82,9 +88,14 @@
 </div>
 
 <style>
-  .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .sp { flex: 1; }
   .toolbar .btn { height: 32px; }
+  .seg.arr button { font-size: 12px; }
+  .seg.arr button { padding: 0 10px; }
+  .filter > .btn .lbl { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Narrower windows: the two secondary buttons keep their icons and tooltips. */
+  @media (max-width: 1640px) { .opt-lbl { display: none; } }
   .filter { position: relative; }
   .filter > .btn.on { background: var(--amber-soft); color: var(--amber); }
   .filter .cnt { font-size: 11px; font-weight: 700; opacity: 0.8; }

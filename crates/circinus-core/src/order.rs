@@ -34,6 +34,9 @@ const FRAMEWORK_IDS: &[&str] = &[
     "thesepeople.ritualattachableoutcomes",
     "ceteam.combatextended",
 ];
+/// The most Def files a mod may ship and still count as a library on the strength of its
+/// dependents. HugsLib and Humanoid Alien Races ship a handful; a content mod ships hundreds.
+const LIBRARY_MAX_DEFS: u32 = 40;
 const OPTIMIZATION_IDS: &[&str] = &["krkr.rocketman", "bs.performance", "taranchuk.performanceoptimizer", "dubwise.dubsperformanceanalyzer", "telardo.graphicssettings", "notfood.performancefish", "user19990313.runtimegc", "mlie.runtimegc"];
 
 /// Per-user adjustments HALO honours.
@@ -125,8 +128,12 @@ pub fn classify(m: &ModInfo, ctx: &Context, dependents: usize, texture_collides:
     if FRAMEWORK_IDS.contains(&id) {
         return place(uid, Phase::Framework, "A library many mods use");
     }
-    if c.assemblies > 0 && dependents >= 3 {
-        return place(uid, Phase::Framework, format!("{dependents} active mods need it"));
+    // Being depended on is not enough: content mods collect dependents too (VFE Empire has its
+    // add-ons, Dubs Bad Hygiene its extensions). A library is mostly code — few Defs of its
+    // own — and is not itself built on a framework.
+    let built_on_framework = m.rules.dependencies.iter().any(|d| FRAMEWORK_IDS.contains(&d.package_id.as_str()));
+    if c.assemblies > 0 && dependents >= 3 && c.defs <= LIBRARY_MAX_DEFS && !built_on_framework {
+        return place(uid, Phase::Framework, format!("{dependents} active mods need it, and it is mostly code"));
     }
     if c.assemblies > 0 && name_matches(&m.name, &["framework", "library", " lib", "api"]) && !name_matches(&m.name, &["patch"]) {
         return place(uid, Phase::Framework, "Named like a library and has code");
@@ -866,6 +873,69 @@ mod tests {
         assert!(pos("addon") > pos("c2"), "a rule still holds across the section: {:?}", r.order);
         assert_eq!(ov.section_rank(Phase::Content, Some("g-later")), 2);
         assert_eq!(ov.section_rank(Phase::Patch, Some("g-later")), 0, "a section is ranked only within the phase it follows");
+    }
+
+    /// Dependents alone do not make a library: VFE Empire (code, hundreds of Defs, built on the
+    /// VE framework) and Dubs Bad Hygiene (code, hundreds of Defs) have add-ons that depend on
+    /// them and are still content. HugsLib-sized code with a handful of Defs is one.
+    #[test]
+    fn content_mods_with_addons_are_not_libraries() {
+        let mut mods = fixture();
+        let mut vef = m("vef", "oskarpotocki.vanillafactionsexpanded.core", "Vanilla Expanded Framework", Source::Workshop);
+        vef.contents.assemblies = 4;
+        vef.contents.defs = 80;
+        vef.kind = ModKind::Code;
+        let mut empire = m("empire", "oskarpotocki.vfe.empire", "Vanilla Factions Expanded - Empire", Source::Workshop);
+        empire.contents.assemblies = 1;
+        empire.contents.defs = 260;
+        empire.kind = ModKind::Code;
+        empire.rules.dependencies = vec![Dependency { package_id: "oskarpotocki.vanillafactionsexpanded.core".into(), ..Default::default() }];
+        let mut dbh = m("dbh", "dubwise.dubsbadhygiene", "Dubs Bad Hygiene", Source::Workshop);
+        dbh.contents.assemblies = 1;
+        dbh.contents.defs = 300;
+        dbh.kind = ModKind::Code;
+        let mut har = m("har", "erdelf.humanoidalienraces", "Humanoid Alien Races", Source::Workshop);
+        har.contents.assemblies = 1;
+        har.contents.defs = 12;
+        har.kind = ModKind::Code;
+        // A code mod with many Defs that nothing depends on: content, whatever it is named.
+        let mut lone = m("lone", "x.lone", "Lone Systems", Source::Workshop);
+        lone.contents.assemblies = 1;
+        lone.contents.defs = 8;
+        lone.kind = ModKind::Code;
+        mods.extend([vef, empire, dbh, har, lone]);
+        // Three add-ons each: addon0-2 need Empire, addon3-5 need DBH, addon6-8 need HAR.
+        for (k, needs) in ["oskarpotocki.vfe.empire", "dubwise.dubsbadhygiene", "erdelf.humanoidalienraces"].iter().enumerate() {
+            for j in 0..3 {
+                let i = k * 3 + j;
+                let mut a = m(&format!("addon{i}"), &format!("x.addon{i}"), &format!("Add-on {i}"), Source::Workshop);
+                a.contents.defs = 5;
+                a.kind = ModKind::Xml;
+                a.rules.dependencies = vec![Dependency { package_id: (*needs).into(), ..Default::default() }];
+                mods.push(a);
+            }
+        }
+        let db = Databases::default();
+        let rules = compile_rules(&mods, &db);
+        let files = HashMap::new();
+        let ov = UserOverrides::default();
+        let ctx = Context { mods: &mods, files: &files, rules: &rules, db: &db, major_minor: "1.6", overrides: &ov };
+        let current: Vec<String> = mods.iter().map(|x| x.uid.clone()).collect();
+        let order: Vec<&ModInfo> = mods.iter().collect();
+        let pl = placements(&order, &ctx);
+        let phase = |u: &str| pl.iter().find(|p| p.uid == u).unwrap().phase;
+        let reason = |u: &str| pl.iter().find(|p| p.uid == u).unwrap().reason.clone();
+        assert_eq!(phase("vef"), Phase::Framework, "known framework");
+        assert_eq!(phase("empire"), Phase::Content, "{}", reason("empire"));
+        assert_eq!(phase("dbh"), Phase::Content, "{}", reason("dbh"));
+        assert_eq!(phase("har"), Phase::Framework, "{}", reason("har"));
+        assert!(reason("har").contains("3 active mods need it"));
+        assert_eq!(phase("lone"), Phase::Content);
+        // The add-ons still load after what they need.
+        let r = sort(&current, &ctx);
+        let pos = |u: &str| r.order.iter().position(|x| x == u).unwrap();
+        assert!(pos("empire") < pos("addon0") && pos("dbh") < pos("addon3") && pos("har") < pos("addon6"), "{:?}", r.order);
+        assert!(pos("vef") < pos("empire"));
     }
 
     #[test]

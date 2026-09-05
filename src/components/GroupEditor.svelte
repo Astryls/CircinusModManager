@@ -1,7 +1,7 @@
 <script lang="ts">
   import { store } from "$lib/store.svelte";
   import { I } from "$lib/icons";
-  import { GROUP_COLORS, PHASES, type Group, type Phase } from "$lib/types";
+  import { GROUP_COLORS, PHASES, type AutoRule, type Group, type Phase } from "$lib/types";
 
   let { group, onclose }: { group: Group; onclose: () => void } = $props();
   // The name field follows the group until the user types; a rename is saved on change.
@@ -11,7 +11,25 @@
   });
   const groups = $derived(store.snap?.user.groups ?? []);
   const index = $derived(groups.findIndex((g) => g.id === group.id));
-  const members = $derived(Object.values(store.snap?.user.modGroups ?? {}).filter((g) => g === group.id).length);
+  const members = $derived(store.groupCounts.get(group.id) ?? 0);
+  const byHand = $derived(Object.values(store.snap?.user.modGroups ?? {}).filter((g) => g === group.id).length);
+  /** The one control for what the group takes in by itself: nothing, the game and DLC, a phase, an author. */
+  const autoAs = $derived(group.auto ? (group.auto.kind === "phase" ? `phase:${group.auto.phase}` : group.auto.kind) : "");
+  let author = $state("");
+  $effect(() => {
+    author = group.auto?.kind === "author" ? group.auto.name : "";
+  });
+  function setAuto(v: string) {
+    let auto: AutoRule | null = null;
+    if (v === "official") auto = { kind: "official" };
+    else if (v.startsWith("phase:")) auto = { kind: "phase", phase: v.slice(6) as Phase };
+    else if (v === "author") auto = { kind: "author", name: author };
+    store.updateGroup(group.id, { auto });
+  }
+  function setAuthor() {
+    const n = author.trim();
+    if (group.auto?.kind === "author" && group.auto.name !== n) store.updateGroup(group.id, { auto: { kind: "author", name: n } });
+  }
   /** The one control for where members go: nothing, a phase, or a section of their own. */
   const sortAs = $derived(group.section && group.phase ? "section" : (group.phase ?? ""));
   const after = $derived(PHASES.find((p) => p.id === (group.phase ?? "content"))!);
@@ -41,6 +59,20 @@
   <div class="colors" role="radiogroup" aria-label="Colour">
     {#each GROUP_COLORS as c}<button class="sw c-{c}" class:on={group.color === c} role="radio" aria-checked={group.color === c} aria-label={c} title={c} onclick={() => store.updateGroup(group.id, { color: c })}></button>{/each}
   </div>
+  <label class="fld"><span>Fills itself with</span>
+    <select class="sel" value={autoAs} onchange={(e) => setAuto(e.currentTarget.value)}>
+      <option value="">Nothing: members are chosen by hand</option>
+      <option value="official">The game and its DLC</option>
+      {#each PHASES.filter((p) => p.id !== "core") as p}<option value="phase:{p.id}">What HALO files as {p.name.toLowerCase()}</option>{/each}
+      <option value="author">Mods by an author…</option>
+    </select>
+  </label>
+  {#if group.auto?.kind === "author"}
+    <input class="input" placeholder="Author, or part of the name" bind:value={author} onchange={setAuthor} aria-label="Author" />
+  {/if}
+  {#if group.auto}
+    <p class="hint">{members} member{members === 1 ? "" : "s"}{byHand ? `, ${byHand} of them put here by hand` : ""}. A mod put in another group by hand stays there.</p>
+  {/if}
   <label class="fld"><span>Sort members as</span>
     <select class="sel" value={sortAs} onchange={(e) => setSortAs(e.currentTarget.value)}>
       <option value="">Not by group</option>

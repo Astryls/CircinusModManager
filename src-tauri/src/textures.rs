@@ -14,6 +14,8 @@ use tauri_plugin_notification::NotificationExt;
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Report {
+    /// What the job was: convert | revert | fix.
+    pub kind: String,
     pub mods: usize,
     pub converted: usize,
     pub failed: usize,
@@ -131,7 +133,7 @@ impl Textures {
                 (uid.clone(), name.clone(), job::plan(job::find_pngs(path), &entries, &opts))
             })
             .collect();
-        let mut report = Report { mods: targets.len(), ..Report::default() };
+        let mut report = Report { kind: "convert".into(), mods: targets.len(), ..Report::default() };
         let mut work: Vec<(String, job::Candidate)> = Vec::new();
         let names: HashMap<String, String> = targets.iter().map(|(u, n, _)| (u.clone(), n.clone())).collect();
         for (uid, _, plan) in plans {
@@ -201,40 +203,81 @@ impl Textures {
         Ok(report)
     }
 
-    /// Delete the DDS files Circinus created for `uids`.
+    /// Delete the DDS files Circinus created for `uids` (a blocking call; run it on a blocking
+    /// thread). Every file is checked to be the one Circinus wrote before it goes, which means
+    /// reading it: a whole library is minutes of work, so this reports progress like a
+    /// conversion and can be stopped.
     pub fn revert(self: &Arc<Self>, uids: Vec<String>) -> Result<Report, String> {
         self.begin("reverting")?;
         self.emit();
         let started = std::time::Instant::now();
-        let mods: Vec<(String, PathBuf)> = {
+        // What there is to do, in one pass under the lock.
+        let mods: Vec<(String, String, PathBuf, Vec<Entry>)> = {
             let app = self.app.lock().unwrap();
             let want: HashSet<&str> = uids.iter().map(|s| s.as_str()).collect();
-            app.mods.iter().filter(|m| want.contains(m.uid.as_str())).map(|m| (m.uid.clone(), m.path.clone())).collect()
+            app.mods
+                .iter()
+                .filter(|m| want.contains(m.uid.as_str()))
+                .filter_map(|m| {
+                    let entries = app.cache.dds_entries(&m.uid).unwrap_or_default();
+                    (!entries.is_empty()).then(|| (m.uid.clone(), m.name.clone(), m.path.clone(), entries))
+                })
+                .collect()
         };
-        let mut report = Report { mods: mods.len(), ..Report::default() };
-        let mut touched = Vec::new();
-        for (uid, path) in mods {
-            let entries: Vec<Entry> = self.app.lock().unwrap().cache.dds_entries(&uid).unwrap_or_default();
-            if entries.is_empty() {
-                continue;
-            }
-            let r = job::revert(&path, &entries);
-            report.reverted += r.deleted.len() + r.restored.len();
-            report.restored += r.restored.len();
-            report.bytes_freed += r.bytes_freed;
-            let mut app = self.app.lock().unwrap();
-            let _ = app.cache.dds_delete_all(&uid);
-            if !r.kept.is_empty() {
-                let mut s = self.state.lock().unwrap();
-                for rel in r.kept.iter().take(50) {
-                    s.errors.push((uid.clone(), rel.clone(), "not the file Circinus wrote, so it was left in place".into()));
-                }
-            }
-            touched.push(uid.clone());
-            app.reload_dds_index();
-        }
+        let total: usize = mods.iter().map(|(_, _, _, e)| e.len()).sum();
         {
-            let app = self.app.lock().unwrap();
+            let mut s = self.state.lock().unwrap();
+            s.progress = Progress { total, ..Progress::default() };
+        }
+        self.emit();
+        let mut report = Report { kind: "revert".into(), mods: mods.len(), ..Report::default() };
+        // Mods in parallel: checking a file means reading it, and the disk is the limit.
+        use rayon::prelude::*;
+        let done = std::sync::atomic::AtomicUsize::new(0);
+        let last_emit = Mutex::new(std::time::Instant::now());
+        let results: Vec<(String, String, job::Reverted, bool)> = mods
+            .par_iter()
+            .map(|(uid, name, path, entries)| {
+                if self.cancel.load(Ordering::Relaxed) {
+                    return (uid.clone(), name.clone(), job::Reverted::default(), true);
+                }
+                let r = job::revert(path, entries);
+                let n = done.fetch_add(entries.len(), Ordering::Relaxed) + entries.len();
+                if let Ok(mut s) = self.state.lock() {
+                    s.progress.done = n;
+                    s.progress.current = name.clone();
+                }
+                if let Ok(mut t) = last_emit.lock() {
+                    if t.elapsed().as_millis() >= 100 {
+                        *t = std::time::Instant::now();
+                        self.emit();
+                    }
+                }
+                (uid.clone(), name.clone(), r, false)
+            })
+            .collect();
+        let mut touched = Vec::new();
+        {
+            let mut app = self.app.lock().unwrap();
+            let mut s = self.state.lock().unwrap();
+            for (uid, name, r, skipped) in results {
+                if skipped {
+                    report.cancelled = true;
+                    continue;
+                }
+                report.reverted += r.deleted.len() + r.restored.len();
+                report.restored += r.restored.len();
+                report.bytes_freed += r.bytes_freed;
+                // Whatever was left in place is not ours any more either: forget the mod.
+                let _ = app.cache.dds_delete_all(&uid);
+                for rel in r.kept.iter().take(50) {
+                    if s.errors.len() < 300 {
+                        s.errors.push((name.clone(), rel.clone(), "not the file Circinus wrote, so it was left in place".into()));
+                    }
+                }
+                touched.push(uid);
+            }
+            app.reload_dds_index();
             let _ = app.cache.forget_mod_entries(&touched);
         }
         report.seconds = started.elapsed().as_secs();
@@ -348,7 +391,7 @@ impl Textures {
             .collect();
         out.sort_by(|a, b| b.active.cmp(&a.active).then_with(|| b.findings.len().cmp(&a.findings.len())).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
         let report = AuditReport { mods_checked: mods.len(), files: out.iter().map(|m| m.findings.len()).sum(), fixable: out.iter().flat_map(|m| &m.findings).filter(|f| f.fixable).count(), mods: out, seconds: started.elapsed().as_secs() };
-        self.finish(Report { mods: report.mods_checked, seconds: report.seconds, cancelled: self.cancel.load(Ordering::Relaxed), ..Report::default() });
+        self.finish(Report { kind: "audit".into(), mods: report.mods_checked, seconds: report.seconds, cancelled: self.cancel.load(Ordering::Relaxed), ..Report::default() });
         self.emit();
         Ok(report)
     }
@@ -375,7 +418,7 @@ impl Textures {
                 }
             }
         }
-        let mut report = Report { mods: targets.len(), ..Report::default() };
+        let mut report = Report { kind: "fix".into(), mods: targets.len(), ..Report::default() };
         {
             let mut s = self.state.lock().unwrap();
             s.phase = "fixing".into();

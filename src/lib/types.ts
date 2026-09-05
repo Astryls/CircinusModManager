@@ -160,9 +160,14 @@ export interface Settings {
   includeLocalRuns: boolean;
   alphabeticalWithinPhase: boolean;
   updateDatabasesOnStart: boolean;
+  /** Show the active list in HALO's phase sections rather than as the plain load order. */
+  listByPhase: boolean;
   dds: DdsSettings;
   launch: LaunchSettings;
 }
+
+/** How a group finds members on its own: the game and DLC, a HALO phase, or an author. */
+export type AutoRule = { kind: "official" } | { kind: "phase"; phase: Phase } | { kind: "author"; name: string };
 
 export interface Group {
   id: string;
@@ -172,6 +177,8 @@ export interface Group {
   phase?: Phase | null;
   /** The group has its own place in the load order: a section right after `phase`. */
   section?: boolean;
+  /** Members the group picks up by itself, on top of those assigned by hand. */
+  auto?: AutoRule | null;
 }
 
 /** Colours a group can have; `c-<name>` classes exist for each. */
@@ -188,6 +195,8 @@ export interface UserData {
   ddsExcluded: string[];
   /** Steam collections the user follows. */
   collections?: TrackedCollection[];
+  /** The default groups were given their automatic members once. */
+  autoGroupsAdopted?: boolean;
 }
 
 export interface Weight {
@@ -311,6 +320,8 @@ export interface DdsProgress {
 }
 
 export interface DdsReport {
+  /** What the job was: convert | revert | fix | audit. */
+  kind?: string;
   mods: number;
   converted: number;
   failed: number;
@@ -400,6 +411,15 @@ export interface ListChange {
   added: string[];
   removed: string[];
   reordered: boolean;
+  /** The mods that moved (the fewest that explain the new order), in their new order. */
+  moves?: ListMove[];
+}
+
+/** A mod that changed place in ModsConfig.xml; positions are 1-based. */
+export interface ListMove {
+  packageId: string;
+  from: number;
+  to: number;
 }
 
 export interface UpdateInfo {

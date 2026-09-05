@@ -114,20 +114,69 @@ pub struct ModChange {
 
 /// Edits to the active list made outside Circinus (in the game, by another manager, by hand).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct ListChange {
     /// Package ids now in the list that were not.
     pub added: Vec<String>,
     /// Package ids that were in the list and are gone.
     pub removed: Vec<String>,
-    /// Same members, different order.
+    /// Mods that were in both lists changed their order.
     pub reordered: bool,
+    /// The mods that moved, in their new order: the smallest set whose removal leaves the rest
+    /// in the same order as before. Adding one mod does not make everything below it a move.
+    pub moves: Vec<ListMove>,
+}
+
+/// A mod that changed place in the list. Positions are 1-based, as the file numbers them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListMove {
+    pub package_id: String,
+    pub from: usize,
+    pub to: usize,
 }
 
 impl ListChange {
     pub fn is_empty(&self) -> bool {
         self.added.is_empty() && self.removed.is_empty() && !self.reordered
     }
+}
+
+/// Mods present in both lists that are not in the longest common subsequence of the two:
+/// the fewest mods that must have moved for the rest to keep their relative order.
+pub fn list_moves(before: &[String], after: &[String]) -> Vec<ListMove> {
+    let after_pos: HashMap<&str, usize> = after.iter().enumerate().map(|(i, p)| (p.as_str(), i)).collect();
+    let before_pos: HashMap<&str, usize> = before.iter().enumerate().map(|(i, p)| (p.as_str(), i)).collect();
+    // The common members, as sequences of their positions in the other list.
+    let a: Vec<(usize, usize)> = before.iter().enumerate().filter_map(|(i, p)| after_pos.get(p.as_str()).map(|&j| (i, j))).collect();
+    let b: Vec<usize> = after.iter().enumerate().filter(|(_, p)| before_pos.contains_key(p.as_str())).map(|(j, _)| j).collect();
+    let (n, m) = (a.len(), b.len());
+    if n == 0 {
+        return Vec::new();
+    }
+    // Longest common subsequence over the "after" positions: a[i].1 against b[j].
+    let mut dp = vec![vec![0u32; m + 1]; n + 1];
+    for i in (0..n).rev() {
+        for j in (0..m).rev() {
+            dp[i][j] = if a[i].1 == b[j] { dp[i + 1][j + 1] + 1 } else { dp[i + 1][j].max(dp[i][j + 1]) };
+        }
+    }
+    let mut kept: HashSet<usize> = HashSet::new();
+    let (mut i, mut j) = (0, 0);
+    while i < n && j < m {
+        if a[i].1 == b[j] {
+            kept.insert(a[i].0);
+            i += 1;
+            j += 1;
+        } else if dp[i + 1][j] >= dp[i][j + 1] {
+            i += 1;
+        } else {
+            j += 1;
+        }
+    }
+    let mut moves: Vec<ListMove> = a.iter().filter(|(i, _)| !kept.contains(i)).map(|&(i, j)| ListMove { package_id: before[i].clone(), from: i + 1, to: j + 1 }).collect();
+    moves.sort_by_key(|mv| mv.to);
+    moves
 }
 
 /// Compare the previous baseline with what is installed now.
@@ -225,8 +274,8 @@ pub fn diff(prev: &Baseline, mods: &[ModInfo], workshop_updated: &HashMap<u64, u
         let after: HashSet<&str> = cur.iter().map(|s| s.as_str()).collect();
         let added: Vec<String> = cur.iter().filter(|p| !before.contains(p.as_str())).cloned().collect();
         let removed: Vec<String> = prev.active.iter().filter(|p| !after.contains(p.as_str())).cloned().collect();
-        let reordered = added.is_empty() && removed.is_empty() && prev.active != cur;
-        ListChange { added, removed, reordered }
+        let moves = list_moves(&prev.active, cur);
+        ListChange { added, removed, reordered: !moves.is_empty(), moves }
     });
     (out, list.filter(|l| !l.is_empty()))
 }
@@ -321,9 +370,36 @@ mod tests {
         let base = Baseline::take(&mods, &HashMap::new(), &["a".into(), "b".into()], 0);
         let (changes, list) = diff(&base, &mods, &HashMap::new(), &HashSet::new(), Some(&["b".to_string(), "a".to_string()]));
         assert!(changes.is_empty());
-        assert_eq!(list, Some(ListChange { added: vec![], removed: vec![], reordered: true }));
+        let list = list.unwrap();
+        assert!(list.reordered && list.added.is_empty() && list.removed.is_empty());
+        assert_eq!(list.moves.len(), 1, "swapping two mods is one move, not two: {:?}", list.moves);
         let (_, same) = diff(&base, &mods, &HashMap::new(), &HashSet::new(), Some(&["a".to_string(), "b".to_string()]));
         assert!(same.is_none());
+    }
+
+    /// The moves reported are the fewest that explain the new order: one mod dragged to the top
+    /// is one move, whatever sits below it; an added mod pushes nothing; a removed mod pulls nothing.
+    #[test]
+    fn list_moves_are_the_fewest_that_explain_the_order() {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let before = s(&["core", "a", "b", "c", "d", "e"]);
+        // e dragged to just under core, c removed, x added at the end.
+        let after = s(&["core", "e", "a", "b", "d", "x"]);
+        let mv = list_moves(&before, &after);
+        assert_eq!(mv, vec![ListMove { package_id: "e".into(), from: 6, to: 2 }]);
+        // Two mods swapped far apart: two moves (a to the bottom, d to the top), in the new order.
+        let swapped = s(&["core", "d", "b", "c", "a", "e"]);
+        let mv = list_moves(&before, &swapped);
+        let ids: Vec<&str> = mv.iter().map(|m| m.package_id.as_str()).collect();
+        assert!(ids == ["d", "a"] || ids == ["a", "d"], "{mv:?}");
+        assert_eq!(mv.len(), 2);
+        assert!(list_moves(&before, &before).is_empty());
+        assert!(list_moves(&before, &s(&["core", "a", "b", "d", "e"])).is_empty(), "a removal alone is not a move");
+        assert!(list_moves(&[], &after).is_empty());
+        // The whole list reversed: every mod but one moved.
+        let mut rev = before.clone();
+        rev.reverse();
+        assert_eq!(list_moves(&before, &rev).len(), before.len() - 1);
     }
 
     #[test]

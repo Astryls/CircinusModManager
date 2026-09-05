@@ -1,13 +1,15 @@
 <script lang="ts">
   import { tick } from "svelte";
   import { store } from "$lib/store.svelte";
-  import { I, sevIcon } from "$lib/icons";
+  import { I } from "$lib/icons";
   import { describe } from "$lib/describe";
-  import { BAND_LABEL, describeChange, severityOf, type ModInfo } from "$lib/types";
+  import { BAND_LABEL, describeChange, severityOf, type Issue, type ModInfo } from "$lib/types";
 
   // ---- virtualization: only the rows in view exist in the DOM ----
   const ROW = 40;
   const HEADER = 44;
+  /** The column header at the top of the list; the rows scroll under it. */
+  const TOP = 34;
   const OVERSCAN = 8;
   type Item = { kind: "header"; key: string; name: string; color: string; note: string; count: number } | { kind: "row"; key: string; mod: ModInfo; inactive: boolean };
 
@@ -21,10 +23,17 @@
   const items = $derived.by((): Item[] => {
     const out: Item[] = [];
     if (store.tab !== "inactive") {
-      for (const sec of store.sections) {
-        if (sec.group) out.push({ kind: "header", key: `h:${sec.phase.id}:${sec.group.id}`, name: sec.group.name, color: sec.group.color, note: `Your group, after ${sec.phase.name.toLowerCase()}`, count: sec.mods.length });
-        else out.push({ kind: "header", key: `h:${sec.phase.id}`, name: sec.phase.name, color: sec.phase.color, note: sec.phase.note, count: sec.mods.length });
-        for (const m of sec.mods) out.push({ kind: "row", key: m.uid, mod: m, inactive: false });
+      if (store.byPhase) {
+        for (const sec of store.sections) {
+          if (sec.group) out.push({ kind: "header", key: `h:${sec.phase.id}:${sec.group.id}`, name: sec.group.name, color: sec.group.color, note: `Your group, after ${sec.phase.name.toLowerCase()}`, count: sec.mods.length });
+          else out.push({ kind: "header", key: `h:${sec.phase.id}`, name: sec.phase.name, color: sec.phase.color, note: sec.phase.note, count: sec.mods.length });
+          for (const m of sec.mods) out.push({ kind: "row", key: m.uid, mod: m, inactive: false });
+        }
+      } else {
+        // The plain load order, exactly as ModsConfig.xml has it.
+        const va = store.visibleActive;
+        if (store.tab === "all") out.push({ kind: "header", key: "h:active", name: "Active", color: "blue", note: "In load order, as ModsConfig.xml has it", count: va.length });
+        for (const m of va) out.push({ kind: "row", key: m.uid, mod: m, inactive: false });
       }
     }
     if (store.tab !== "active") {
@@ -47,8 +56,9 @@
   const total = $derived(offsets[items.length] ?? 0);
   const range = $derived.by(() => {
     if (!items.length) return { start: 0, end: 0 };
-    const top = Math.max(0, scrollTop - OVERSCAN * ROW);
-    const bottom = scrollTop + viewport + OVERSCAN * ROW;
+    // Rows live below the column header: offsets are TOP further down the scroller.
+    const top = Math.max(0, scrollTop - TOP - OVERSCAN * ROW);
+    const bottom = scrollTop - TOP + viewport + OVERSCAN * ROW;
     let lo = 0, hi = items.length - 1;
     while (lo < hi) {
       const mid = (lo + hi) >> 1;
@@ -60,7 +70,7 @@
     return { start: lo, end };
   });
   const visible = $derived(items.slice(range.start, range.end).map((it, i) => ({ it, y: offsets[range.start + i] })));
-  /** The section whose header has scrolled above the top edge. */
+  /** The section whose header has scrolled under the column header. */
   const floating = $derived.by(() => {
     let cur: Item | null = null;
     for (let i = 0; i < items.length && offsets[i] <= scrollTop; i++) if (items[i].kind === "header") cur = items[i];
@@ -79,8 +89,8 @@
     const i = items.findIndex((it) => it.kind === "row" && it.key === uid);
     if (i < 0 || !scroller) return;
     const y = offsets[i];
-    if (y < scrollTop + HEADER || y + ROW > scrollTop + viewport) {
-      scroller.scrollTop = Math.max(0, y - viewport / 2);
+    if (y < scrollTop + HEADER || y + ROW > scrollTop + viewport - TOP) {
+      scroller.scrollTop = Math.max(0, y + TOP - viewport / 2);
       scrollTop = scroller.scrollTop;
     }
     if (focus) tick().then(() => (document.querySelector(`[data-uid="${CSS.escape(uid)}"]`) as HTMLElement | null)?.focus());
@@ -91,6 +101,13 @@
       tick().then(() => { scrollToUid(uid, true); store.scrollRequest = null; });
     }
   });
+
+  // ---- the badge columns ----
+  /** Issues of one severity, and the text for the column's tooltip. */
+  function bySeverity(issues: Issue[], sev: "error" | "warning" | "note", m: ModInfo): { n: number; text: string } {
+    const list = issues.filter((i) => severityOf(i) === sev);
+    return { n: list.length, text: list.map((i) => describe(i, store.byUid, m.uid)).join("\n") };
+  }
 
   // ---- interaction ----
   function visibleList(): string[] {
@@ -166,7 +183,7 @@
     const box = scroller.getBoundingClientRect();
     const inside = x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
     dropAt = null;
-    dropEnd = inside && store.tab !== "inactive" && y > box.top + (offsets[items.length] ?? 0) - scrollTop;
+    dropEnd = inside && store.tab !== "inactive" && y > box.top + TOP + (offsets[items.length] ?? 0) - scrollTop;
   }
   /** Scroll the list while the pointer sits near its top or bottom edge. */
   function edgeScroll(y: number) {
@@ -221,7 +238,26 @@
 
 <svelte:window onpointermove={pointerMove} onpointerup={pointerUp} onpointercancel={pointerCancel} onblur={pointerCancel} />
 
-<div class="card list" class:dragging bind:this={scroller} bind:clientHeight={viewport} onscroll={onScroll} role="listbox" aria-label="Load order" aria-multiselectable="true" tabindex="-1">
+<div class="card list" class:dragging class:weights={store.showWeight} bind:this={scroller} bind:clientHeight={viewport} onscroll={onScroll} role="listbox" aria-label="Load order" aria-multiselectable="true" tabindex="-1">
+  <div class="hdr" role="presentation">
+    <span class="h idx">#</span>
+    <span></span>
+    <span class="h">Mod</span>
+    <span class="h pkg">Package id</span>
+    {#if store.showWeight}<span class="h wt" title="Share of frame time, from circinus.sh or your own runs">Cost</span>{/if}
+    <span class="h vers" title="Game versions the mod says it supports">Versions</span>
+    <span class="h phz" title="Where HALO files the mod: the game, a library, content, a patch, a texture pack, a late loader, a performance mod">Phase</span>
+    <span class="h g" title="The group the mod is in">Group</span>
+    <span class="badges">
+      <span class="h b" title="Changed since you last opened Circinus: new, or updated on disk">{@html I.change}<i>Changed</i></span>
+      <span class="h b" title="A newer version is on the Workshop">{@html I.up}<i>Update</i></span>
+      <span class="h b" title="Errors: a missing dependency, two mods that do not work together, a rule loop, a mod above the game's own content">{@html I.error}<i>Errors</i></span>
+      <span class="h b" title="Warnings: a load-order rule not met, a mod not made for this game version, a performance mod not at the end">{@html I.warn}<i>Warnings</i></span>
+      <span class="h b" title="HALO notes: textures replaced by more than one mod, a rule HALO set aside">{@html I.note}<i>Notes</i></span>
+      <span class="h b" title="Pinned: keeps its position when HALO sorts">{@html I.pin}<i>Pinned</i></span>
+    </span>
+    <span class="h delta" title="How far HALO would move the mod, once you preview a sort">Move</span>
+  </div>
   {#if floating}
     <div class="ph floating"><span class="dot c-{floating.color}"></span><span class="n">{floating.name}</span><span class="c num">{floating.count}</span><span class="note">{floating.note}</span></div>
   {/if}
@@ -236,6 +272,12 @@
         {@const w = store.weightOf(m)}
         {@const upd = store.updateByUid.get(m.uid)}
         {@const chg = store.changeByUid.get(m.uid)}
+        {@const pl = it.inactive ? undefined : store.placement(m.uid)}
+        {@const grp = store.groupOf(m.uid)}
+        {@const err = bySeverity(issues, "error", m)}
+        {@const warn = bySeverity(issues, "warning", m)}
+        {@const note = bySeverity(issues, "note", m)}
+        {@const invalid = m.invalid && it.inactive ? m.invalid : ""}
         <div
           class="row"
           class:off={it.inactive}
@@ -261,13 +303,15 @@
             <span class="wt">{#if w && w.share != null}<span class="band {w.band}" title="Performance cost: {w.share.toFixed(2)} % of frame time, {BAND_LABEL[w.band].toLowerCase()}. {w.measured ?? '?'} runs measured, from {w.origin === 'local' ? 'your runs' : 'circinus.sh'}">{w.share.toFixed(1)} %</span>{:else if w}<span class="band {w.band}" title="Performance cost: {BAND_LABEL[w.band].toLowerCase()}">{w.band === "negligible" ? "<0.1 %" : "n/a"}</span>{/if}</span>
           {/if}
           <span class="vers">{#each versions as v}<span class:off={!(m.supportedVersions ?? []).includes(v)}>{v}</span>{/each}</span>
-          <span class="g">{#if store.groupOf(m.uid)}<span class="dot c-{store.groupOf(m.uid)?.color}" title={store.groupOf(m.uid)?.name}></span>{/if}</span>
-          <span class="flags">
-            {#if chg}<span class="flag chg" title="Changed since you last opened Circinus: {describeChange(chg)}">{@html chg.kind === "added" ? I.plus : I.change}</span>{/if}
-            {#if upd}<span class="flag note" title="A newer version is on the Workshop, updated {new Date(upd.remoteUpdated * 1000).toLocaleDateString()}">{@html I.up}</span>{/if}
-            {#each issues.slice(0, 3) as i}<span class="flag {severityOf(i)}" title={describe(i, store.byUid, m.uid)}>{@html sevIcon[severityOf(i)] ?? sevIcon.warning}</span>{/each}
-            {#if m.invalid && it.inactive}<span class="flag error" title={m.invalid}>{@html I.error}</span>{/if}
-            {#if store.pinned.has(m.uid)}<span class="flag pin" title="Pinned: keeps this position when sorting">{@html I.pin}</span>{/if}
+          <span class="phz">{#if pl}<span class="dot c-{store.phaseInfo(pl.phase).color}" title="{store.phaseInfo(pl.phase).name} · {pl.reason}"></span>{/if}</span>
+          <span class="g">{#if grp}<span class="dot c-{grp.color}" title="{grp.name}{grp.auto && !store.snap?.user.modGroups[m.uid] ? ' (by the group’s own rule)' : ''}"></span>{/if}</span>
+          <span class="badges">
+            <span class="b">{#if chg}<span class="flag chg" title="Changed since you last opened Circinus: {describeChange(chg)}">{@html chg.kind === "added" ? I.plus : I.change}</span>{/if}</span>
+            <span class="b">{#if upd}<span class="flag" title="A newer version is on the Workshop, updated {new Date(upd.remoteUpdated * 1000).toLocaleDateString()}">{@html I.up}</span>{/if}</span>
+            <span class="b">{#if err.n || invalid}<span class="flag" title={[invalid, err.text].filter(Boolean).join("\n")}>{@html I.error}{#if err.n + (invalid ? 1 : 0) > 1}<em class="num">{err.n + (invalid ? 1 : 0)}</em>{/if}</span>{/if}</span>
+            <span class="b">{#if warn.n}<span class="flag" title={warn.text}>{@html I.warn}{#if warn.n > 1}<em class="num">{warn.n}</em>{/if}</span>{/if}</span>
+            <span class="b">{#if note.n}<span class="flag" title={note.text}>{@html I.note}{#if note.n > 1}<em class="num">{note.n}</em>{/if}</span>{/if}</span>
+            <span class="b">{#if store.pinned.has(m.uid)}<span class="flag" title="Pinned: keeps this position when sorting">{@html I.pin}</span>{/if}</span>
           </span>
           <span class="delta num" class:down={delta && delta > 0} class:up={delta && delta < 0}>{#if delta}{delta > 0 ? "+" : ""}{delta}{/if}</span>
         </div>
@@ -289,14 +333,24 @@
   .list.dragging .row { cursor: grabbing; }
   .ghost { position: fixed; z-index: 30; pointer-events: none; background: var(--surface-4); color: var(--text); font-size: 12.5px; font-weight: 600; padding: 6px 10px; border-radius: 8px; box-shadow: var(--shadow-float); max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .spacer { position: relative; }
+  /* One grid for the column header and every row, so the columns line up. */
+  .hdr, .row { display: grid; grid-template-columns: 34px 18px minmax(0, 1fr) 150px 64px 44px 44px 238px 40px; align-items: center; gap: 10px; padding: 0 8px 0 4px; }
+  .list.weights .hdr, .list.weights .row { grid-template-columns: 34px 18px minmax(0, 1fr) 150px 64px 64px 44px 44px 238px 40px; }
+  .hdr { position: sticky; top: 0; z-index: 4; height: 34px; background: var(--surface); border-bottom: 1px solid var(--surface-3); margin: 0 -6px; padding-left: 10px; padding-right: 14px; }
+  .hdr .h { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); white-space: nowrap; overflow: hidden; }
+  .hdr .idx, .hdr .vers, .hdr .delta, .hdr .wt { text-align: right; }
+  .hdr .phz, .hdr .g { text-align: center; }
+  .hdr .b { display: grid; justify-items: center; gap: 1px; text-transform: none; letter-spacing: 0; font-size: 9px; font-weight: 600; }
+  .hdr .b :global(svg) { width: 13px; height: 13px; }
+  .hdr .b i { font-style: normal; }
   .ph { position: absolute; left: 0; right: 0; height: 44px; display: flex; align-items: center; gap: 10px; padding: 14px 10px 6px; background: var(--surface); }
-  /* Sticky overlay of the current section; the negative bottom margin keeps it out of the flow so row offsets stay exact. */
-  .ph.floating { position: sticky; top: 0; z-index: 3; box-shadow: 0 6px 8px -6px rgba(0, 0, 0, 0.5); margin: 0 -6px -44px; padding-left: 16px; padding-right: 16px; }
+  /* Sticky overlay of the current section, under the column header; the negative bottom margin keeps it out of the flow so row offsets stay exact. */
+  .ph.floating { position: sticky; top: 34px; z-index: 3; box-shadow: 0 6px 8px -6px rgba(0, 0, 0, 0.5); margin: 0 -6px -44px; padding-left: 16px; padding-right: 16px; }
   .ph .dot { width: 7px; height: 7px; }
   .ph .n { font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-2); }
   .ph .c { font-size: 11px; color: var(--text-3); font-weight: 600; }
   .ph .note { margin-left: auto; font-size: 11.5px; color: var(--text-3); }
-  .row { position: absolute; left: 0; right: 0; height: 40px; display: grid; grid-template-columns: 34px 18px minmax(0, 1fr) 150px auto 64px 14px 82px 40px; align-items: center; gap: 10px; padding: 0 8px 0 4px; border-radius: var(--r-row); cursor: default; }
+  .row { position: absolute; left: 0; right: 0; height: 40px; border-radius: var(--r-row); cursor: default; }
   .row:hover { background: var(--surface-2); }
   .row.sel { background: var(--surface-3); }
   .row.off { opacity: 0.72; }
@@ -313,15 +367,23 @@
   .name b { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .name span { font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pkg { font-family: var(--mono); font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .wt { min-width: 60px; display: flex; justify-content: flex-end; }
+  .row .wt { min-width: 60px; display: flex; justify-content: flex-end; }
   .vers { justify-content: flex-end; }
-  .g { display: grid; place-items: center; }
-  .flags { display: flex; gap: 4px; justify-content: flex-end; align-items: center; }
-  .flags .flag { width: 17px; height: 17px; }
-  .flags .flag :global(svg) { width: 15px; height: 15px; }
+  .row .phz, .row .g { display: grid; place-items: center; }
+  .row .phz .dot, .row .g .dot { width: 8px; height: 8px; }
+  /* Six fixed slots, one per kind of badge, so nothing ever draws over anything else. */
+  .badges { display: grid; grid-template-columns: repeat(6, 38px); gap: 2px; align-items: center; }
+  .badges .b { display: grid; place-items: center; height: 24px; }
+  .flag { display: inline-flex; align-items: center; gap: 1px; height: 20px; padding: 0 2px; border-radius: 6px; }
+  .flag :global(svg) { width: 15px; height: 15px; flex: none; }
+  .flag em { font-style: normal; font-size: 10.5px; font-weight: 700; color: var(--text-2); }
   .delta { font: 700 11.5px var(--mono); text-align: right; color: var(--text-3); }
   .delta.down { color: var(--amber); }
   .delta.up { color: var(--blue); }
   .empty { padding: 40px; text-align: center; color: var(--text-3); }
-  @media (max-width: 1240px) { .row { grid-template-columns: 34px 18px minmax(0, 1fr) auto 64px 14px 82px 40px; } .pkg { display: none; } }
+  @media (max-width: 1240px) {
+    .hdr, .row { grid-template-columns: 34px 18px minmax(0, 1fr) 64px 44px 44px 238px 40px; }
+    .list.weights .hdr, .list.weights .row { grid-template-columns: 34px 18px minmax(0, 1fr) 64px 64px 44px 44px 238px 40px; }
+    .pkg { display: none; }
+  }
 </style>

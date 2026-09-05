@@ -39,7 +39,7 @@
   const fixAll = $derived((audit?.mods ?? []).filter((m) => m.findings.some((f) => f.fixable)).map((m) => [m.uid, []] as [string, string[]]));
   const problem = (f: DdsFinding) =>
     f.problem.kind === "notMultipleOf4" ? `${f.width}×${f.height} ${f.format}: a side is not a multiple of 4` : f.problem.kind === "truncated" ? `${f.format}: only ${formatBytes(f.problem.actual)} of ${formatBytes(f.problem.expected)}, the file is cut short` : `cannot be read: ${f.problem.reason}`;
-  const phaseLabel = (p: string) => (p === "scanning" ? "Finding textures…" : p === "reverting" ? "Removing DDS files…" : p === "auditing" ? "Reading DDS headers…" : p === "fixing" ? "Rebuilding…" : "");
+  const phaseLabel = (p: string) => (p === "scanning" ? "Finding textures…" : p === "reverting" ? "Removing" : p === "auditing" ? "Reading DDS headers…" : p === "fixing" ? "Rebuilding" : p === "converting" ? "Converting" : "");
 
   function update(patch: Partial<NonNullable<typeof s>>) {
     if (!s) return;
@@ -90,10 +90,11 @@
       <p class="lead">Writes a <span class="mono">.dds</span> file next to every PNG in a mod's <span class="mono">Textures</span> folders. RimWorld then loads the DDS, which is already in the format the graphics card wants, and skips decoding the PNG. PNGs are never changed, so removing the DDS files puts everything back. Every file is decoded and checked before it is put in place, and a mod that updates gets its files checked again.</p>
       {#if t?.running}
         <div class="prog">
-          <div class="bar"><i style="width: {t.phase === 'converting' || t.phase === 'fixing' ? pct : 3}%"></i></div>
+          <div class="bar"><i style="width: {t.phase === 'converting' || t.phase === 'fixing' || t.phase === 'reverting' ? pct : 3}%"></i></div>
           <div class="pl">
-            <b class="num">{t.phase === "converting" || t.phase === "fixing" ? `${t.progress.done.toLocaleString()} of ${t.progress.total.toLocaleString()}` : phaseLabel(t.phase)}</b>
+            <b class="num">{t.phase === "converting" || t.phase === "fixing" || t.phase === "reverting" ? `${phaseLabel(t.phase)} ${t.progress.done.toLocaleString()} of ${t.progress.total.toLocaleString()}` : phaseLabel(t.phase)}</b>
             {#if t.phase === "converting"}<span>{t.progress.converted} converted{t.progress.failed ? ` · ${t.progress.failed} failed` : ""} · {formatBytes(t.progress.pngBytes)} → {formatBytes(t.progress.ddsBytes)}{rate ? ` · ${rate.per.toFixed(1)}/s · ${eta(rate.left)} left` : ""}</span>{/if}
+            {#if t.phase === "reverting"}<span>Each file is checked to be one Circinus wrote before it goes{rate ? ` · ${rate.per.toFixed(0)}/s · ${eta(rate.left)} left` : ""}</span>{/if}
             <span class="mono cur">{t.progress.current}</span>
           </div>
           <button class="btn" onclick={() => store.cancelTextures()}>Stop</button>
@@ -107,9 +108,9 @@
         {#if t?.report}
           {@const r = t.report}
           <div class="report">
-            {#if r.reverted || r.bytesFreed}
-              Last run removed <b class="num">{r.reverted}</b> files{r.restored ? ` (${r.restored} originals put back)` : ""}, freeing {formatBytes(r.bytesFreed)}.
-            {:else if r.fixed || (t.phase === "idle" && audit && !r.converted && !r.current)}
+            {#if r.kind === "revert" || (!r.kind && (r.reverted || r.bytesFreed))}
+              Last run removed <b class="num">{r.reverted}</b> file{r.reverted === 1 ? "" : "s"}{r.restored ? ` (${r.restored} originals put back)` : ""} across {r.mods} mod{r.mods === 1 ? "" : "s"}, freeing {formatBytes(r.bytesFreed)}{r.cancelled ? ", then stopped" : ""}.
+            {:else if r.kind === "fix" || r.fixed || (t.phase === "idle" && audit && !r.converted && !r.current)}
               Last run rebuilt <b class="num">{r.fixed ?? 0}</b> file{(r.fixed ?? 0) === 1 ? "" : "s"}{r.failed ? `, ${r.failed} failed` : ""} in {r.seconds}s. The originals are next to them as <span class="mono">.circinus-orig</span>.
             {:else}
               Last run: <b class="num">{r.converted}</b> converted{r.failed ? `, ${r.failed} failed` : ""}{r.current ? `, ${r.current} already current` : ""}{r.shipped ? `, ${r.shipped} left alone because the author ships a DDS` : ""} across {r.mods} mods in {r.seconds}s{r.cancelled ? ", stopped early" : ""}. {formatBytes(r.pngBytes)} of PNG became {formatBytes(r.ddsBytes)} of DDS.

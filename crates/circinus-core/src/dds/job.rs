@@ -267,7 +267,12 @@ pub struct Revalidation {
     pub foreign: Vec<String>,
 }
 
+/// Whether the file at `dds` is still the one Circinus wrote. The size is checked first so a
+/// file someone else replaced is rejected without reading it; a size match is hashed in full.
 fn is_ours(dds: &Path, e: &Entry) -> bool {
+    if std::fs::metadata(dds).map(|m| m.len() != e.dds_len).unwrap_or(true) {
+        return false;
+    }
     match std::fs::read(dds) {
         Ok(bytes) => bytes.len() as u64 == e.dds_len && hash(&bytes) == e.dds_hash,
         Err(_) => false,

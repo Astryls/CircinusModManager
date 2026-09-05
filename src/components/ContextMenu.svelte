@@ -118,11 +118,12 @@
     <div class="sub" role="presentation" onmouseenter={() => (open = "group")}>
       <button class="it" role="menuitem" aria-haspopup="menu" aria-expanded={open === "group"} onclick={() => (open = open === "group" ? null : "group")}>{@html I.library}Group<span class="arrow">›</span></button>
       {#if open === "group"}
+        {@const byHand = one ? store.snap?.user.modGroups[one.uid] ?? "" : null}
         {@const cur = one ? store.groupOf(one.uid)?.id ?? "" : null}
         <div class="menu card flyout" class:left={flip} role="menu">
-          <button class="it" role="menuitemradio" aria-checked={cur === ""} onclick={() => run(() => store.setGroup(uids, null))}><span class="chk">{cur === "" ? "•" : ""}</span>None</button>
+          <button class="it" role="menuitemradio" aria-checked={cur === ""} title={cur && !byHand ? "It is in that group by the group's own rule; None is its hand-picked state already" : ""} onclick={() => run(() => store.setGroup(uids, null))}><span class="chk">{cur === "" ? "•" : ""}</span>None</button>
           {#each store.snap?.user.groups ?? [] as g}
-            <button class="it" role="menuitemradio" aria-checked={cur === g.id} onclick={() => run(() => store.setGroup(uids, g.id))}><span class="chk">{cur === g.id ? "•" : ""}</span><span class="dot c-{g.color}"></span>{g.name}</button>
+            <button class="it" role="menuitemradio" aria-checked={cur === g.id} onclick={() => run(() => store.setGroup(uids, g.id))}><span class="chk">{cur === g.id ? "•" : ""}</span><span class="dot c-{g.color}"></span>{g.name}{#if cur === g.id && !byHand}<span class="aside">by its rule</span>{/if}</button>
           {/each}
           <div class="sep"></div>
           {#if newGroup}

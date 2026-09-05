@@ -85,7 +85,33 @@ class Store {
     return map;
   });
   groupsById = $derived(new Map((this.snap?.user.groups ?? []).map((g) => [g.id, g])));
-  groupOf = (uid: string): Group | undefined => this.groupsById.get(this.snap?.user.modGroups[uid] ?? "");
+  /** Groups that find members on their own, in the order they are listed: the first match wins. */
+  autoGroups = $derived((this.snap?.user.groups ?? []).filter((g) => g.auto));
+  /** The group a mod falls into by a group's own rule (the game and DLC, a HALO phase, an author). */
+  autoGroupOf(uid: string): Group | undefined {
+    const m = this.byUid.get(uid);
+    if (!m) return undefined;
+    for (const g of this.autoGroups) {
+      const r = g.auto!;
+      if (r.kind === "official" && m.source === "ludeon") return g;
+      if (r.kind === "phase" && this.placementByUid.get(uid)?.phase === r.phase) return g;
+      if (r.kind === "author" && r.name.trim() && (m.authors ?? []).some((a) => a.toLowerCase().includes(r.name.trim().toLowerCase()))) return g;
+    }
+    return undefined;
+  }
+  /** A mod's group: the one it was put in by hand, else the one whose rule takes it. */
+  groupOf = (uid: string): Group | undefined => this.groupsById.get(this.snap?.user.modGroups[uid] ?? "") ?? this.autoGroupOf(uid);
+  /** Members per group, hand-picked and automatic together. */
+  groupCounts = $derived.by(() => {
+    const c = new Map<string, number>();
+    for (const m of this.mods) {
+      const g = this.groupOf(m.uid);
+      if (g) c.set(g.id, (c.get(g.id) ?? 0) + 1);
+    }
+    return c;
+  });
+  /** The active list shown in HALO's phase sections (true) or as the plain load order (false). */
+  byPhase = $derived(this.snap?.settings.listByPhase ?? false);
   weightOf = (m: ModInfo): Weight | undefined => this.snap?.weights[m.packageId];
   pinned = $derived(new Set(this.snap?.user.pinned ?? []));
   showWeight = $derived(this.snap?.settings.showWeight ?? false);
@@ -155,7 +181,7 @@ class Store {
   matches(m: ModInfo): boolean {
     const q = this.query.trim().toLowerCase();
     if (q && !((m.name ?? "").toLowerCase().includes(q) || (m.packageId ?? "").includes(q) || (m.authors ?? []).some((a) => a.toLowerCase().includes(q)) || String(m.publishedFileId ?? "").includes(q))) return false;
-    if (this.group && this.snap?.user.modGroups[m.uid] !== this.group) return false;
+    if (this.group && this.groupOf(m.uid)?.id !== this.group) return false;
     if (!this.sources.includes(m.source)) return false;
     if (this.onlyCurrentVersion && m.source !== "ludeon" && !(m.supportedVersions ?? []).includes(this.snap?.gameVersion.majorMinor ?? "")) return false;
     if (this.showOnly && !this.passesShowOnly(m.uid, this.showOnly)) return false;
@@ -234,17 +260,37 @@ class Store {
       log(`snapshot failed: ${e}`);
       this.error = String(e);
     }
+    // A snapshot from before the first scan finished (the window can be up before the scan
+    // thread has the lock) is empty: keep the overlay up and let `state-changed` deliver the
+    // real one. If nothing arrives, ask for a scan outright.
+    if (snap && !snap.scannedAt) {
+      log("snapshot predates the first scan; waiting for it");
+      this.snap = snap;
+      this.step = "Reading your mods";
+      setTimeout(() => {
+        if (this.loading && !this.snap?.scannedAt) {
+          log("no scan reported after 20 s; asking for one");
+          this.rescan(false).finally(() => (this.loading = false));
+        }
+      }, 20_000);
+      this.refreshDownloads();
+      return;
+    }
     // Drop the overlay first, then apply the data: even if a panel throws while rendering,
     // its boundary shows the error and the rest of the app stays usable.
     this.loading = false;
     if (snap) {
       this.snap = snap;
       queueMicrotask(() => log("first render scheduled"));
-      if (snap.changes.length) setTimeout(() => this.say(`${snap.changes.length} mod${snap.changes.length === 1 ? "" : "s"} changed since you last opened Circinus: ${this.changeSummary}`, "warn"), 400);
-      else if (snap.listChange) setTimeout(() => this.say("Your active list was changed outside Circinus", "warn"), 400);
+      this.announceChanges(snap);
     }
     this.refreshDownloads();
     this.refreshTextures();
+  }
+
+  private announceChanges(snap: Snapshot) {
+    if (snap.changes.length) setTimeout(() => this.say(`${snap.changes.length} mod${snap.changes.length === 1 ? "" : "s"} changed since you last opened Circinus: ${this.changeSummary}`, "warn"), 400);
+    else if (snap.listChange) setTimeout(() => this.say("Your active list was changed outside Circinus", "warn"), 400);
   }
 
   private onTex(t: TexState) {
@@ -252,8 +298,10 @@ class Store {
     this.tex = t;
     if (was?.running && !t.running && t.report) {
       const r = t.report;
-      if (r.reverted || r.bytesFreed) this.say(`Removed ${r.reverted} DDS file${r.reverted === 1 ? "" : "s"} (${(r.bytesFreed / 1e6).toFixed(0)} MB)`);
-      else this.say(r.cancelled ? `Stopped after ${r.converted} textures` : `${r.converted} texture${r.converted === 1 ? "" : "s"} converted${r.failed ? `, ${r.failed} failed` : ""}${r.current ? `, ${r.current} already current` : ""} in ${r.seconds}s`, r.failed ? "warn" : "ok");
+      const kind = r.kind ?? (r.reverted || r.bytesFreed ? "revert" : "convert");
+      if (kind === "revert") this.say(r.reverted ? `Removed ${r.reverted} DDS file${r.reverted === 1 ? "" : "s"} (${(r.bytesFreed / 1e6).toFixed(0)} MB)${r.cancelled ? ", then stopped" : ""}` : r.cancelled ? "Stopped before anything was removed" : "Nothing to remove: no DDS files of Circinus's were found", r.cancelled ? "warn" : "ok");
+      else if (kind === "fix") this.say(`${r.fixed ?? 0} file${(r.fixed ?? 0) === 1 ? "" : "s"} rebuilt${r.failed ? `, ${r.failed} failed` : ""}`, r.failed ? "warn" : "ok");
+      else if (kind === "convert") this.say(r.cancelled ? `Stopped after ${r.converted} textures` : `${r.converted} texture${r.converted === 1 ? "" : "s"} converted${r.failed ? `, ${r.failed} failed` : ""}${r.current ? `, ${r.current} already current` : ""} in ${r.seconds}s`, r.failed ? "warn" : "ok");
       this.refreshTextures();
     }
   }
@@ -300,12 +348,14 @@ class Store {
       return r;
     });
   }
+  /** Remove the DDS files Circinus made for these mods. Runs in the background: progress shows
+   *  in the Textures view, the result arrives as a toast, and the list refreshes on its own. */
   revertTextures(uids: string[]) {
     if (!uids.length) return;
-    return this.run("Removing DDS files…", async () => {
+    return this.run("Starting removal…", async () => {
       await api.ddsRevert(uids);
-      await this.refresh();
-      this.refreshTextures();
+      this.tex = await api.ddsState();
+      this.view = "textures";
     });
   }
   cancelTextures() {
@@ -329,11 +379,18 @@ class Store {
   }
 
   async refresh() {
-    const had = this.snap != null;
+    const had = this.snap != null && this.snap.scannedAt > 0;
     const before = new Set(this.changes.map((c) => `${c.kind}:${c.uid}`));
     const beforeList = JSON.stringify(this.listChange);
     this.snap = await api.snapshot();
     api.ddsOverview().then((o) => (this.texOverview = o)).catch(() => {});
+    if (this.loading && this.snap.scannedAt) {
+      // The first scan came in while the overlay was waiting for it.
+      this.loading = false;
+      this.announceChanges(this.snap);
+      this.refreshTextures();
+      return;
+    }
     if (!had) return;
     // Something changed while we were open (Steam updated a mod, the game rewrote the list).
     const fresh = this.changes.filter((c) => !before.has(`${c.kind}:${c.uid}`));
@@ -835,6 +892,10 @@ class Store {
       else delete u.phaseOverrides[uid];
       return u;
     });
+  }
+  /** Show the active list in phase sections, or as the plain load order. Remembered in settings. */
+  setByPhase(v: boolean) {
+    return this.updateSettings({ listByPhase: v });
   }
   updateSettings(patch: Partial<Settings>) {
     if (!this.snap) return;

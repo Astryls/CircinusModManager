@@ -5,11 +5,7 @@
   import type { Group } from "$lib/types";
 
   const snap = $derived(store.snap);
-  const groupCounts = $derived.by(() => {
-    const c = new Map<string, number>();
-    for (const [uid, g] of Object.entries(snap?.user.modGroups ?? {})) if (store.byUid.has(uid)) c.set(g, (c.get(g) ?? 0) + 1);
-    return c;
-  });
+  const groupCounts = $derived(store.groupCounts);
   const nav: { id: View; label: string; icon: string; count?: () => string | number; att?: boolean }[] = [
     { id: "order", label: "Load order", icon: I.list, count: () => store.active.length },
     { id: "library", label: "Library", icon: I.library, count: () => store.mods.length },
@@ -28,9 +24,19 @@
     newGroup = false;
   }
   function marker(g: Group): string {
-    if (g.section && g.phase) return `Has its own section in the load order, after ${store.phaseInfo(g.phase).name.toLowerCase()}`;
-    if (g.phase) return `Members are sorted as ${store.phaseInfo(g.phase).name.toLowerCase()}`;
-    return "";
+    const parts: string[] = [];
+    if (g.auto) parts.push(autoLabel(g));
+    if (g.section && g.phase) parts.push(`Has its own section in the load order, after ${store.phaseInfo(g.phase).name.toLowerCase()}`);
+    else if (g.phase) parts.push(`Hand-picked members are sorted as ${store.phaseInfo(g.phase).name.toLowerCase()}`);
+    return parts.join(". ");
+  }
+  /** What a self-filling group takes in. */
+  function autoLabel(g: Group): string {
+    const r = g.auto;
+    if (!r) return "";
+    if (r.kind === "official") return "Fills itself with the game and its DLC";
+    if (r.kind === "phase") return `Fills itself with what HALO files as ${store.phaseInfo(r.phase).name.toLowerCase()}`;
+    return r.name.trim() ? `Fills itself with mods by ${r.name.trim()}` : "Fills itself with mods by an author (none named yet)";
   }
   const pct = $derived(store.mods.length ? Math.round((store.active.length / store.mods.length) * 100) : 0);
 
@@ -154,6 +160,7 @@
       <div class="grow" class:on={store.group === g.id} class:editing={editing === g.id}>
         <button class="g" onclick={() => (store.group = store.group === g.id ? null : g.id)} title={marker(g) || "Show only this group"}>
           <span class="dot c-{g.color}"></span><span class="n">{g.name}</span>
+          {#if g.auto}<span class="ov auto" title={autoLabel(g)}>{@html I.halo}</span>{/if}
           {#if g.phase}<span class="ov" title={marker(g)}>{@html I.over}</span>{/if}
           <span class="c num">{groupCounts.get(g.id) ?? 0}</span>
         </button>
@@ -162,7 +169,7 @@
       {#if editing === g.id}<GroupEditor group={g} onclose={() => (editing = null)} />{/if}
     {/each}
     {#if store.group}<button class="clear" onclick={() => (store.group = null)}>Show all groups</button>{/if}
-    <p class="ghint">Click a group to show only its mods. The gear sets where its members sort: a phase, or a section of their own.</p>
+    <p class="ghint">Click a group to show only its mods. The gear sets what a group takes in by itself and where its members sort: a phase, or a section of their own.</p>
   </section>
 
   <section class="card cols">
@@ -252,6 +259,7 @@
   .groups .g .c { color: var(--text-3); font-size: 12px; }
   .groups .g .ov { color: var(--text-3); display: grid; }
   .groups .g .ov :global(svg) { width: 13px; height: 13px; }
+  .groups .g .ov.auto :global(svg) { width: 12px; height: 12px; opacity: 0.8; }
   .clear { margin-top: 6px; font-size: 12px; color: var(--text-3); font-weight: 600; }
   .clear:hover { color: var(--text); }
 </style>

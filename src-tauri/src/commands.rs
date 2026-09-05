@@ -798,10 +798,20 @@ pub fn dds_cancel(tex: Tex<'_>) {
     tex.cancel();
 }
 
+/// Remove the DDS files Circinus made for these mods, in the background; progress and the
+/// final report arrive as `dds-progress`, like a conversion.
 #[tauri::command]
-pub async fn dds_revert(tex: Tex<'_>, uids: Vec<String>) -> CmdResult<Report> {
+pub async fn dds_revert(tex: Tex<'_>, uids: Vec<String>) -> CmdResult<()> {
+    if tex.snapshot().running {
+        return Err("A texture job is already running".into());
+    }
     let t = tex.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || t.revert(uids)).await.map_err(err)?
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Err(e) = t.revert(uids) {
+            tracing::warn!("dds revert: {e}");
+        }
+    });
+    Ok(())
 }
 
 /// Find DDS files (not Circinus's) the game will refuse, in `uids`.

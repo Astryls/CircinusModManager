@@ -29,13 +29,15 @@ pub struct Settings {
     pub include_local_runs: bool,
     pub alphabetical_within_phase: bool,
     pub update_databases_on_start: bool,
+    /// Show the active list in HALO's phase sections rather than as the plain load order.
+    pub list_by_phase: bool,
     pub dds: DdsSettings,
     pub launch: LaunchSettings,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { locations: Locations::default(), db_sources: rules::default_sources(), show_weight: false, include_local_runs: true, alphabetical_within_phase: false, update_databases_on_start: false, dds: DdsSettings::default(), launch: LaunchSettings::default() }
+        Settings { locations: Locations::default(), db_sources: rules::default_sources(), show_weight: false, include_local_runs: true, alphabetical_within_phase: false, update_databases_on_start: false, list_by_phase: false, dds: DdsSettings::default(), launch: LaunchSettings::default() }
     }
 }
 
@@ -116,6 +118,23 @@ pub struct Group {
     /// of their own, right after the ordinary members of `phase`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub section: bool,
+    /// Members the group picks up on its own, on top of the ones assigned by hand (a hand
+    /// assignment to another group wins). Membership is worked out where the list is shown;
+    /// it never feeds back into the order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto: Option<AutoRule>,
+}
+
+/// How a group finds its members by itself.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum AutoRule {
+    /// The game and its DLC.
+    Official,
+    /// Whatever HALO files under this phase: libraries, texture packs, performance mods…
+    Phase { phase: Phase },
+    /// Mods by an author (any listed author contains the text, case-insensitive).
+    Author { name: String },
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -131,6 +150,9 @@ pub struct UserData {
     pub dds_excluded: HashSet<String>,
     /// Steam collections the user follows, with what they held when last looked at.
     pub collections: Vec<TrackedCollection>,
+    /// The default groups have been given their automatic members once (an upgrade step; the
+    /// user may switch them back to hand-picked afterwards and that sticks).
+    pub auto_groups_adopted: bool,
 }
 
 /// A Steam Workshop collection the user follows. `items` is what it holds now (last fetch);
@@ -177,14 +199,30 @@ pub struct NamedList {
     pub game_version: String,
 }
 
+/// The groups everyone starts with. Three fill themselves: the game and its DLC, the libraries,
+/// and the performance mods, as HALO files them.
 fn default_groups() -> Vec<Group> {
     vec![
-        Group { id: "core".into(), name: "Core".into(), color: "blue".into(), phase: None, section: false },
-        Group { id: "frameworks".into(), name: "Frameworks".into(), color: "teal".into(), phase: None, section: false },
-        Group { id: "qol".into(), name: "Quality of life".into(), color: "green".into(), phase: None, section: false },
-        Group { id: "visual".into(), name: "Visual".into(), color: "amber".into(), phase: None, section: false },
-        Group { id: "performance".into(), name: "Performance".into(), color: "coral".into(), phase: Some(Phase::Optimization), section: false },
+        Group { id: "core".into(), name: "Core".into(), color: "blue".into(), phase: None, section: false, auto: Some(AutoRule::Official) },
+        Group { id: "frameworks".into(), name: "Frameworks".into(), color: "teal".into(), phase: None, section: false, auto: Some(AutoRule::Phase { phase: Phase::Framework }) },
+        Group { id: "qol".into(), name: "Quality of life".into(), color: "green".into(), phase: None, section: false, auto: None },
+        Group { id: "visual".into(), name: "Visual".into(), color: "amber".into(), phase: None, section: false, auto: None },
+        Group { id: "performance".into(), name: "Performance".into(), color: "coral".into(), phase: Some(Phase::Optimization), section: false, auto: Some(AutoRule::Phase { phase: Phase::Optimization }) },
     ]
+}
+
+/// Give the default groups of an existing install their automatic members, as long as the
+/// user has not put anything in them by hand (then they are theirs to run).
+fn adopt_auto_groups(user: &mut UserData) {
+    let used: HashSet<&String> = user.mod_groups.values().collect();
+    for def in default_groups() {
+        let Some(rule) = def.auto else { continue };
+        if let Some(g) = user.groups.iter_mut().find(|g| g.id == def.id) {
+            if g.auto.is_none() && !used.contains(&g.id) {
+                g.auto = Some(rule);
+            }
+        }
+    }
 }
 
 /// Everything the UI needs to render, in one message.
@@ -336,6 +374,13 @@ impl App {
         let mut user: UserData = cache.get("user")?.unwrap_or_default();
         if user.groups.is_empty() {
             user.groups = default_groups();
+        }
+        if !user.auto_groups_adopted {
+            adopt_auto_groups(&mut user);
+            user.auto_groups_adopted = true;
+            if let Err(e) = cache.set("user", &user) {
+                tracing::warn!("could not store the user data: {e}");
+            }
         }
         let baseline: Option<Baseline> = cache.get(BASELINE_KEY).unwrap_or(None);
         let mut app = App {
@@ -1054,6 +1099,35 @@ mod tests {
         assert!(app.dirty);
         let core = app.mods.iter().find(|m| m.source == Source::Ludeon).unwrap().uid.clone();
         assert!(app.delete_mod(&core).is_err(), "official content stays");
+    }
+
+    /// Fresh data gets the self-filling default groups; an existing install adopts them once,
+    /// except where the user already put mods in by hand, and a later switch back sticks.
+    #[test]
+    fn default_groups_fill_themselves_and_existing_installs_adopt_once() {
+        let (_tmp, app) = app_on_fixture();
+        let core = app.user.groups.iter().find(|g| g.id == "core").unwrap();
+        assert_eq!(core.auto, Some(AutoRule::Official));
+        assert_eq!(app.user.groups.iter().find(|g| g.id == "performance").unwrap().auto, Some(AutoRule::Phase { phase: Phase::Optimization }));
+        assert!(app.user.groups.iter().find(|g| g.id == "qol").unwrap().auto.is_none());
+        assert!(app.user.auto_groups_adopted);
+        // An older install: groups without the field, Frameworks used by hand.
+        let mut old = UserData { groups: default_groups().into_iter().map(|g| Group { auto: None, ..g }).collect(), ..Default::default() };
+        old.mod_groups.insert("some/mod".into(), "frameworks".into());
+        adopt_auto_groups(&mut old);
+        assert_eq!(old.groups.iter().find(|g| g.id == "core").unwrap().auto, Some(AutoRule::Official));
+        assert!(old.groups.iter().find(|g| g.id == "frameworks").unwrap().auto.is_none(), "hand-picked members: left alone");
+        // The user switches Core back to hand-picked; reopening does not undo it.
+        let tmp2 = tempfile::tempdir().unwrap();
+        let mut app2 = App::open_at(tmp2.path().join("data"), Some(Settings::default())).unwrap();
+        app2.user.groups.iter_mut().find(|g| g.id == "core").unwrap().auto = None;
+        app2.persist().unwrap();
+        let again = App::open_at(tmp2.path().join("data"), Some(Settings::default())).unwrap();
+        assert!(again.user.groups.iter().find(|g| g.id == "core").unwrap().auto.is_none());
+        // The rule survives the wire format.
+        let json = serde_json::to_string(&AutoRule::Author { name: "Oskar".into() }).unwrap();
+        assert_eq!(json, r#"{"kind":"author","name":"Oskar"}"#);
+        assert_eq!(serde_json::to_string(&AutoRule::Phase { phase: Phase::Framework }).unwrap(), r#"{"kind":"phase","phase":"framework"}"#);
     }
 
     #[test]
