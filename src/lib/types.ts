@@ -202,6 +202,30 @@ export interface Settings {
   settingsVersion?: number;
   dds: DdsSettings;
   launch: LaunchSettings;
+  /** Ask circinus.sh for a newer build a few seconds after launch (nothing installs on its own). */
+  checkForUpdates?: boolean;
+}
+
+/** What asking circinus.sh for a newer build found. */
+export interface UpdateCheck {
+  available: boolean;
+  /** The version this build is. */
+  current: string;
+  /** The newest version on offer, when it is newer than this one. */
+  version?: string | null;
+  notes?: string | null;
+  /** RFC 3339, as the feed sent it. */
+  pubDate?: string | null;
+}
+
+/** One `update-progress` event while an update installs. */
+export interface UpdateProgress {
+  phase: "downloading" | "installing" | "restarting" | "failed";
+  version: string;
+  downloaded: number;
+  /** The download's size, when the server said. */
+  total: number | null;
+  error?: string | null;
 }
 
 /** How a group finds members on its own: the game and DLC, a HALO phase, or an author. */

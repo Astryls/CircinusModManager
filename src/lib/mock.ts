@@ -153,9 +153,10 @@ let settings: Settings = {
   updateDatabasesOnStart: false,
   listByPhase: typeof location === "undefined" || !location.search.includes("plain"),
   listColumns: ["load", "versions"],
-  settingsVersion: 2,
+  settingsVersion: 3,
   dds: { alphaFormat: "bc7", quality: "balanced", mipmaps: true, threads: 0, auto: false },
-  launch: { method: "auto", executable: null, args: "", saveFirst: true }
+  launch: { method: "auto", executable: null, args: "", saveFirst: true },
+  checkForUpdates: true
 };
 
 const rules: Rule[] = [
@@ -850,6 +851,47 @@ function subState(id: number): "subscribed" | "installed" | "absent" {
   return seed[4] === "workshop" ? "subscribed" : seed[4] === "steamcmd" || seed[4] === "local" ? "installed" : "absent";
 }
 
+// ---- events ----
+// Tauri's backend pushes progress as events; in the browser the mock plays that part for the
+// jobs that need it. `listen` is what api.ts hands the store outside Tauri.
+const listeners = new Map<string, Set<(payload: unknown) => void>>();
+export function listen(event: string, handler: (payload: unknown) => void): () => void {
+  if (!listeners.has(event)) listeners.set(event, new Set());
+  listeners.get(event)!.add(handler);
+  return () => listeners.get(event)?.delete(handler);
+}
+function emit(event: string, payload: unknown) {
+  for (const h of listeners.get(event) ?? []) h(payload);
+}
+
+// ---- a newer Circinus ----
+// `?update` makes the feed offer 0.2.0; Install animates a download, then says it relaunched.
+const updateOffered = typeof location !== "undefined" && location.search.includes("update");
+const MOCK_VERSION = "0.1.0";
+const MOCK_UPDATE = { available: true, current: MOCK_VERSION, version: "0.2.0", notes: "HALO learns late loaders. The Patches view names who else patches the same method. Fixes for linked mod folders.", pubDate: "2026-09-05T18:00:00Z" };
+let updateInstalled = false;
+function installUpdate(): Promise<void> {
+  const total = 48_300_000;
+  let downloaded = 0;
+  return new Promise((resolve) => {
+    const tick = () => {
+      downloaded = Math.min(total, downloaded + 2_400_000);
+      emit("update-progress", { phase: "downloading", version: "0.2.0", downloaded, total, error: null });
+      if (downloaded < total) return setTimeout(tick, 80);
+      emit("update-progress", { phase: "installing", version: "0.2.0", downloaded, total, error: null });
+      setTimeout(() => {
+        emit("update-progress", { phase: "restarting", version: "0.2.0", downloaded, total, error: null });
+        updateInstalled = true;
+        // The real command never returns on success: the process is replaced. The mock
+        // resolves so the page keeps working, with the banner saying what would have happened.
+        resolve();
+      }, 700);
+    };
+    setTimeout(tick, 80);
+  });
+}
+if (updateOffered) setTimeout(() => emit("update-available", MOCK_UPDATE), 1500);
+
 export async function invoke<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
   await new Promise((r) => setTimeout(r, 30));
   const A = args as Record<string, any>;
@@ -1224,6 +1266,15 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
       return { preview: { list: { packageIds: ["brrainz.harmony", "no.such"], format: "Rentry list" }, uids: [uidOf("brrainz.harmony")], missing: ["no.such"] }, missingWorkshopIds: [999] } as T;
     case "check_updates":
       return 1 as T;
+    // These two fail the way Tauri commands do, with a plain string, so the UI shows the
+    // words and not "Error:" in front of them.
+    case "update_check":
+      if (location.search.includes("offline")) return Promise.reject("Circinus could not reach circinus.sh. Check your internet connection and try again.");
+      return (updateOffered && !updateInstalled ? MOCK_UPDATE : { available: false, current: MOCK_VERSION, version: null, notes: null, pubDate: null }) as T;
+    case "update_install":
+      if (!updateOffered) return Promise.reject(`Circinus ${MOCK_VERSION} is the newest version; there is nothing to install`);
+      await installUpdate();
+      return undefined as T;
     case "app_data_dir":
       return "C:\\Users\\Player\\AppData\\Local\\Circinus" as T;
     default:

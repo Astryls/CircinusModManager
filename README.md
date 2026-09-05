@@ -53,6 +53,8 @@ The two commands are separate on purpose. Naming the scanner in the main `tauri.
 
 `.github/workflows/release.yml` does all of this for Windows, macOS (Intel and Apple silicon) and Linux on a tag: it installs .NET, builds the scanner, runs it over the test fixture to check it works, runs the tests, builds the bundle, and fails if the scanner is not in the output — a release that quietly lost its sidecar looks exactly like a working one until somebody opens the Patches view.
 
+Every build is signed for the updater: `tauri.conf.json` carries the public key and `createUpdaterArtifacts`, so `tauri build` writes a `.sig` beside each installer and needs `TAURI_SIGNING_PRIVATE_KEY` in the environment (on CI, a secret). The app asks `https://circinus.sh/modmanager` for a newer build a few seconds after launch (Settings, Updates turns that off) and installs one only when the user presses *Install and restart*. `docs/update-feed.md` is the contract the site implements.
+
 Single self-contained binaries; SteamCMD is downloaded on first use rather than bundled (Valve's terms).
 
 ## What works today (milestone 1)

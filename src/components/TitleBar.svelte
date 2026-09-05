@@ -105,6 +105,10 @@
     {#if changesN}
       <button class="chip warn" title="{changesN} mods changed since you last opened Circinus. Click to see what changed." onclick={() => (store.showChanges = true)}>{@html I.bell}<span>{changesN} changed</span></button>
     {/if}
+    {#if store.update && !store.updateProgress}
+      <!-- A small mark that outlives the banner's Not now: the banner is only on the load order, and this is everywhere. -->
+      <button class="chip up" title="Circinus {store.update.version} is available. Settings, Updates has Install and restart." onclick={() => (store.view = "settings")}>{@html I.up}<span class="lbl">{store.update.version} available</span></button>
+    {/if}
     <button class="chip" class:on={store.view === "downloads"} title={dl.title} aria-label="Downloads (Ctrl D)" onclick={() => (store.view = store.view === "downloads" ? "order" : "downloads")}>
       <span class="dot" class:pulse={dl.pulse} style="--c: {dl.color}"></span>{@html I.cloud}<span class="lbl">{dl.label}</span>
     </button>
@@ -154,6 +158,7 @@
   .chip:hover, .chip.on { background: var(--surface-2); color: var(--text); }
   .chip :global(svg) { width: 16px; height: 16px; }
   .chip.warn { color: var(--amber); }
+  .chip.up { color: var(--green); }
   .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent); }
   .chip .dot.pulse { animation: pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--c) 10%, transparent); } }

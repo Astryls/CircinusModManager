@@ -1,6 +1,6 @@
 // Thin wrapper over Tauri's invoke, with a browser mock so the UI can run outside Tauri.
 
-import type { AddResult, AuditReport, BuiltinRule, CollectionPreview, DdsReport, DefQuery, DefsState, DefTree, ImportPreview, Instance, Issue, ItemSubscription, LaunchInfo, LaunchSettings, Locations, LogAnalysis, LogFile, ModFiles, ModPatchDetail, ModTextures, PatchJob, PatchReport, QueueState, RentryPreview, RestoreResult, Rule, RulesFile, SavedList, ScannerStatus, Settings, Snapshot, SortResult, SteamClientStatus, SteamCmdStatus, SubscribeOutcome, TestOutcome, TexState, UserData } from "./types";
+import type { AddResult, AuditReport, BuiltinRule, CollectionPreview, DdsReport, DefQuery, DefsState, DefTree, ImportPreview, Instance, Issue, ItemSubscription, LaunchInfo, LaunchSettings, Locations, LogAnalysis, LogFile, ModFiles, ModPatchDetail, ModTextures, PatchJob, PatchReport, QueueState, RentryPreview, RestoreResult, Rule, RulesFile, SavedList, ScannerStatus, Settings, Snapshot, SortResult, SteamClientStatus, SteamCmdStatus, SubscribeOutcome, TestOutcome, TexState, UpdateCheck, UserData } from "./types";
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -114,14 +114,29 @@ export const api = {
   importCollection: (text: string) => invoke<CollectionPreview>("import_collection", { text }),
   importRentry: (url: string) => invoke<RentryPreview>("import_rentry", { url }),
   checkUpdates: () => invoke<number>("check_updates"),
-  haloRules: () => invoke<BuiltinRule[]>("halo_rules")
+  haloRules: () => invoke<BuiltinRule[]>("halo_rules"),
+  // a newer Circinus, from circinus.sh
+  updateCheck: () => invoke<UpdateCheck>("update_check"),
+  updateInstall: () => invoke<void>("update_install")
 };
 
 export async function listen<T>(event: string, handler: (payload: T) => void): Promise<() => void> {
-  if (!inTauri) return () => {};
+  if (!inTauri) {
+    // The mock has no event system of its own; it emits the few events the UI needs to
+    // show a job's progress in the browser.
+    const mock = await import("./mock");
+    return mock.listen(event, handler as (payload: unknown) => void);
+  }
   const ev = await import("@tauri-apps/api/event");
   const un = await ev.listen<T>(event, (e) => handler(e.payload));
   return un;
+}
+
+/** The version this build is, as tauri.conf.json says it. The mock is 0.1.0. */
+export async function appVersion(): Promise<string> {
+  if (!inTauri) return "0.1.0";
+  const app = await import("@tauri-apps/api/app");
+  return app.getVersion();
 }
 
 export async function openPath(path: string) {

@@ -32,10 +32,11 @@ user's PC, which is where pushes happen. Deliver changed files there (SendUserFi
 `circinus.sh` is the project's site; it already serves the performance weights the Cost column
 uses. A separate session (`cse_01471kgqd8sGWxexmsnbouqE`) is building
 **https://circinus.sh/modmanager** — a place to upload builds that also serves the auto-update
-feed. **Auto-update in the app is deliberately not built yet**: it waits for that endpoint to
-exist, and the user will say when. When it lands, the app side is `tauri-plugin-updater` pointed
-at whatever `latest.json` equivalent the site serves, plus a check-on-start setting, a *Check now*
-button in Settings, and an install-and-restart banner.
+feed. The app side of auto-update is built (`src-tauri/src/updater.rs`, `tauri-plugin-updater`
+unchanged, a check-on-start setting, *Check now* in Settings, an install-and-restart banner); the
+server side is not, and **`docs/update-feed.md` is the contract it implements** — the app defined
+it, the site follows. The updater's private key is `/home/claude/circinus-updater.key`, outside
+the repo, meant for the `TAURI_SIGNING_PRIVATE_KEY` secret; only the public key is committed.
 
 ## Shape of the thing
 

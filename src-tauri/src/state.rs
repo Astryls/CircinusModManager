@@ -42,11 +42,14 @@ pub struct Settings {
     pub settings_version: u32,
     pub dds: DdsSettings,
     pub launch: LaunchSettings,
+    /// Ask circinus.sh for a newer build a few seconds after launch. Nothing is installed
+    /// without the user pressing the button.
+    pub check_for_updates: bool,
 }
 
 /// The current `settings_version`: 2 made "by phase" the default view and hid the phase and
-/// group columns.
-pub const SETTINGS_VERSION: u32 = 2;
+/// group columns; 3 added the update check on start.
+pub const SETTINGS_VERSION: u32 = 3;
 
 pub fn default_list_columns() -> Vec<String> {
     vec!["load".into(), "versions".into()]
@@ -54,7 +57,7 @@ pub fn default_list_columns() -> Vec<String> {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { locations: Locations::default(), db_sources: rules::default_sources(), show_weight: false, include_local_runs: true, alphabetical_within_phase: false, update_databases_on_start: false, list_by_phase: true, columns: HashMap::new(), list_columns: default_list_columns(), settings_version: SETTINGS_VERSION, dds: DdsSettings::default(), launch: LaunchSettings::default() }
+        Settings { locations: Locations::default(), db_sources: rules::default_sources(), show_weight: false, include_local_runs: true, alphabetical_within_phase: false, update_databases_on_start: false, list_by_phase: true, columns: HashMap::new(), list_columns: default_list_columns(), settings_version: SETTINGS_VERSION, dds: DdsSettings::default(), launch: LaunchSettings::default(), check_for_updates: true }
     }
 }
 
@@ -68,6 +71,11 @@ impl Settings {
         if self.settings_version < 2 {
             self.list_by_phase = true;
             self.list_columns = default_list_columns();
+        }
+        if self.settings_version < 3 {
+            // A build from before auto-update existed had nothing to say about it; the new
+            // default is on, and the toggle in Settings is one click for anyone who wants it off.
+            self.check_for_updates = true;
         }
         self.settings_version = SETTINGS_VERSION;
         true
@@ -1133,6 +1141,24 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Settings saved by a build that predates the update check come up with it on, and a
+    /// user who has since turned it off is not overruled by a later migration.
+    #[test]
+    fn migration_turns_the_update_check_on_once() {
+        let stored = r#"{"settingsVersion":2,"listByPhase":false,"checkForUpdates":false}"#;
+        let mut s: Settings = serde_json::from_str(stored).unwrap();
+        assert!(s.migrate());
+        assert!(s.check_for_updates);
+        assert_eq!(s.settings_version, SETTINGS_VERSION);
+        assert!(!s.list_by_phase, "a version-2 preference is not touched by the version-3 step");
+        s.check_for_updates = false;
+        assert!(!s.migrate(), "nothing to migrate a second time");
+        assert!(!s.check_for_updates);
+        // Settings with no such field at all get the default, before any migration runs.
+        let fresh: Settings = serde_json::from_str("{}").unwrap();
+        assert!(fresh.check_for_updates);
+    }
 
     fn write(p: &std::path::Path, s: &str) {
         std::fs::create_dir_all(p.parent().unwrap()).unwrap();

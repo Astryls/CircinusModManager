@@ -191,9 +191,23 @@
       <p class="hint">Off: HALO keeps your own arrangement wherever the rules allow. Rules always win. Your rules beat community rules, which beat a mod's own About.xml. When rules form a loop, the weakest one is set aside and reported.</p>
     </section>
 
+    <section class="card updates">
+      <h3>Updates <span class="aside">Circinus {store.appVersion ?? ""}</span></h3>
+      <label class="switch"><input type="checkbox" checked={s?.checkForUpdates ?? true} onchange={(e) => store.updateSettings({ checkForUpdates: e.currentTarget.checked })} />Check for a newer Circinus when it starts</label>
+      <p class="hint">Asks circinus.sh once, a few seconds after launch, and only tells you when there is one. Nothing is installed without you pressing the button.</p>
+      <div class="row">
+        <button class="btn" disabled={store.updateChecking || !!store.updateProgress} onclick={() => store.checkForUpdates()}>{@html I.refresh}{store.updateChecking ? "Checking…" : "Check now"}</button>
+        {#if store.update && !store.updateProgress}
+          <button class="btn primary" onclick={() => { store.installUpdate(); store.view = "order"; }}>{@html I.up}Install {store.update.version} and restart</button>
+        {/if}
+        <span class="hint result" class:bad={store.updateStatus?.kind === "err"}>{store.updateStatus?.text ?? (store.appVersion ? `Circinus ${store.appVersion}. Not checked yet this launch.` : "")}</span>
+      </div>
+      {#if store.update?.notes}<p class="hint notes">{store.update.notes}</p>{/if}
+    </section>
+
     <section class="card">
       <h3>About</h3>
-      <p class="hint">Circinus Mod Manager 0.1 · MIT licence · data folder <span class="mono">{appData || "loading"}</span></p>
+      <p class="hint">Circinus Mod Manager {store.appVersion ?? ""} · MIT licence · data folder <span class="mono">{appData || "loading"}</span></p>
       <p class="hint">Reads About.xml (with ByVersion blocks), Fluffy's Manifest.xml, LoadFolders.xml and PublishedFileId.txt. Writes ModsConfig.xml (and keeps a .bak) and your rules in dbs/userRules.json.</p>
     </section>
   </div>
@@ -227,6 +241,8 @@
   .switch { margin: 6px 0; align-items: center; display: flex; }
   .lnk { color: var(--blue); font-weight: 600; }
   .hint.bad { color: var(--red); }
+  .updates .result { margin: 0; flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
+  .updates .notes { white-space: pre-wrap; }
   .sample { margin-top: 8px; font-size: 12.5px; color: var(--text-3); }
   .sample summary { cursor: pointer; font-weight: 600; }
   .sample pre { margin: 6px 0 0; max-height: 240px; overflow: hidden auto; background: var(--surface-2); border-radius: 8px; padding: 8px 10px; font-size: 11px; line-height: 1.4; user-select: text; white-space: pre-wrap; word-break: break-all; }
