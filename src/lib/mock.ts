@@ -151,7 +151,9 @@ let settings: Settings = {
   includeLocalRuns: true,
   alphabeticalWithinPhase: false,
   updateDatabasesOnStart: false,
-  listByPhase: typeof location !== "undefined" && location.search.includes("byphase"),
+  listByPhase: typeof location === "undefined" || !location.search.includes("plain"),
+  listColumns: ["load", "versions"],
+  settingsVersion: 2,
   dds: { alphaFormat: "bc7", quality: "balanced", mipmaps: true, threads: 0, auto: false },
   launch: { method: "auto", executable: null, args: "", saveFirst: true }
 };

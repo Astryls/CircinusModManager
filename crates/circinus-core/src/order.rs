@@ -163,6 +163,29 @@ pub struct Context<'a> {
     pub overrides: &'a UserOverrides,
 }
 
+/// A packageId without the postfix RimWorld gives copies of the same mod from another source
+/// (`brrainz.harmony_steam` and `brrainz.harmony` are the same mod, and RimWorld's own
+/// dependency check ignores the postfix).
+pub fn id_base(id: &str) -> &str {
+    for suffix in ["_steam", "_copy", "_local"] {
+        if let Some(base) = id.strip_suffix(suffix) {
+            if !base.is_empty() {
+                return base;
+            }
+        }
+    }
+    id
+}
+
+/// Is this dependency met by the active list? By package id (postfix ignored, alternatives
+/// included) or by the Workshop item it points at.
+fn dependency_met(d: &Dependency, active_bases: &HashSet<&str>, active_workshop: &HashSet<u64>) -> bool {
+    if active_bases.contains(id_base(&d.package_id)) || d.alternatives.iter().any(|a| active_bases.contains(id_base(a))) {
+        return true;
+    }
+    matches!(d.workshop_id(), Some(id) if active_workshop.contains(&id))
+}
+
 fn name_matches(name: &str, needles: &[&str]) -> bool {
     let n = name.to_ascii_lowercase();
     needles.iter().any(|x| n.contains(x))
@@ -562,14 +585,26 @@ pub fn validate(current: &[String], ctx: &Context) -> Vec<Issue> {
     let active_ids: HashSet<&str> = index_of.keys().copied().collect();
     let mut issues: Vec<Issue> = Vec::new();
 
-    // Dependencies
+    // Dependencies. Matched the way RimWorld matches them: the postfix Steam copies carry
+    // (`_steam`) is ignored, and a dependency that names a Workshop item is satisfied by that
+    // item whatever its About.xml calls itself.
+    let active_bases: HashSet<&str> = active_ids.iter().map(|id| id_base(id)).collect();
+    let active_workshop: HashSet<u64> = order.iter().filter_map(|m| m.published_file_id).collect();
     for m in &order {
         for d in &m.rules.dependencies {
-            let satisfied = active_ids.contains(d.package_id.as_str()) || d.alternatives.iter().any(|a| active_ids.contains(a.as_str()));
-            if satisfied {
+            if dependency_met(d, &active_bases, &active_workshop) {
                 continue;
             }
-            let installed = ctx.mods.iter().find(|x| x.invalid.is_none() && (x.package_id == d.package_id || d.alternatives.contains(&x.package_id))).map(|x| x.uid.clone());
+            // Installed but not active — or installed and unreadable, which is not the same as
+            // absent and must not be reported as "not installed".
+            let installed = ctx
+                .mods
+                .iter()
+                .find(|x| {
+                    (!x.package_id.is_empty() && (id_base(&x.package_id) == id_base(&d.package_id) || d.alternatives.iter().any(|a| id_base(a) == id_base(&x.package_id))))
+                        || (x.published_file_id.is_some() && x.published_file_id == d.workshop_id())
+                })
+                .map(|x| x.uid.clone());
             let workshop_url = d
                 .workshop_url
                 .clone()
@@ -689,6 +724,80 @@ mod tests {
         let mut patch = m("patch", "x.patch", "Some Compat Patch", Source::Local);
         patch.contents.patches = 2;
         vec![core, harmony, hugs, bpc, rocket, walls, patch]
+    }
+
+    /// Harmony is its own mod now: nothing bundles it, so nearly every C# mod names it in
+    /// modDependencies. It must be recognised however the copy in the folder spells itself —
+    /// with RimWorld's `_steam` postfix, or under a packageId that does not match at all when
+    /// the dependency points at the Workshop item by id.
+    #[test]
+    fn harmony_dependency_is_met_by_the_installed_copy() {
+        let db = Databases::default();
+        let files = HashMap::new();
+        let ov = UserOverrides::default();
+        let dep = |url: Option<&str>| Dependency {
+            package_id: "brrainz.harmony".into(),
+            display_name: Some("Harmony".into()),
+            workshop_url: url.map(|u| u.to_string()),
+            ..Default::default()
+        };
+        let missing = |mods: &[ModInfo], active: &[&str]| -> Vec<String> {
+            let rules: Vec<Rule> = Vec::new();
+            let ctx = Context { mods, files: &files, rules: &rules, db: &db, major_minor: "1.6", overrides: &ov };
+            let order: Vec<String> = active.iter().map(|s| s.to_string()).collect();
+            validate(&order, &ctx)
+                .into_iter()
+                .filter_map(|i| match i {
+                    Issue::MissingDependency { uid, installed_uid, .. } => Some(format!("{uid}:{}", installed_uid.unwrap_or_else(|| "-".into()))),
+                    _ => None,
+                })
+                .collect()
+        };
+        let core = m("core", "ludeon.rimworld", "RimWorld", Source::Ludeon);
+        let mut user = m("lp", "ilyvion.loadingprogress", "Loading Progress", Source::Workshop);
+        user.rules.dependencies = vec![dep(Some("steam://url/CommunityFilePage/2009463077"))];
+
+        // the plain case
+        let plain = vec![core.clone(), m("h", "brrainz.harmony", "Harmony", Source::Workshop), user.clone()];
+        assert!(missing(&plain, &["h", "core", "lp"]).is_empty());
+
+        // the Steam copy spells itself with the postfix RimWorld adds
+        let postfixed = vec![core.clone(), m("h", "brrainz.harmony_steam", "Harmony", Source::Workshop), user.clone()];
+        assert!(missing(&postfixed, &["h", "core", "lp"]).is_empty(), "the _steam postfix is not part of the identity");
+
+        // …and the other way round: the dependency carries the postfix, the folder does not
+        let mut asks_postfixed = user.clone();
+        asks_postfixed.rules.dependencies = vec![Dependency { package_id: "brrainz.harmony_steam".into(), ..dep(None) }];
+        let plain_installed = vec![core.clone(), m("h", "brrainz.harmony", "Harmony", Source::Workshop), asks_postfixed];
+        assert!(missing(&plain_installed, &["h", "core", "lp"]).is_empty());
+
+        // a repackaged copy whose About.xml says something else: the Workshop id still names it
+        let mut repack = m("h", "someone.harmonyrepack", "Harmony", Source::Workshop);
+        repack.published_file_id = Some(2009463077);
+        assert!(missing(&[core.clone(), repack, user.clone()], &["h", "core", "lp"]).is_empty());
+
+        // installed but not active: reported, and reported as installed
+        let inactive = vec![core.clone(), m("h", "brrainz.harmony", "Harmony", Source::Workshop), user.clone()];
+        assert_eq!(missing(&inactive, &["core", "lp"]), vec!["lp:h"]);
+
+        // installed and unreadable is still installed, not absent
+        let mut broken = m("h", "brrainz.harmony", "Harmony", Source::Workshop);
+        broken.invalid = Some("About.xml could not be read".into());
+        assert_eq!(missing(&[core.clone(), broken, user.clone()], &["core", "lp"]), vec!["lp:h"]);
+
+        // genuinely absent
+        assert_eq!(missing(&[core, user], &["core", "lp"]), vec!["lp:-"]);
+    }
+
+    #[test]
+    fn workshop_id_is_read_from_either_url() {
+        let d = |w: Option<&str>, dl: Option<&str>| Dependency { workshop_url: w.map(str::to_string), download_url: dl.map(str::to_string), ..Default::default() };
+        assert_eq!(d(Some("steam://url/CommunityFilePage/2009463077"), None).workshop_id(), Some(2009463077));
+        assert_eq!(d(Some("https://steamcommunity.com/sharedfiles/filedetails/?id=2009463077"), None).workshop_id(), Some(2009463077));
+        assert_eq!(d(None, Some("https://steamcommunity.com/workshop/filedetails/?id=2009463077")).workshop_id(), Some(2009463077));
+        // a release page is not a Workshop item
+        assert_eq!(d(None, Some("https://github.com/pardeike/HarmonyRimWorld/releases/latest")).workshop_id(), None);
+        assert_eq!(d(None, None).workshop_id(), None);
     }
 
     #[test]

@@ -34,13 +34,42 @@ pub struct Settings {
     pub list_by_phase: bool,
     /// Column widths the user dragged in the list, in CSS pixels, by column key (`name`, `pkg`).
     pub columns: HashMap<String, u32>,
+    /// The optional list columns that are shown: `load`, `versions`, `phase`, `group`.
+    /// (The performance cost column follows `show_weight`.)
+    pub list_columns: Vec<String>,
+    /// Bumped when a default changes so that stored settings can be brought along.
+    pub settings_version: u32,
     pub dds: DdsSettings,
     pub launch: LaunchSettings,
 }
 
+/// The current `settings_version`: 2 made "by phase" the default view and hid the phase and
+/// group columns.
+pub const SETTINGS_VERSION: u32 = 2;
+
+pub fn default_list_columns() -> Vec<String> {
+    vec!["load".into(), "versions".into()]
+}
+
 impl Default for Settings {
     fn default() -> Self {
-        Settings { locations: Locations::default(), db_sources: rules::default_sources(), show_weight: false, include_local_runs: true, alphabetical_within_phase: false, update_databases_on_start: false, list_by_phase: false, columns: HashMap::new(), dds: DdsSettings::default(), launch: LaunchSettings::default() }
+        Settings { locations: Locations::default(), db_sources: rules::default_sources(), show_weight: false, include_local_runs: true, alphabetical_within_phase: false, update_databases_on_start: false, list_by_phase: true, columns: HashMap::new(), list_columns: default_list_columns(), settings_version: SETTINGS_VERSION, dds: DdsSettings::default(), launch: LaunchSettings::default() }
+    }
+}
+
+impl Settings {
+    /// Bring settings written by an older build up to the current defaults. Only the values a
+    /// newer default changed are touched; everything the user set on purpose stays.
+    pub fn migrate(&mut self) -> bool {
+        if self.settings_version >= SETTINGS_VERSION {
+            return false;
+        }
+        if self.settings_version < 2 {
+            self.list_by_phase = true;
+            self.list_columns = default_list_columns();
+        }
+        self.settings_version = SETTINGS_VERSION;
+        true
     }
 }
 
@@ -387,7 +416,15 @@ impl App {
         let cache = Cache::open(&data_dir.join("cache.sqlite"))?;
         let settings: Settings = match settings_override {
             Some(s) => s,
-            None => cache.get("settings")?.unwrap_or_default(),
+            None => {
+                let mut s: Settings = cache.get("settings")?.unwrap_or_default();
+                if s.migrate() {
+                    if let Err(e) = cache.set("settings", &s) {
+                        tracing::warn!("could not store the migrated settings: {e}");
+                    }
+                }
+                s
+            }
         };
         let mut user: UserData = cache.get("user")?.unwrap_or_default();
         if user.groups.is_empty() {
@@ -656,8 +693,29 @@ impl App {
         Ok((n, missing))
     }
 
+    /// Have we read enough of the install to say what is and is not there? Every mod folder the
+    /// locations point at has been through About.xml at least once. Before that, saying a
+    /// dependency is "not installed" is a guess, and a wrong one for anybody whose Workshop
+    /// folder had not been found yet.
+    pub fn install_known(&self) -> bool {
+        if self.scanned_at == 0 || self.mods.is_empty() {
+            return false;
+        }
+        // A Workshop folder that produced nothing means the scan did not reach it (Steam moving
+        // files, a library on a drive that was not mounted yet): everything subscribed would
+        // look uninstalled, and it is not.
+        if self.locations.workshop_dir.is_some() && !self.mods.iter().any(|m| m.source == Source::Workshop) {
+            return false;
+        }
+        self.locations.workshop_dir.is_some() || self.locations.local_mods_dir.is_some()
+    }
+
     pub fn issues(&self) -> Vec<Issue> {
-        self.with_context(|ctx| order::validate(&self.active, ctx))
+        let mut issues = self.with_context(|ctx| order::validate(&self.active, ctx));
+        if !self.install_known() {
+            issues.retain(|i| !matches!(i, Issue::MissingDependency { .. }));
+        }
+        issues
     }
 
     pub fn placements(&self) -> Vec<Placement> {

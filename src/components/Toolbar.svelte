@@ -24,6 +24,12 @@
     ...(store.preview ? [{ id: "moved" as ShowOnly, label: "HALO would move", n: counts.moved, icon: I.halo }] : [])
   ]);
   const sources: Source[] = ["workshop", "local", "steamcmd", "git", "ludeon"];
+  const columns = [
+    { key: "load", label: "Load", hint: "Expected share of the list's loading time" },
+    { key: "versions", label: "Versions", hint: "Game versions the mod says it supports" },
+    { key: "phase", label: "Phase", hint: "Where HALO files the mod — already the sections when the list is arranged by phase" },
+    { key: "group", label: "Group", hint: "The group the mod is in" }
+  ];
   const version = $derived(store.snap?.gameVersion.majorMinor ?? "this version");
   let open = $state(false);
   let menu = $state<HTMLElement | null>(null);
@@ -67,6 +73,11 @@
             <span class="ico">{#if c.icon}{@html c.icon}{/if}</span><span class="t">{c.label}</span>{#if c.n != null}<span class="n num">{c.n}</span>{/if}
           </button>
         {/each}
+        <div class="label">Columns</div>
+        <div class="chips">
+          <button class="chip" class:on={store.showWeight} onclick={() => store.updateSettings({ showWeight: !store.showWeight })} title="Share of frame time, once weights are loaded">Cost</button>
+          {#each columns as c}<button class="chip" class:on={store.listColumns.includes(c.key)} onclick={() => store.setListColumn(c.key, !store.listColumns.includes(c.key))} title={c.hint}>{c.label}</button>{/each}
+        </div>
         <div class="label">From</div>
         <div class="chips">
           {#each sources as s}<button class="chip" class:on={store.sources.includes(s)} onclick={() => toggleSource(s)}>{SOURCE_LABEL[s]}</button>{/each}

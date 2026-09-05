@@ -114,6 +114,8 @@ class Store {
   byPhase = $derived(this.snap?.settings.listByPhase ?? false);
   /** Column widths the user dragged, CSS px, by key; absent = the default. */
   columns = $derived(this.snap?.settings.columns ?? {});
+  /** The optional list columns that are on. */
+  listColumns = $derived(this.snap?.settings.listColumns ?? ["load", "versions"]);
   /** Each active mod's estimated share of the list's loading time, from the folder figures. */
   loadShares = $derived.by(() => {
     const out = new Map<string, { share: number; band: LoadBand; ms: number }>();
@@ -936,6 +938,13 @@ class Store {
   /** Show the active list in phase sections, or as the plain load order. Remembered in settings. */
   setByPhase(v: boolean) {
     return this.updateSettings({ listByPhase: v });
+  }
+  /** Show or hide one of the optional list columns. */
+  setListColumn(key: string, on: boolean) {
+    const order = ["load", "versions", "phase", "group"];
+    const set = new Set(this.listColumns);
+    on ? set.add(key) : set.delete(key);
+    return this.updateSettings({ listColumns: order.filter((k) => set.has(k)) });
   }
   /** Remember a dragged column width (null puts the default back). */
   setColumn(key: string, px: number | null) {

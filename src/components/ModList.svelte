@@ -27,16 +27,28 @@
   const nameW = $derived(live?.key === "name" ? live.px : store.columns.name);
   const pkgW = $derived(live?.key === "pkg" ? live.px : (store.columns.pkg ?? PKG_DEFAULT));
   const showMove = $derived(!!store.preview);
+  /** The optional columns, in the order they appear. Cost follows its own setting (it needs
+      figures Circinus only has once weights are loaded); the rest are the user's to choose. */
+  const on = $derived(new Set(store.listColumns));
+  const optional = $derived([
+    { key: "cost", w: 64, show: store.showWeight },
+    { key: "load", w: 58, show: on.has("load") },
+    { key: "versions", w: 64, show: on.has("versions") },
+    { key: "phase", w: 46, show: on.has("phase") },
+    { key: "group", w: 46, show: on.has("group") }
+  ]);
+  const shown = $derived(optional.filter((c) => c.show));
+  const BADGES = 232;
   /** Width of everything that is neither the name nor the package id, gaps included. */
-  const fixedW = $derived(34 + (store.showWeight ? 64 + 6 : 0) + 56 + 56 + 40 + 40 + 226 + (showMove ? 40 + 6 : 0) + 7 * 6);
+  const fixedW = $derived(34 + shown.reduce((n, c) => n + c.w + 6, 0) + BADGES + (showMove ? 40 + 6 : 0) + 3 * 6);
   /** Narrow lists drop the package id column rather than squeeze the names below their minimum. */
   const showPkg = $derived(listW - 24 - fixedW - NAME_MIN >= (store.columns.pkg ?? PKG_DEFAULT) + 6);
   const template = $derived.by(() => {
     const cols = ["34px", nameW != null ? `${nameW}px` : `minmax(${NAME_MIN}px, 1fr)`];
     if (showPkg) cols.push(`${pkgW}px`);
     if (nameW != null) cols.push("minmax(0, 1fr)");
-    if (store.showWeight) cols.push("64px");
-    cols.push("56px", "56px", "40px", "40px", "226px");
+    for (const c of shown) cols.push(`${c.w}px`);
+    cols.push(`${BADGES}px`);
     if (showMove) cols.push("40px");
     return cols.join(" ");
   });
@@ -308,10 +320,10 @@
     {#if showPkg}<span class="h pkg">Package id<span class="grab" role="separator" aria-orientation="vertical" title="Drag to change the width; double-click for the default" onpointerdown={(e) => colDown(e, "pkg")} ondblclick={() => colReset("pkg")}></span></span>{/if}
     {#if nameW != null}<span class="fill"></span>{/if}
     {#if store.showWeight}<span class="h wt" title="Share of frame time, from circinus.sh or your own runs">Cost</span>{/if}
-    <span class="h load" title="Expected share of the list's loading time, estimated from what the folder holds: Defs XML, patch operations and how far they search, PNG textures without DDS, assemblies. A ranking, not a stopwatch.">Load</span>
-    <span class="h vers" title="Game versions the mod says it supports">Versions</span>
-    <span class="h phz" title="Where HALO files the mod: the game, a library, content, a patch, a texture pack, a late loader, a performance mod">Phase</span>
-    <span class="h g" title="The group the mod is in">Group</span>
+    {#if on.has("load")}<span class="h load" title="Expected share of the list's loading time, estimated from what the folder holds: Defs XML, patch operations and how far they search, PNG textures without DDS, assemblies. A ranking, not a stopwatch.">Load</span>{/if}
+    {#if on.has("versions")}<span class="h vers" title="Game versions the mod says it supports">Versions</span>{/if}
+    {#if on.has("phase")}<span class="h phz" title="Where HALO files the mod: the game, a library, content, a patch, a texture pack, a late loader, a performance mod">Phase</span>{/if}
+    {#if on.has("group")}<span class="h g" title="The group the mod is in">Group</span>{/if}
     <span class="badges">
       <span class="h b" title="Changed since you last opened Circinus: new, or updated on disk">{@html I.change}<i>Changed</i></span>
       <span class="h b" title="A newer version is on the Workshop">{@html I.up}<i>Update</i></span>
@@ -367,10 +379,10 @@
           {#if store.showWeight}
             <span class="wt">{#if w && w.share != null}<span class="band {w.band}" title="Performance cost: {w.share.toFixed(2)} % of frame time, {BAND_LABEL[w.band].toLowerCase()}. {w.measured ?? '?'} runs measured, from {w.origin === 'local' ? 'your runs' : 'circinus.sh'}">{w.share.toFixed(1)} %</span>{:else if w}<span class="band {w.band}" title="Performance cost: {BAND_LABEL[w.band].toLowerCase()}">{w.band === "negligible" ? "<0.1 %" : "n/a"}</span>{/if}</span>
           {/if}
-          <span class="load">{#if ld && m.contents.load}<span class="band {ld.band}" title="Expected share of loading time: {ld.share >= 0.0005 ? (ld.share * 100).toFixed(ld.share < 0.01 ? 2 : 1) : 'under 0.05'} % ({LOAD_BAND_LABEL[ld.band].toLowerCase()}), about {ld.ms >= 1000 ? `${(ld.ms / 1000).toFixed(1)} s` : `${ld.ms} ms`} of an estimated {store.loadTotalSeconds >= 60 ? `${(store.loadTotalSeconds / 60).toFixed(1)} min` : `${store.loadTotalSeconds.toFixed(0)} s`} for the list.&#10;{explainLoad(m).join('\n')}&#10;&#10;Estimated from the folder; a ranking, not a stopwatch.">{ld.share >= 0.001 ? `${(ld.share * 100).toFixed(ld.share < 0.01 ? 2 : 1)} %` : "<0.1 %"}</span>{:else if !it.inactive && m.contents.load == null}<span class="band unknown" title="Not read yet: the folder is still being inspected">…</span>{/if}</span>
-          <span class="vers">{#each versions as v}<span class:off={!(m.supportedVersions ?? []).includes(v)}>{v}</span>{/each}</span>
-          <span class="phz">{#if pl}<span class="dot c-{store.phaseInfo(pl.phase).color}" title="{store.phaseInfo(pl.phase).name} · {pl.reason}"></span>{/if}</span>
-          <span class="g">{#if grp}<span class="dot c-{grp.color}" title="{grp.name}{grp.auto && !store.snap?.user.modGroups[m.uid] ? ' (by the group’s own rule)' : ''}"></span>{/if}</span>
+          {#if on.has("load")}<span class="load">{#if ld && m.contents.load}<span class="band {ld.band}" title="Expected share of loading time: {ld.share >= 0.0005 ? (ld.share * 100).toFixed(ld.share < 0.01 ? 2 : 1) : 'under 0.05'} % ({LOAD_BAND_LABEL[ld.band].toLowerCase()}), about {ld.ms >= 1000 ? `${(ld.ms / 1000).toFixed(1)} s` : `${ld.ms} ms`} of an estimated {store.loadTotalSeconds >= 60 ? `${(store.loadTotalSeconds / 60).toFixed(1)} min` : `${store.loadTotalSeconds.toFixed(0)} s`} for the list.&#10;{explainLoad(m).join('\n')}&#10;&#10;Estimated from the folder; a ranking, not a stopwatch.">{ld.share >= 0.001 ? `${(ld.share * 100).toFixed(ld.share < 0.01 ? 2 : 1)} %` : "<0.1 %"}</span>{:else if !it.inactive && m.contents.load == null}<span class="band unknown" title="Not read yet: the folder is still being inspected">…</span>{/if}</span>{/if}
+          {#if on.has("versions")}<span class="vers">{#each versions as v}<span class:off={!(m.supportedVersions ?? []).includes(v)}>{v}</span>{/each}</span>{/if}
+          {#if on.has("phase")}<span class="phz">{#if pl}<span class="dot c-{store.phaseInfo(pl.phase).color}" title="{store.phaseInfo(pl.phase).name} · {pl.reason}"></span>{/if}</span>{/if}
+          {#if on.has("group")}<span class="g">{#if grp}<span class="dot c-{grp.color}" title="{grp.name}{grp.auto && !store.snap?.user.modGroups[m.uid] ? ' (by the group’s own rule)' : ''}"></span>{/if}</span>{/if}
           <span class="badges">
             <span class="b">{#if chg}<span class="flag chg" title="Changed since you last opened Circinus: {describeChange(chg)}">{@html chg.kind === "added" ? I.plus : I.change}</span>{/if}</span>
             <span class="b">{#if upd}<span class="flag" title="A newer version is on the Workshop, updated {new Date(upd.remoteUpdated * 1000).toLocaleDateString()}">{@html I.up}</span>{/if}</span>
@@ -403,7 +415,7 @@
      built in the script (dragged widths, optional columns) and handed down as --cols. */
   .hdr, .row { display: grid; grid-template-columns: var(--cols); align-items: center; gap: 6px; padding: 0 8px 0 4px; }
   .hdr { position: sticky; top: 0; z-index: 4; height: 34px; background: var(--surface); border-bottom: 1px solid var(--surface-3); margin: 0 -6px; padding-left: 10px; padding-right: 14px; }
-  .hdr .h { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); white-space: nowrap; overflow: hidden; position: relative; }
+  .hdr .h { font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; position: relative; }
   .hdr .idx, .hdr .vers, .hdr .delta, .hdr .wt, .hdr .load { text-align: right; }
   .hdr .phz, .hdr .g { text-align: center; }
   .hdr .h.name, .hdr .h.pkg { overflow: visible; }
@@ -442,9 +454,11 @@
   .vers { justify-content: flex-end; }
   .row .phz, .row .g { display: grid; place-items: center; }
   .row .phz .dot, .row .g .dot { width: 8px; height: 8px; }
-  /* Six fixed slots, one per kind of badge, so nothing ever draws over anything else. */
-  .badges { display: grid; grid-template-columns: repeat(6, 36px); gap: 2px; align-items: center; }
+  /* Six fixed slots, one per kind of badge, so nothing ever draws over anything else — in the
+     header as in the rows, from the same grid, so the labels sit over their own icons. */
+  .badges { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0; align-items: center; min-width: 0; }
   .hdr .b { font-size: 8.5px; }
+  .hdr .b i { display: block; max-width: 100%; overflow: hidden; text-overflow: clip; }
   .badges .b { display: grid; place-items: center; height: 24px; }
   .flag { display: inline-flex; align-items: center; gap: 1px; height: 20px; padding: 0 2px; border-radius: 6px; }
   .flag :global(svg) { width: 15px; height: 15px; flex: none; }

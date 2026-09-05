@@ -183,6 +183,10 @@ export interface Settings {
   listByPhase: boolean;
   /** Column widths dragged in the list, CSS px, by column key (`name`, `pkg`). */
   columns?: Record<string, number>;
+  /** Optional list columns that are shown: `load`, `versions`, `phase`, `group`. */
+  listColumns?: string[];
+  /** Bumped when a default changes, so stored settings can be brought along. */
+  settingsVersion?: number;
   dds: DdsSettings;
   launch: LaunchSettings;
 }

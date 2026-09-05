@@ -59,6 +59,22 @@ pub struct Dependency {
     pub alternatives: Vec<String>,
 }
 
+impl Dependency {
+    /// The Workshop item this dependency points at, from either URL it may carry
+    /// (`steam://url/CommunityFilePage/2009463077`, `…filedetails/?id=2009463077`).
+    pub fn workshop_id(&self) -> Option<u64> {
+        fn id_in(url: &str) -> Option<u64> {
+            let tail = match url.rfind("id=") {
+                Some(i) => &url[i + 3..],
+                None => url.rsplit('/').next()?,
+            };
+            let digits: String = tail.chars().take_while(|c| c.is_ascii_digit()).collect();
+            (digits.len() >= 6).then(|| digits.parse().ok()).flatten()
+        }
+        self.workshop_url.as_deref().and_then(id_in).or_else(|| self.download_url.as_deref().and_then(id_in))
+    }
+}
+
 /// Ordering and compatibility declarations from About.xml, already resolved for the game version.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

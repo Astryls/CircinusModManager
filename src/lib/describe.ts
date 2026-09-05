@@ -20,10 +20,13 @@ export function explainLoad(m: ModInfo): string[] {
 export function describe(i: Issue, byUid: Map<string, ModInfo>, viewer?: string): string {
   const n = (uid: string) => byUid.get(uid)?.name ?? uid;
   switch (i.kind) {
-    case "missingDependency":
-      return i.installedUid
-        ? `Needs ${i.displayName ?? i.dependency}, which is installed but not active.`
-        : `Needs ${i.displayName ?? i.dependency}, which is not installed.`;
+    case "missingDependency": {
+      const dep = i.displayName ?? i.dependency;
+      if (!i.installedUid) return `Needs ${dep}, which is not installed.`;
+      const other = byUid.get(i.installedUid);
+      if (other?.invalid) return `Needs ${dep}. It is in your mod folder, but Circinus cannot read it: ${other.invalid}`;
+      return `Needs ${dep}, which is installed but not active.`;
+    }
     case "incompatible": {
       const other = viewer === i.otherUid ? i.uid : i.otherUid;
       return `Does not work together with ${n(other)}. Both are active.`;

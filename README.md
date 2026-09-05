@@ -102,6 +102,14 @@ Play starts RimWorld through Steam (`steam://rungameid/294100`) when the game fo
 3b. Def/patch flattening (who wins each XML value) and a .NET NativeAOT sidecar that lists Harmony patch targets per assembly.
 4b. Instances/profiles, auto-update, Steam-client subscribe/unsubscribe.
 
+## The list's columns
+
+The list opens **By phase** with the columns most people read: name, package id, Load and Versions (Cost joins them once weights are loaded). Phase and Group are off by default — under *By phase* the sections already say the phase — and Show → Columns turns any of them on or off. The header is one grid with the rows, so a column label always sits over its own column, and the six badge slots (changed, update, errors, warnings, notes, pinned) keep one fixed slot each.
+
+## Dependencies
+
+A dependency is matched the way RimWorld matches it: the `_steam` postfix a copy from the Workshop carries is not part of a mod's identity, `alternativePackageIds` count, and a dependency that names a Workshop item (`steamWorkshopUrl`) is met by that item whatever its About.xml calls itself — so Harmony, which every C# mod names now that nothing bundles it, is recognised in all the shapes it is installed in. A mod that is present but unreadable is reported as present, not as missing, and while the scan has not seen the whole install — no mods yet, or a Workshop folder that produced nothing — Circinus says nothing about missing dependencies rather than calling everything uninstalled.
+
 ## The window
 
 On the first launch the window takes most of the screen's work area (between 1180 and 1880 logical pixels wide), centred; after that it opens where it was closed, size and position and maximised state, as long as that spot is still on a monitor.
