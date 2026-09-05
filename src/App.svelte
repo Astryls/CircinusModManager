@@ -17,6 +17,7 @@
   import Toast from "./components/Toast.svelte";
   import ContextMenu from "./components/ContextMenu.svelte";
   import CollectionDialog from "./components/CollectionDialog.svelte";
+  import InstancesDialog from "./components/InstancesDialog.svelte";
   import Panel from "./components/Panel.svelte";
 
   onMount(() => {
@@ -37,7 +38,7 @@
     else if (e.key === "Delete" || e.key === "Backspace") {
       const sel = store.selected.filter((u) => store.activeSet.has(u));
       if (sel.length) { e.preventDefault(); store.deactivate(sel); }
-    } else if (e.key === "Escape") { if (store.showChanges) store.showChanges = false; else { store.selected = []; store.preview = null; } }
+    } else if (e.key === "Escape") { if (store.showInstances) store.showInstances = false; else if (store.showChanges) store.showChanges = false; else { store.selected = []; store.preview = null; } }
   }
 </script>
 
@@ -74,6 +75,7 @@
   {#if store.showImport}<ImportDialog />{/if}
   {#if store.showChanges}<Panel name="Changes"><ChangesDialog /></Panel>{/if}
   {#if store.showCollection != null}<Panel name="Collection"><CollectionDialog /></Panel>{/if}
+  {#if store.showInstances}<Panel name="Instances"><InstancesDialog /></Panel>{/if}
   <Panel name="Menu"><ContextMenu /></Panel>
   <Toast />
   {#if store.loading}

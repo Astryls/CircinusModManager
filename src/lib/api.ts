@@ -1,6 +1,6 @@
 // Thin wrapper over Tauri's invoke, with a browser mock so the UI can run outside Tauri.
 
-import type { AddResult, AuditReport, CollectionPreview, DdsReport, ImportPreview, Issue, LaunchInfo, Locations, LogAnalysis, LogFile, ModFiles, ModTextures, QueueState, RentryPreview, RestoreResult, Rule, RulesFile, SavedList, Settings, Snapshot, SortResult, SteamCmdStatus, TestOutcome, TexState, UserData } from "./types";
+import type { AddResult, AuditReport, CollectionPreview, DdsReport, ImportPreview, Instance, Issue, LaunchInfo, LaunchSettings, Locations, LogAnalysis, LogFile, ModFiles, ModTextures, QueueState, RentryPreview, RestoreResult, Rule, RulesFile, SavedList, Settings, Snapshot, SortResult, SteamCmdStatus, TestOutcome, TexState, UserData } from "./types";
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -69,6 +69,15 @@ export const api = {
   collectionRefresh: (id?: number) => invoke<Snapshot>("collection_refresh", { id: id ?? null }),
   collectionAcknowledge: (id: number) => invoke<Snapshot>("collection_acknowledge", { id }),
   collectionUntrack: (id: number) => invoke<Snapshot>("collection_untrack", { id }),
+  // instances
+  instances: () => invoke<Instance[]>("instances_list"),
+  instanceCurrent: () => invoke<Instance>("instance_current"),
+  instanceCreate: (name: string, fromCurrent: boolean) => invoke<Instance>("instance_create", { name, fromCurrent }),
+  instanceDuplicate: (id: string, name?: string) => invoke<Instance>("instance_duplicate", { id, name: name ?? null }),
+  instanceRename: (id: string, name: string) => invoke<Instance>("instance_rename", { id, name }),
+  instanceUpdate: (id: string, locations: Locations, launch: LaunchSettings) => invoke<Instance>("instance_update", { id, locations, launch }),
+  instanceDelete: (id: string) => invoke<string>("instance_delete", { id }),
+  instanceSwitch: (id: string, discard: boolean) => invoke<Instance>("instance_switch", { id, discard }),
   // launching
   launchInfo: () => invoke<LaunchInfo>("get_launch_info"),
   launchGame: () => invoke<string>("launch_game"),

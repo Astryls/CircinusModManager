@@ -26,7 +26,30 @@
   });
   const changesN = $derived(store.changeCounts.total);
 
+  // ---- the instance switcher ----
+  // Which set of folders Circinus is looking at. Switching re-points it and reads them again;
+  // unsaved list changes are asked about first, the way the list switcher in the rail does.
+  let open = $state(false);
+  let box = $state<HTMLElement | null>(null);
+  let ask = $state<string | null>(null);
+  const current = $derived(store.instance);
+  const others = $derived(store.instances.filter((i) => i.id !== current?.id));
+  function go(id: string, sure: boolean) {
+    if (store.snap?.dirty && !sure) { ask = id; return; }
+    ask = null;
+    open = false;
+    store.switchInstance(id, true);
+  }
+  function shortPath(p?: string | null) {
+    return p ? p.split(/[\\/]/).filter(Boolean).slice(-2).join("\\") : "no folder set";
+  }
+  function onWindowClick(e: MouseEvent) {
+    const t = e.target as Node | null;
+    if (open && box && t?.isConnected && !box.contains(t)) { open = false; ask = null; }
+  }
 </script>
+
+<svelte:window onclick={onWindowClick} onkeydown={(e) => e.key === "Escape" && (open = false)} />
 
 <header class="title">
   <div class="brand">
@@ -42,6 +65,35 @@
         <circle cx="32" cy="32" r="1.6" fill="#17171a"/>
       </svg>
     </button>
+    <div class="iswitch" bind:this={box}>
+      <button class="ibtn" onclick={() => (open = !open)} aria-haspopup="menu" aria-expanded={open} title="Instance {current?.name ?? ""}: {store.snap?.locations.gameDir ?? "no game folder set"}. Click to switch to another set of folders.">
+        {@html I.folder}<span class="n">{current?.name ?? "Instance"}</span><span class="car">▾</span>
+      </button>
+      {#if open}
+        <div class="menu card" role="menu">
+          <div class="label">Instance</div>
+          {#if current}
+            <div class="cur">
+              <b>{current.name}</b>
+              <span class="mono" title={current.locations.gameDir ?? ""}>{shortPath(current.locations.gameDir)}</span>
+              <span class="mono" title={current.locations.configDir ?? ""}>config: {shortPath(current.locations.configDir)}</span>
+            </div>
+          {/if}
+          {#if others.length}<div class="label">Switch to</div>{/if}
+          {#each others as i (i.id)}
+            {#if ask === i.id}
+              <div class="ask">Switch to {i.name}? The unsaved changes to your list are lost.<div><button class="btn sm primary" onclick={() => go(i.id, true)}>Switch anyway</button><button class="btn sm" onclick={() => (ask = null)}>Keep editing</button></div></div>
+            {:else}
+              <button class="opt" role="menuitem" onclick={() => go(i.id, false)} title="{i.locations.gameDir ?? "no game folder set"} · config {i.locations.configDir ?? "not set"}">
+                <span class="t">{i.name}</span><span class="c mono">{shortPath(i.locations.gameDir)}</span>
+              </button>
+            {/if}
+          {/each}
+          <div class="label">All of them</div>
+          <button class="opt" role="menuitem" onclick={() => { store.showInstances = true; open = false; }}><span class="t">Instances…</span><span class="c num">{store.instances.length}</span></button>
+        </div>
+      {/if}
+    </div>
   </div>
   <div class="search">
     {@html I.search}
@@ -69,6 +121,24 @@
   .mark svg { width: 34px; height: 34px; display: block; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45)); }
   .mark:hover { transform: scale(1.06); }
   .mark:active { transform: scale(0.98); }
+  .iswitch { position: relative; min-width: 0; }
+  .ibtn { display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 9px; border-radius: 9px; color: var(--text-2); font-weight: 600; font-size: 12.5px; min-width: 0; }
+  .ibtn:hover, .ibtn[aria-expanded="true"] { background: var(--surface-2); color: var(--text); }
+  .ibtn :global(svg) { width: 15px; height: 15px; flex: none; }
+  .ibtn .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
+  .ibtn .car { color: var(--text-3); font-size: 10px; }
+  .iswitch .menu { position: absolute; left: 0; top: 34px; z-index: 30; width: 300px; max-height: 70vh; overflow: hidden auto; padding: 8px; box-shadow: var(--shadow-float); display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+  .iswitch .label { margin: 6px 0 4px 6px; }
+  .iswitch .label:first-child { margin-top: 0; }
+  .iswitch .cur { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; border-radius: 8px; background: var(--surface-2); min-width: 0; }
+  .iswitch .cur b { font-size: 13px; font-weight: 700; }
+  .iswitch .cur .mono { color: var(--text-3); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .iswitch .opt { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 8px; color: var(--text-2); text-align: left; width: 100%; font-size: 13px; }
+  .iswitch .opt:hover { background: var(--surface-2); color: var(--text); }
+  .iswitch .opt .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .iswitch .opt .c { color: var(--text-3); font-size: 11px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .iswitch .ask { color: var(--text-2); background: var(--surface-2); border-radius: 8px; padding: 8px; font-size: 12px; line-height: 1.4; }
+  .iswitch .ask div { display: flex; gap: 6px; margin-top: 6px; }
   .search { position: relative; flex: 1 1 520px; max-width: 520px; min-width: 160px; }
   .search input { width: 100%; height: 34px; border: 0; border-radius: 10px; background: var(--surface); color: var(--text); padding: 0 64px 0 36px; font-size: 13.5px; box-shadow: var(--shadow-card); }
   .search input::placeholder { color: var(--text-3); }

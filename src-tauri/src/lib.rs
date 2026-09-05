@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod downloads;
+pub mod instances;
 pub mod logs;
 pub mod state;
 pub mod textures;
@@ -155,6 +156,14 @@ pub fn run() {
             commands::collection_refresh,
             commands::collection_acknowledge,
             commands::collection_untrack,
+            commands::instances_list,
+            commands::instance_current,
+            commands::instance_create,
+            commands::instance_duplicate,
+            commands::instance_rename,
+            commands::instance_update,
+            commands::instance_delete,
+            commands::instance_switch,
             commands::get_launch_info,
             commands::launch_game,
             commands::player_log_paths,

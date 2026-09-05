@@ -2,7 +2,7 @@
 // indexes for fast lookups, and the actions the components call.
 
 import { api, listen } from "./api";
-import type { CollectionPreview, Group, ImportPreview, Issue, ModChange, ModInfo, ModTextures, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamCmdStatus, TexState, TrackedCollection, UserData, Weight, LogAnalysis, LogFile, AuditReport } from "./types";
+import type { CollectionPreview, Group, ImportPreview, Instance, Issue, LaunchSettings, Locations, ModChange, ModInfo, ModTextures, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamCmdStatus, TexState, TrackedCollection, UserData, Weight, LogAnalysis, LogFile, AuditReport } from "./types";
 import { GROUP_COLORS, PHASES, primaryUid, severityOf, type Severity } from "./types";
 
 export type View = "order" | "library" | "downloads" | "textures" | "analyzer" | "settings";
@@ -53,6 +53,8 @@ class Store {
   menu = $state<{ x: number; y: number; uids: string[] } | null>(null);
   /** The collection panel, when open: which followed collection. */
   showCollection = $state<number | null>(null);
+  /** The instances dialog, when open. */
+  showInstances = $state(false);
   /** Last Player.log analysis, and the logs RimWorld writes on this machine. */
   gameLog = $state<LogAnalysis | null>(null);
   gameLogFiles = $state<LogFile[]>([]);
@@ -245,6 +247,7 @@ class Store {
     }
     this.refreshDownloads();
     this.refreshTextures();
+    this.refreshInstances();
   }
 
   private onTex(t: TexState) {
@@ -603,6 +606,74 @@ class Store {
   }
   detachList() {
     return this.run("…", async () => this.apply(await api.detachList()));
+  }
+
+  // ---- instances ----
+  /** Every instance, newest last; refreshed whenever one changes. */
+  instances = $state<Instance[]>([]);
+  /** The one that is open, as the last snapshot saw it. */
+  instance = $derived(this.snap?.instance ?? null);
+  async refreshInstances() {
+    try {
+      this.instances = await api.instances();
+    } catch (e) {
+      console.warn("[circinus] instances_list failed", e);
+    }
+  }
+  /** Open another instance: other folders, other lists, a fresh scan. `discard` drops unsaved
+   *  changes to the current list, which the backend otherwise refuses to lose. */
+  switchInstance(id: string, discard = false) {
+    if (id === this.instance?.id) return;
+    return this.run("Switching instance…", async () => {
+      const inst = await api.instanceSwitch(id, discard);
+      this.snap = await api.snapshot();
+      this.selected = [];
+      this.preview = null;
+      await this.refreshInstances();
+      this.say(`${inst.name}: reading its mods`);
+      return inst;
+    });
+  }
+  createInstance(name: string, fromCurrent: boolean) {
+    return this.run("Making the instance…", async () => {
+      const inst = await api.instanceCreate(name, fromCurrent);
+      await this.refreshInstances();
+      this.say(`Instance ${inst.name} made${fromCurrent ? " from the folders you have open" : ""}`);
+      return inst;
+    });
+  }
+  duplicateInstance(id: string) {
+    return this.run("Copying the instance…", async () => {
+      const inst = await api.instanceDuplicate(id);
+      await this.refreshInstances();
+      this.say(`Instance ${inst.name} made; it points at the same folders`);
+      return inst;
+    });
+  }
+  renameInstance(id: string, name: string) {
+    return this.run("Renaming…", async () => {
+      await api.instanceRename(id, name);
+      await this.refreshInstances();
+      if (id === this.instance?.id) this.snap = await api.snapshot();
+    });
+  }
+  /** Change one instance's folders and launch settings. */
+  updateInstance(id: string, locations: Locations, launch: LaunchSettings) {
+    return this.run("Saving the instance…", async () => {
+      await api.instanceUpdate(id, locations, launch);
+      await this.refreshInstances();
+      this.snap = await api.snapshot();
+      if (id === this.instance?.id) await this.rescan(false);
+    });
+  }
+  /** Forget an instance. Nothing of the game's is deleted. */
+  deleteInstance(id: string) {
+    return this.run("Forgetting the instance…", async () => {
+      const what = await api.instanceDelete(id);
+      await this.refreshInstances();
+      this.snap = await api.snapshot();
+      this.say(what);
+    });
   }
 
   // ---- collections ----

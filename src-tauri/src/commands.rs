@@ -462,6 +462,71 @@ pub async fn collection_untrack(state: State<'_, Shared>, id: u64) -> CmdResult<
     .await
 }
 
+// ---------------------------------------------------------------- instances
+
+use crate::instances::{self, Instance};
+
+#[tauri::command]
+pub async fn instances_list(state: State<'_, Shared>) -> CmdResult<Vec<Instance>> {
+    with_app(&state, |app| Ok(instances::list(app))).await
+}
+
+#[tauri::command]
+pub async fn instance_current(state: State<'_, Shared>) -> CmdResult<Instance> {
+    with_app(&state, |app| Ok(app.instance.clone())).await
+}
+
+/// Make an instance: from the folders that are open now, or empty.
+#[tauri::command]
+pub async fn instance_create(state: State<'_, Shared>, name: String, from_current: bool) -> CmdResult<Instance> {
+    with_app(&state, move |app| instances::create(app, &name, from_current).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn instance_duplicate(state: State<'_, Shared>, id: String, name: Option<String>) -> CmdResult<Instance> {
+    with_app(&state, move |app| instances::duplicate(app, &id, name.as_deref()).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn instance_rename(state: State<'_, Shared>, id: String, name: String) -> CmdResult<Instance> {
+    with_app(&state, move |app| instances::rename(app, &id, &name).map_err(err)).await
+}
+
+/// Change one instance's four folders and launch settings.
+#[tauri::command]
+pub async fn instance_update(state: State<'_, Shared>, id: String, locations: Locations, launch: crate::state::LaunchSettings) -> CmdResult<Instance> {
+    with_app(&state, move |app| instances::update(app, &id, locations, launch).map_err(err)).await
+}
+
+/// Forget an instance. Nothing of the game's is deleted; the message says so.
+#[tauri::command]
+pub async fn instance_delete(app_handle: AppHandle, state: State<'_, Shared>, id: String) -> CmdResult<String> {
+    let (what, was_current) = with_app(&state, move |app| {
+        let was_current = app.instance.id == id;
+        Ok((instances::delete(app, &id).map_err(err)?, was_current))
+    })
+    .await?;
+    // Deleting the instance that was open moves to another one: its mods have to be read.
+    if was_current {
+        let shared = state.inner().clone();
+        let handle = app_handle.clone();
+        tauri::async_runtime::spawn_blocking(move || crate::run_scan(handle, shared, false));
+    }
+    Ok(what)
+}
+
+/// Open another instance: its folders, its launch settings, its named lists, its list.
+/// `discard` is the user saying that unsaved changes to the current list may be lost.
+#[tauri::command]
+pub async fn instance_switch(app_handle: AppHandle, state: State<'_, Shared>, id: String, discard: bool) -> CmdResult<Instance> {
+    let inst = with_app(&state, move |app| instances::switch(app, &id, discard).map_err(err)).await?;
+    let shared = state.inner().clone();
+    let handle = app_handle.clone();
+    // The scan reads the new folders and ModsConfig.xml, then publishes `state-changed`.
+    tauri::async_runtime::spawn_blocking(move || crate::run_scan(handle, shared, false));
+    Ok(inst)
+}
+
 // ---------------------------------------------------------------- game log
 
 #[derive(Serialize, Clone)]
@@ -514,6 +579,10 @@ pub struct LaunchInfo {
     pub steam_install: bool,
     /// What Auto resolves to right now: "steam" or "executable".
     pub auto_resolves_to: &'static str,
+    /// The whole command line, `-savedatafolder` included, so the user can see what Play does.
+    pub args: Vec<String>,
+    /// The folder the game will keep its config and saves in, when it is not the usual one.
+    pub save_data_folder: Option<String>,
 }
 
 fn launch_info(app: &App) -> LaunchInfo {
@@ -521,7 +590,14 @@ fn launch_info(app: &App) -> LaunchInfo {
     let steam_install = game.as_deref().map(circinus_core::paths::is_steam_install).unwrap_or(false);
     let exe = app.settings.launch.executable.clone().or_else(|| game.as_deref().and_then(circinus_core::paths::detect_executable));
     let exists = exe.as_ref().map(|p| p.exists()).unwrap_or(false);
-    LaunchInfo { executable: exe.map(|p| p.display().to_string()), executable_exists: exists, steam_install, auto_resolves_to: if steam_install || !exists { "steam" } else { "executable" } }
+    LaunchInfo {
+        executable: exe.map(|p| p.display().to_string()),
+        executable_exists: exists,
+        steam_install,
+        auto_resolves_to: if steam_install || !exists { "steam" } else { "executable" },
+        args: instances::launch_args(&app.locations, &app.settings.launch.args),
+        save_data_folder: instances::save_data_folder(&app.locations).map(|p| p.display().to_string()),
+    }
 }
 
 #[tauri::command]
@@ -550,7 +626,9 @@ pub async fn launch_game(app_handle: AppHandle, state: State<'_, Shared>) -> Cmd
             }
             m => m,
         };
-        Ok((method, info.executable.map(PathBuf::from), circinus_core::paths::split_args(&app.settings.launch.args), app.locations.game_dir.clone(), saved))
+        // The arguments carry the instance's config folder when it is not the game's own one:
+        // without that the game would read and rewrite the default ModsConfig.xml instead.
+        Ok((method, info.executable.map(PathBuf::from), info.args, app.locations.game_dir.clone(), saved))
     })
     .await?;
     let suffix = if saved { " (ModsConfig.xml saved first)" } else { "" };
