@@ -433,7 +433,7 @@ internal static class Scanner
 
     private static void AddManual(AssemblyResult result, HashSet<string> seen, string declaringType, string method, string detail)
     {
-        if (!seen.Add(declaringType + " " + method + " " + detail)) return;
+        if (!seen.Add(declaringType + "\0" + method + "\0" + detail)) return;
         result.ManualPatches.Add(new ManualEntry { DeclaringType = declaringType, Method = method, Detail = detail });
     }
 }

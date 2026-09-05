@@ -97,9 +97,14 @@ Play starts RimWorld through Steam (`steam://rungameid/294100`) when the game fo
 - Textures view: totals (files, disk, VRAM saving), Optimise active / everything / Remove all, live progress with rate and ETA, per-mod table with exclude/optimise/revert; Inspector shows per-mod counts with the same actions. Official content (Data/) is left as shipped.
 - `cargo run -p circinus-core --example dds_convert -- in.png` converts one file; `cargo run -p circinus --example dds_job -- <game> <data> convert|revalidate|revert <mod folder>…` runs the job headless; `cargo run -p circinus --example halo_check -- <game> <data>` sorts an install and checks the official-content invariant on the result.
 
+## Milestone 3b (what the game really ends up with)
+
+- **Def flattening** in `circinus-core::defs`. Circinus builds the document the game builds: every active mod's `Defs/` into one arena in load order, every mod's `PatchOperation`s over it in load order, then `Name`/`ParentName` inheritance — RimWorld's order, so the answer is the game's answer. `tree` is a mutable arena holding the parts of .NET's `XmlDocument` a patch can observe, with the origin that created it on every node. `xpath` is XPath 1.0 as .NET's `SelectNodes` means it (all thirteen axes, positional predicates that count the way reverse axes require, the core function library, the conversion rules), because a patch means whatever that language says it means; `Defs/Type[defName="X"]` — nearly every patch ever written — is answered from an index rather than a scan. `flatten` writes down what happened: every value one mod took from another with both values and the operation that did it, patches whose xpath matches nothing, patch files the game silently ignores, duplicate defs, defs whose `ParentName` names nothing, and per-mod wins and losses. `MayRequire` nodes for absent mods are dropped; `Sequence`, `Conditional`, `FindMod` and `Test` behave as the game's do; an operation from another mod's patch framework is named rather than skipped in silence.
+- **Harmony patch targets** from a .NET sidecar, `tools/harmony-scan`: it reads assembly metadata and IL — it never loads or runs a mod assembly — and reports `[HarmonyPatch]` targets in all their shapes, Harmony ids, manual `Patch(…)` calls, `[StaticConstructorOnStartup]` and `Verse.Mod` classes. `circinus-core::harmony` runs it, caches per assembly, and groups the results two ways: what one mod patches, and who else patches the same method. Two mods prefixing or transpiling one method is *contested* — the usual shape of "these two don't work together"; two postfixes stack and are not.
+
 ## Next milestones
 
-3b. Def/patch flattening (who wins each XML value) and a .NET NativeAOT sidecar that lists Harmony patch targets per assembly.
+3b. The Defs view in the app, over the flattening core that is now in place.
 4b. Instances/profiles, auto-update, Steam-client subscribe/unsubscribe.
 
 ## The list's columns

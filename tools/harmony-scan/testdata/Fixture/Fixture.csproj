@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- A stand-in for a mod assembly. It declares its own HarmonyLib and Verse types, so the
+       fixture needs no NuGet package and no copy of RimWorld: harmony-scan reads metadata by
+       name, exactly as it does for the real thing. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <AssemblyName>FixtureMod</AssemblyName>
+    <RootNamespace>FixtureMod</RootNamespace>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <NoWarn>$(NoWarn);CS0169;CS0649;CS0414</NoWarn>
+  </PropertyGroup>
+</Project>

@@ -9,18 +9,21 @@
     <AssemblyName>harmony-scan</AssemblyName>
     <RootNamespace>Circinus.HarmonyScan</RootNamespace>
 
-    <!-- Circinus ships this as a single self-contained native binary beside the app: no
-         .NET runtime on the player's machine, no JIT, a few milliseconds to start. -->
-    <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
     <UseSystemResourceKeys>true</UseSystemResourceKeys>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <IlcOptimizationPreference>Size</IlcOptimizationPreference>
+  </PropertyGroup>
 
-    <!-- Everything used here (System.Reflection.Metadata, System.Text.Json's writer) is in
-         the shared framework, so there are no NuGet dependencies and nothing to trim badly. -->
+  <!-- Circinus ships this as a single native binary beside the app: no .NET runtime on the
+       player's machine, no JIT, a few milliseconds to start. The AOT compiler and the trimmer
+       arrive as NuGet packages, so they are asked for only when publishing
+       (`dotnet publish -c Release -r win-x64 -p:Aot=true`); a plain build and the tests need no
+       network at all, which is what keeps them runnable anywhere. -->
+  <PropertyGroup Condition="'$(Aot)' == 'true'">
+    <PublishAot>true</PublishAot>
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>full</TrimMode>
+    <IlcOptimizationPreference>Size</IlcOptimizationPreference>
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
     <EnableAotAnalyzer>true</EnableAotAnalyzer>
   </PropertyGroup>

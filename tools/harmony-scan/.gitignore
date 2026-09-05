@@ -1,4 +1,4 @@
 bin/
 obj/
-testdata/**/bin/
-testdata/**/obj/
+testdata/Fixture/bin/
+testdata/Fixture/obj/

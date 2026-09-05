@@ -130,8 +130,19 @@ internal static class Names
 /// <summary>Reading the Harmony attributes off a type or a method.</summary>
 internal static class HarmonyAttributes
 {
-    /// <summary>Namespace and name of the attribute a <see cref="CustomAttribute"/> constructs.</summary>
+    /// <summary>
+    /// Namespace and name of the attribute a <see cref="CustomAttribute"/> constructs. The name
+    /// is returned in its <c>…Attribute</c> form whether or not the type carries the suffix:
+    /// HarmonyLib declares <c>HarmonyPatch</c>, Verse declares <c>StaticConstructorOnStartup</c>,
+    /// and C# lets either spelling appear at a use site, so callers should not have to care.
+    /// </summary>
     public static (string Namespace, string Name) Kind(MetadataReader mr, CustomAttribute ca)
+    {
+        var (ns, name) = RawKind(mr, ca);
+        return (ns, name.Length > 0 && !name.EndsWith("Attribute", StringComparison.Ordinal) ? name + "Attribute" : name);
+    }
+
+    private static (string Namespace, string Name) RawKind(MetadataReader mr, CustomAttribute ca)
     {
         try
         {
