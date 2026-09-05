@@ -1,4 +1,4 @@
-// Node-side generator of a backend-shaped snapshot at Sean's scale, for the UI load test.
+// Node-side generator of a backend-shaped snapshot at a 2,000-mod scale, for the UI load test.
 const N = 1990, ACTIVE = 1081;
 let seed = 7; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
 const pick = (a) => a[Math.floor(rnd() * a.length)];

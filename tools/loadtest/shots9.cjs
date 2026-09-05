@@ -1,4 +1,4 @@
-// UI pass: main page at Sean's window size, settings, inspector. node tools/loadtest/shots9.cjs <outdir>
+// UI pass: main page at a 2000x1180 window, settings, inspector. node tools/loadtest/shots9.cjs <outdir>
 const { chromium } = require('playwright');
 (async () => {
   const out = process.argv[2] || '/tmp';

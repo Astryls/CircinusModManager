@@ -435,7 +435,7 @@ Direct3D:
     VRAM:     24138 MB
 Command line arguments: -disable-compute-shaders
 RimWorld 1.6.4871 rev591
-Tried loading mod with the same packageId multiple times: astryl.ModernCC. Ignoring the duplicates.
+Tried loading mod with the same packageId multiple times: example.somemod. Ignoring the duplicates.
 C:\Program Files (x86)\Steam\steamapps\common\RimWorld\Mods\54c9da5e4437
 C:\Program Files (x86)\Steam\steamapps\common\RimWorld\Mods\247a67627879
 Prepatcher: Starting... (vanilla load took 43.40687s)
@@ -512,7 +512,7 @@ SymInit: Symbol-SearchPath: '.;C:\x'
         assert_eq!(r.command_line.as_deref(), Some("-disable-compute-shaders"));
         assert_eq!(r.prepatcher_vanilla_load_secs, Some(43.40687));
         assert_eq!(r.duplicates.len(), 1);
-        assert_eq!(r.duplicates[0].package_id, "astryl.ModernCC");
+        assert_eq!(r.duplicates[0].package_id, "example.somemod");
         assert_eq!(r.duplicates[0].folders.len(), 2);
         assert_eq!(r.timings.len(), 1);
         assert!((r.timings[0].seconds - 462.986).abs() < 0.01);

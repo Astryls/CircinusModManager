@@ -112,7 +112,7 @@ let user: UserData = {
 };
 
 let settings: Settings = {
-  locations: { gameDir: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld", configDir: "C:\\Users\\Astryl\\AppData\\LocalLow\\Ludeon Studios\\RimWorld by Ludeon Studios\\Config", localModsDir: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld\\Mods", workshopDir: "C:\\Program Files (x86)\\Steam\\steamapps\\workshop\\content\\294100" },
+  locations: { gameDir: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld", configDir: "C:\\Users\\Player\\AppData\\LocalLow\\Ludeon Studios\\RimWorld by Ludeon Studios\\Config", localModsDir: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld\\Mods", workshopDir: "C:\\Program Files (x86)\\Steam\\steamapps\\workshop\\content\\294100" },
   dbSources: [
     { id: "community", label: "Community rules (RimSort)", url: "https://raw.githubusercontent.com/RimSort/Community-Rules-Database/main/communityRules.json", file: "communityRules.json", enabled: true },
     { id: "steam", label: "Steam Workshop database (RimSort)", url: "https://raw.githubusercontent.com/RimSort/Steam-Workshop-Database/main/steamDB.json", file: "steamDB.json", enabled: true },
@@ -214,9 +214,9 @@ function snapshot(): Snapshot {
 
 const resetSimulated = typeof location !== "undefined" && location.search.includes("reset");
 const savedLists = [
-  { path: "C:\\Users\\Astryl\\AppData\\Local\\Circinus\\lists\\1757000000-saved.xml", savedAt: 1_757_000_000, label: "saved", count: 44, gameVersion: "1.6.4530 rev1235" },
-  { path: "C:\\Users\\Astryl\\AppData\\Local\\Circinus\\lists\\1756900000-seen.xml", savedAt: 1_756_900_000, label: "seen", count: 41, gameVersion: "1.6.4530 rev1235" },
-  { path: "C:\\Users\\Astryl\\AppData\\Local\\Circinus\\lists\\1756800000-before-reset.xml", savedAt: 1_756_800_000, label: "before-reset", count: 43, gameVersion: "1.6.4530 rev1235" }
+  { path: "C:\\Users\\Player\\AppData\\Local\\Circinus\\lists\\1757000000-saved.xml", savedAt: 1_757_000_000, label: "saved", count: 44, gameVersion: "1.6.4530 rev1235" },
+  { path: "C:\\Users\\Player\\AppData\\Local\\Circinus\\lists\\1756900000-seen.xml", savedAt: 1_756_900_000, label: "seen", count: 41, gameVersion: "1.6.4530 rev1235" },
+  { path: "C:\\Users\\Player\\AppData\\Local\\Circinus\\lists\\1756800000-before-reset.xml", savedAt: 1_756_800_000, label: "before-reset", count: 43, gameVersion: "1.6.4530 rev1235" }
 ];
 
 /** Mock manifest: a few mods already converted. */
@@ -358,7 +358,7 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
     case "steamcmd_install":
       return undefined as T;
     case "steamcmd_status":
-      return { installed: !(typeof location !== "undefined" && location.search.includes("nosteamcmd")), installing: false, root: "C:\\Users\\Astryl\\AppData\\Local\\Circinus\\steamcmd", exe: "C:\\Users\\Astryl\\AppData\\Local\\Circinus\\steamcmd\\steamcmd\\steamcmd.exe", downloadsDir: "C:\\Users\\Astryl\\AppData\\Local\\Circinus\\steamcmd\\steam\\steamapps\\workshop\\content\\294100", consoleLog: "C:\\Users\\Astryl\\AppData\\Local\\Circinus\\steamcmd\\steamcmd\\logs\\console_log.txt", consoleLogBytes: 48211, modsDir: "C:\\RimWorld\\Mods", workshopDir: "C:\\Steam\\steamapps\\workshop\\content\\294100", queued: 3, running: true, paused: false, batchSize: 12, cooldownUntil: null } as T;
+      return { installed: !(typeof location !== "undefined" && location.search.includes("nosteamcmd")), installing: false, root: "C:\\Users\\Player\\AppData\\Local\\Circinus\\steamcmd", exe: "C:\\Users\\Player\\AppData\\Local\\Circinus\\steamcmd\\steamcmd\\steamcmd.exe", downloadsDir: "C:\\Users\\Player\\AppData\\Local\\Circinus\\steamcmd\\steam\\steamapps\\workshop\\content\\294100", consoleLog: "C:\\Users\\Player\\AppData\\Local\\Circinus\\steamcmd\\steamcmd\\logs\\console_log.txt", consoleLogBytes: 48211, modsDir: "C:\\RimWorld\\Mods", workshopDir: "C:\\Steam\\steamapps\\workshop\\content\\294100", queued: 3, running: true, paused: false, batchSize: 12, cooldownUntil: null } as T;
     case "steamcmd_test":
       return { loggedIn: true, lines: 14, stalled: false, exitCode: 0, seconds: 4 } as T;
     case "acknowledge_changes":
@@ -376,11 +376,11 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
       return "Asked Steam to start RimWorld (mock)" as T;
     case "player_log_paths":
       return [
-        { path: "C:\\Users\\sean\\AppData\\LocalLow\\Ludeon Studios\\RimWorld by Ludeon Studios\\Player.log", exists: true, bytes: 3301258, modified: 1757016000 },
-        { path: "C:\\Users\\sean\\AppData\\LocalLow\\Ludeon Studios\\RimWorld by Ludeon Studios\\Player-prev.log", exists: true, bytes: 812000, modified: 1756930000 }
+        { path: "C:\\Users\\Player\\AppData\\LocalLow\\Ludeon Studios\\RimWorld by Ludeon Studios\\Player.log", exists: true, bytes: 3301258, modified: 1757016000 },
+        { path: "C:\\Users\\Player\\AppData\\LocalLow\\Ludeon Studios\\RimWorld by Ludeon Studios\\Player-prev.log", exists: true, bytes: 812000, modified: 1756930000 }
       ] as T;
     case "analyze_player_log":
-      return mockLogAnalysis((A.path as string | null) ?? "C:\\Users\\sean\\AppData\\LocalLow\\Ludeon Studios\\RimWorld by Ludeon Studios\\Player.log") as T;
+      return mockLogAnalysis((A.path as string | null) ?? "C:\\Users\\Player\\AppData\\LocalLow\\Ludeon Studios\\RimWorld by Ludeon Studios\\Player.log") as T;
     case "dds_state":
       return structuredClone(tex) as T;
     case "dds_overview":
@@ -427,7 +427,7 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
     case "check_updates":
       return 1 as T;
     case "app_data_dir":
-      return "C:\\Users\\Astryl\\AppData\\Local\\Circinus" as T;
+      return "C:\\Users\\Player\\AppData\\Local\\Circinus" as T;
     default:
       throw new Error(`mock: unknown command ${cmd}`);
   }
@@ -449,7 +449,7 @@ function mockLogAnalysis(path: string) {
       crash: { line: 30500, reason: "Graphics device is null.", frames: ["UnityEngine.Texture2D..ctor", "WorkRoles.UI.WorkRolesTex.MakeCircle"], culpritFrame: "WorkRoles.UI.WorkRolesTex.MakeCircle", offMainThread: true, quickstart: true },
       prepatcherVanillaLoadSecs: 463, prepatcherRestarted: true,
       timings: [{ label: "DefLoadCache pipeline", seconds: 463, line: 2340 }, { label: "Prepatcher vanilla load", seconds: 463, line: 200 }],
-      duplicates: [{ packageId: "astryl.vanillalootbeams", folders: ["Mods\\3f190c6b54b1", "Mods\\0438241173f4"] }],
+      duplicates: [{ packageId: "example.lootbeams", folders: ["Mods\\3f190c6b54b1", "Mods\\0438241173f4"] }],
       missingParents: missing, xmlErrors: [{ message: "Verse.PatchOperationReplace(xpath=\"Defs/ThingDef[defName=\"Mech_GloriaBO\"]/tools\"): Failed to find a node with the given xpath", sourceMod: "The Dead Man's Switch", file: null, missingParent: null, defName: null, line: 2280 }],
       exceptions: [{ message: "System.NullReferenceException: Object reference not set to an instance of an object", topFrame: "GravshipSize.GravshipSizeSettings.ApplySettingsNow", modFrame: "GravshipSize.GravshipSizeSettings.ApplySettingsNow", patchOwners: ["RedMattis.GravShipSize"], count: 1, line: 3130 }],
       ddsFailures: [{ path: "C:\\ws\\2842502659\\Textures\\UI\\Path_Old.dds", reason: "Compressed TextureFormat BC7 requires a texture size that is a multiple of 4", workshopId: 2842502659, modFolder: null, line: 5000 }],

@@ -6,8 +6,7 @@ members = ["crates/circinus-core", "src-tauri"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/donotfearjazz/CircinusModManager"
-authors = ["Sean <donotfearjazz@gmail.com>"]
+authors = ["Circinus contributors"]
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
