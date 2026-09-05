@@ -13,6 +13,9 @@ export function describe(i: Issue, byUid: Map<string, ModInfo>, viewer?: string)
       return `Does not work together with ${n(other)}. Both are active.`;
     }
     case "orderViolation": {
+      if (i.comment === "Needs it") {
+        return viewer && viewer === i.targetUid ? `${n(i.uid)} needs this mod, so it should load after it.` : `Needs ${n(i.targetUid)}, so it should load after it.`;
+      }
       const who = viewer && viewer === i.targetUid ? n(i.uid) : n(i.targetUid);
       const verb = viewer && viewer === i.targetUid ? (i.rule === "loadAfter" ? "should load before" : "should load after") : i.rule === "loadAfter" ? "should load after" : "should load before";
       const src = i.source === "community" ? "Community rule" : i.source === "user" ? "Your rule" : i.source === "manifest" ? "Manifest.xml" : "About.xml";
@@ -28,7 +31,7 @@ export function describe(i: Issue, byUid: Map<string, ModInfo>, viewer?: string)
       return viewer === i.winnerUid ? `Its ${i.path} wins over ${others}.` : `Its ${i.path} is replaced again by ${winner}, which loads later.`;
     }
     case "misplacedOptimization":
-      return `Should load last, but ${i.afterUids.length} other mod${i.afterUids.length === 1 ? "" : "s"} load after it (${i.afterUids.slice(0, 3).map(n).join(", ")}${i.afterUids.length > 3 ? " and more" : ""}).`;
+      return `Works best at the end of the list, but ${i.afterUids.length} other mod${i.afterUids.length === 1 ? "" : "s"} load after it (${i.afterUids.slice(0, 3).map(n).join(", ")}${i.afterUids.length > 3 ? " and more" : ""}). Sort with HALO to fix this.`;
     case "duplicatePackageId":
       return `${i.packageId} is installed ${i.uids.length} times. RimWorld picks one copy and ignores the rest.`;
     case "missingPackageId":
@@ -62,7 +65,7 @@ export function headline(issues: Issue[], byUid: Map<string, ModInfo>): { title:
   const dep = issues.find((i) => i.kind === "missingDependency");
   if (dep && dep.kind === "missingDependency") return { title: `${n(dep.uid)} needs ${dep.displayName ?? dep.dependency}`, detail: dep.installedUid ? "It is installed but not active. Activate it." : "It is not installed.", kind: "error" };
   const opt = issues.find((i) => i.kind === "misplacedOptimization");
-  if (opt && opt.kind === "misplacedOptimization") return { title: `${n(opt.uid)} should load last`, detail: `${opt.afterUids.length} mod${opt.afterUids.length === 1 ? "" : "s"} load after it. Sort with HALO to fix this.`, kind: "warning" };
+  if (opt && opt.kind === "misplacedOptimization") return { title: `${n(opt.uid)} works best at the end of the list`, detail: `${opt.afterUids.length} mod${opt.afterUids.length === 1 ? "" : "s"} load after it. Sort with HALO to fix this, or close this note.`, kind: "warning" };
   const coll = issues.filter((i) => i.kind === "textureCollision");
   if (coll.length) {
     const first = coll[0] as Extract<Issue, { kind: "textureCollision" }>;

@@ -396,8 +396,20 @@ pub fn about_rules(m: &ModInfo) -> Vec<Rule> {
     for t in &m.rules.incompatible_with {
         out.push(mk(RuleKind::Incompatible, t, None));
     }
+    // A dependency has to load first: its defs are the parents, its code the types. RimWorld's
+    // own sort treats modDependencies the same way, and so do the other managers.
+    for d in &m.rules.dependencies {
+        for t in std::iter::once(&d.package_id).chain(d.alternatives.iter()) {
+            if !t.is_empty() && !m.rules.load_after.iter().any(|x| x == t) && !m.rules.load_before.iter().any(|x| x == t) {
+                out.push(mk(RuleKind::LoadAfter, t, Some(NEEDS)));
+            }
+        }
+    }
     out
 }
+
+/// Comment on the LoadAfter rule derived from a `modDependencies` entry.
+pub const NEEDS: &str = "Needs it";
 
 /// Resolve Fluffy manifest identifiers (identifier, name without spaces, folder name) to packageIds.
 pub fn manifest_rules(mods: &[ModInfo]) -> Vec<Rule> {

@@ -59,7 +59,8 @@
       });
     }
     if (head) {
-      const notice: Notice = { id: "issues", kind: head.kind, title: head.title, detail: head.detail, action: "Review", run: review, dismissable: false };
+      // Errors stay until fixed; warnings and notes can be closed for this session.
+      const notice: Notice = { id: `issues:${head.title}`, kind: head.kind, title: head.title, detail: head.detail, action: "Review", run: review, dismissable: head.kind !== "error" };
       // Something that will make the game reset the list outranks housekeeping notices.
       if (head.kind === "error") out.splice(reset ? 1 : 0, 0, notice);
       else out.push(notice);

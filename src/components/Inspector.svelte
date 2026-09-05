@@ -18,7 +18,7 @@
   const canRedownload = $derived(!!m?.publishedFileId && m.source !== "ludeon");
   const dds = $derived(m ? store.ddsOf(m.uid) : undefined);
   const ddsExcluded = $derived(m ? (store.snap?.user.ddsExcluded ?? []).includes(m.uid) : false);
-  const GRAD: Record<Phase, [string, string]> = { core: ["#3b5fd9", "#1b2a5c"], prepatch: ["#8b6cf0", "#3a2a6e"], framework: ["#2ea59e", "#12403e"], content: ["#3fb865", "#173f24"], patch: ["#d9508f", "#5a1f3c"], texture: ["#e39b3a", "#5d3a0f"], optimization: ["#f07a4d", "#5d2a17"] };
+  const GRAD: Record<Phase, [string, string]> = { core: ["#3b5fd9", "#1b2a5c"], prepatch: ["#8b6cf0", "#3a2a6e"], framework: ["#2ea59e", "#12403e"], content: ["#3fb865", "#173f24"], patch: ["#d9508f", "#5a1f3c"], texture: ["#e39b3a", "#5d3a0f"], late: ["#8fa3c7", "#2f3a4e"], optimization: ["#f07a4d", "#5d2a17"] };
   let preview = $state<string>("");
   let description = $state<string>("");
   $effect(() => {
@@ -41,6 +41,12 @@
     if (r.kind === "loadBottom") return { type: "bottom", name: "Load at the bottom", ok: true };
     if (r.kind === "incompatible") return { type: "never", name, ok: !(other && store.activeSet.has(other.uid)) };
     const after = (r.kind === "loadAfter") === mine; // from this mod's point of view
+    if (r.comment === "Needs it") {
+      const mi0 = m ? store.indexOf.get(m.uid) : undefined;
+      const oi0 = other ? store.indexOf.get(other.uid) : undefined;
+      const ok0 = mi0 == null || oi0 == null ? true : after ? mi0 > oi0 : mi0 < oi0;
+      return { type: after ? "needs" : "needed by", name, ok: ok0 };
+    }
     const mi = m ? store.indexOf.get(m.uid) : undefined;
     const oi = other ? store.indexOf.get(other.uid) : undefined;
     const ok = mi == null || oi == null ? true : after ? mi > oi : mi < oi;
@@ -227,7 +233,7 @@
   .ctl .fld { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; font-size: 12.5px; color: var(--text-2); font-weight: 600; }
   .wmeta { font-size: 12px; color: var(--text-3); margin: 8px 0; line-height: 1.5; }
   .rules { display: flex; flex-direction: column; gap: 2px; }
-  .rule { display: grid; grid-template-columns: 16px 44px minmax(0, 1fr) auto; gap: 7px; align-items: center; height: 30px; padding: 0 6px; border-radius: 8px; font-size: 12.5px; }
+  .rule { display: grid; grid-template-columns: 16px 62px minmax(0, 1fr) auto; gap: 7px; align-items: center; height: 30px; padding: 0 6px; border-radius: 8px; font-size: 12.5px; }
   .rule:hover { background: var(--surface-2); }
   .st { width: 16px; height: 16px; display: grid; place-items: center; }
   .st :global(svg) { width: 15px; height: 15px; }

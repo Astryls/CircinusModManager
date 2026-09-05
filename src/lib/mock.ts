@@ -149,7 +149,7 @@ const weights: Record<string, Weight> = Object.fromEntries(
 );
 
 function placements(order: string[]): Placement[] {
-  const reason: Record<Phase, string> = { core: "The game itself", prepatch: "Changes the game before other mods load", framework: "A library many mods use", content: "Adds content", patch: "Only patches, so it loads after what it changes", texture: "Only textures", optimization: "Speeds up other mods, so it has to load after them" };
+  const reason: Record<Phase, string> = { core: "The game itself", prepatch: "Changes the game before other mods load", framework: "A library many mods use", content: "Adds content", patch: "Only patches, so it loads after what it changes", texture: "Only textures", late: "A rule says: load near the bottom", optimization: "Speeds up other mods, so it has to load after them" };
   return order.map((uid) => {
     const phase = user.phaseOverrides[uid] ?? user.groups.find((g) => g.id === user.modGroups[uid])?.phase ?? phaseOfSeed[uid] ?? "content";
     return { uid, phase, reason: user.phaseOverrides[uid] ? "Set by you" : reason[phase] };

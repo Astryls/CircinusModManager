@@ -82,11 +82,12 @@ pub fn classify(m: &ModInfo, ctx: &Context, dependents: usize, texture_collides:
     if ctx.rules.iter().any(|r| r.kind == RuleKind::LoadTop && r.subject == id) {
         return Placement { uid, phase: Phase::Framework, reason: "A rule says: load near the top".into() };
     }
-    if ctx.rules.iter().any(|r| r.kind == RuleKind::LoadBottom && r.subject == id) {
-        return Placement { uid, phase: Phase::Optimization, reason: "A rule says: load near the bottom".into() };
-    }
-    if OPTIMIZATION_IDS.contains(&id) || (c.assemblies > 0 && c.defs == 0 && name_matches(&m.name, &["performance", "optimiz", "optimis", "rocketman", "fps boost"])) {
+    let optimizer = OPTIMIZATION_IDS.contains(&id) || (c.assemblies > 0 && c.defs == 0 && name_matches(&m.name, &["performance", "optimiz", "optimis", "rocketman", "fps boost"]));
+    if optimizer {
         return Placement { uid, phase: Phase::Optimization, reason: "Speeds up other mods, so it has to load after them".into() };
+    }
+    if ctx.rules.iter().any(|r| r.kind == RuleKind::LoadBottom && r.subject == id) {
+        return Placement { uid, phase: Phase::Late, reason: "A rule says: load near the bottom".into() };
     }
     if FRAMEWORK_IDS.contains(&id) {
         return Placement { uid, phase: Phase::Framework, reason: "A library many mods use".into() };
@@ -327,8 +328,16 @@ fn dependents_count(order: &[&ModInfo]) -> HashMap<String, usize> {
     counts
 }
 
-/// Classify every active mod.
+/// Classify every active mod, then lift phases along the hard edges: a mod that must load after
+/// a Late or Performance mod belongs to that group too (RimJobWorld's add-ons follow RimJobWorld
+/// to the bottom; a RocketMan patch follows RocketMan), so the groups stay contiguous and the
+/// sort never has to interleave them.
 pub fn placements(order: &[&ModInfo], ctx: &Context) -> Vec<Placement> {
+    let (p, _, _) = placements_and_graph(order, ctx);
+    p
+}
+
+fn placements_and_graph(order: &[&ModInfo], ctx: &Context) -> (Vec<Placement>, DiGraph<usize, Rule>, Vec<Issue>) {
     let deps = dependents_count(order);
     let collisions = textures::collisions(order, ctx.files, ctx.major_minor);
     let mut colliding: HashSet<String> = HashSet::new();
@@ -338,16 +347,35 @@ pub fn placements(order: &[&ModInfo], ctx: &Context) -> Vec<Placement> {
         }
     }
     let top = top_set(order, ctx);
-    order.iter().map(|m| classify(m, ctx, deps.get(&m.package_id).copied().unwrap_or(0), colliding.contains(&m.uid), top.contains(&m.uid))).collect()
+    let mut placements: Vec<Placement> = order.iter().map(|m| classify(m, ctx, deps.get(&m.package_id).copied().unwrap_or(0), colliding.contains(&m.uid), top.contains(&m.uid))).collect();
+    let (g, issues) = build_graph(order, ctx);
+    // Walk in topological order so each lift is final. Only the late phases pull mods down: a
+    // content mod that follows a library or a patch stays where it is.
+    if let Ok(topo) = petgraph::algo::toposort(&g, None) {
+        for n in topo {
+            let i = g[n];
+            let from = placements[i].phase;
+            if from < Phase::Late {
+                continue;
+            }
+            for e in g.edges(n) {
+                let j = g[e.target()];
+                if placements[j].phase < from && !ctx.overrides.phases.contains_key(&order[j].uid) && !is_official(order[j]) {
+                    placements[j].phase = from;
+                    placements[j].reason = format!("Must load after {}, so it goes with the {} group", order[i].name, from.label().to_lowercase());
+                }
+            }
+        }
+    }
+    (placements, g, issues)
 }
 
 /// Compute the HALO order for `current` (uids). Rules are hard, phases soft, pins respected.
 pub fn sort(current: &[String], ctx: &Context) -> SortResult {
     let by_uid: HashMap<&str, &ModInfo> = ctx.mods.iter().map(|m| (m.uid.as_str(), m)).collect();
     let order: Vec<&ModInfo> = current.iter().filter_map(|u| by_uid.get(u.as_str()).copied()).collect();
-    let placements = placements(&order, ctx);
+    let (placements, g, mut issues) = placements_and_graph(&order, ctx);
     let phase_of: HashMap<&str, Phase> = placements.iter().map(|p| (p.uid.as_str(), p.phase)).collect();
-    let (g, mut issues) = build_graph(&order, ctx);
 
     // Priority Kahn: among ready nodes pick the lowest (phase, key).
     let key_of = |i: usize| -> (Phase, String) {
@@ -487,19 +515,23 @@ pub fn validate(current: &[String], ctx: &Context) -> Vec<Issue> {
             }
         }
     }
-    // Optimization mods should be last
-    let placements = placements(&order, ctx);
+    // Performance mods should be last, except for whatever a rule makes load after them.
+    let (placements, g, cycle_issues) = placements_and_graph(&order, ctx);
     let phase_of: HashMap<&str, Phase> = placements.iter().map(|p| (p.uid.as_str(), p.phase)).collect();
     for (i, m) in order.iter().enumerate() {
-        if phase_of.get(m.uid.as_str()) == Some(&Phase::Optimization) {
-            let after: Vec<String> = order[i + 1..].iter().filter(|x| phase_of.get(x.uid.as_str()) != Some(&Phase::Optimization)).map(|x| x.uid.clone()).collect();
-            if !after.is_empty() {
-                issues.push(Issue::MisplacedOptimization { uid: m.uid.clone(), after_uids: after });
-            }
+        if phase_of.get(m.uid.as_str()) != Some(&Phase::Optimization) {
+            continue;
+        }
+        let mut forced: HashSet<usize> = HashSet::new();
+        let mut dfs = petgraph::visit::Dfs::new(&g, NodeIndex::new(i));
+        while let Some(n) = dfs.next(&g) {
+            forced.insert(g[n]);
+        }
+        let after: Vec<String> = order[i + 1..].iter().enumerate().filter(|(k, x)| phase_of.get(x.uid.as_str()) != Some(&Phase::Optimization) && !forced.contains(&(i + 1 + k))).map(|(_, x)| x.uid.clone()).collect();
+        if !after.is_empty() {
+            issues.push(Issue::MisplacedOptimization { uid: m.uid.clone(), after_uids: after });
         }
     }
-    // Cycles
-    let (_, cycle_issues) = build_graph(&order, ctx);
     issues.extend(cycle_issues);
     // Textures
     issues.extend(textures::collisions(&order, ctx.files, ctx.major_minor));
@@ -656,6 +688,107 @@ mod tests {
         // A DLC above Core is the same error.
         let dlc_first: Vec<String> = ["harmony", "loader", "royalty", "core", "ancot", "dbh", "dbh0", "dbh1", "dbh2", "wrong"].iter().map(|s| s.to_string()).collect();
         assert!(validate(&dlc_first, &ctx).iter().any(|i| matches!(i, Issue::AboveOfficial { uid, official_uid } if uid == "royalty" && official_uid == "core")));
+    }
+
+    /// A big content mod with a `loadBottom` rule and sixty add-ons: the add-ons follow it into
+    /// the Late group, all of that sits before the performance mods, and no performance mod is
+    /// flagged for having them after it.
+    #[test]
+    fn late_loaders_take_their_addons_with_them_and_stay_above_performance_mods() {
+        let mut core = m("core", "ludeon.rimworld", "RimWorld", Source::Ludeon);
+        core.contents.defs = 3000;
+        core.kind = ModKind::Official;
+        let mut hugs = m("hugs", "unlimitedhugs.hugslib", "HugsLib", Source::Workshop);
+        hugs.contents.assemblies = 1;
+        hugs.kind = ModKind::Code;
+        let mut rjw = m("rjw", "rim.job.world", "RimJobWorld", Source::Local);
+        rjw.contents.assemblies = 14;
+        rjw.contents.defs = 1147;
+        rjw.kind = ModKind::Code;
+        rjw.rules.dependencies = vec![Dependency { package_id: "unlimitedhugs.hugslib".into(), ..Default::default() }];
+        let mut addons = Vec::new();
+        for i in 0..60 {
+            let mut a = m(&format!("addon{i}"), &format!("x.rjwaddon{i}"), &format!("RJW Addon {i}"), Source::Workshop);
+            a.contents.defs = 20;
+            a.kind = ModKind::Xml;
+            // Half say loadAfter, half only declare the dependency; both must count.
+            if i % 2 == 0 {
+                a.rules.load_after = vec!["rim.job.world".into()];
+            } else {
+                a.rules.dependencies = vec![Dependency { package_id: "rim.job.world".into(), ..Default::default() }];
+            }
+            addons.push(a);
+        }
+        let mut retex = m("retex", "x.rjwretex", "RJW ReTexture", Source::Workshop);
+        retex.contents.textures = 40;
+        retex.kind = ModKind::Textures;
+        retex.rules.load_after = vec!["rim.job.world".into()];
+        let mut furniture = m("furn", "x.furniture", "More Furniture", Source::Workshop);
+        furniture.contents.defs = 50;
+        furniture.kind = ModKind::Xml;
+        let mut amo = m("amo", "mrk.architectmenuoptimizer", "Architect Menu Optimizer", Source::Workshop);
+        amo.contents.assemblies = 1;
+        amo.kind = ModKind::Code;
+        let mut perfopt = m("perfopt", "taranchuk.performanceoptimizer", "Performance Optimizer", Source::Workshop);
+        perfopt.contents.assemblies = 1;
+        perfopt.kind = ModKind::Code;
+        let mut rocket = m("rocket", "krkr.rocketman", "RocketMan", Source::Workshop);
+        rocket.contents.assemblies = 1;
+        rocket.kind = ModKind::Code;
+        let mut rocketfix = m("rocketfix", "x.rocketfix", "RocketMan Compat", Source::Workshop);
+        rocketfix.contents.patches = 3;
+        rocketfix.kind = ModKind::Xml;
+        rocketfix.rules.load_after = vec!["krkr.rocketman".into()];
+        let mut mods = vec![core, hugs, furniture, rjw];
+        mods.extend(addons);
+        mods.extend([retex, amo, perfopt, rocket, rocketfix]);
+        let db = Databases {
+            community: parse_rules(r#"{"rules": {
+                "rim.job.world": {"loadBottom": {"value": true}, "loadBefore": {"krkr.rocketman": {}}},
+                "krkr.rocketman": {"loadBottom": {"value": true}},
+                "taranchuk.performanceoptimizer": {"loadBottom": {"value": true}, "loadBefore": {"krkr.rocketman": {}}}
+            }}"#, RuleSource::Community).unwrap(),
+            ..Default::default()
+        };
+        let rules = compile_rules(&mods, &db);
+        let files = HashMap::new();
+        let ov = UserOverrides::default();
+        let ctx = Context { mods: &mods, files: &files, rules: &rules, db: &db, major_minor: "1.6", overrides: &ov };
+        // The order that raised the complaint: RimJobWorld among the performance mods, add-ons after them.
+        let mut current: Vec<String> = vec!["core".into(), "hugs".into(), "furn".into(), "amo".into(), "rjw".into(), "perfopt".into()];
+        current.extend((0..60).map(|i| format!("addon{i}")));
+        current.extend(["retex".to_string(), "rocket".into(), "rocketfix".into()]);
+        let r = sort(&current, &ctx);
+        let pos = |u: &str| r.order.iter().position(|x| x == u).unwrap();
+        let phase = |u: &str| r.placements.iter().find(|p| p.uid == u).unwrap().phase;
+        assert_eq!(phase("rjw"), Phase::Late);
+        assert_eq!(phase("addon1"), Phase::Late, "an add-on that only declares the dependency follows it");
+        assert_eq!(phase("addon0"), Phase::Late);
+        assert_eq!(phase("retex"), Phase::Late, "even a texture pack that must load after it");
+        assert_eq!(phase("furn"), Phase::Content);
+        assert_eq!(phase("amo"), Phase::Optimization);
+        assert_eq!(phase("rocketfix"), Phase::Optimization, "a patch that must load after RocketMan stays with it");
+        assert!(pos("furn") < pos("rjw"));
+        for i in 0..60 {
+            assert!(pos(&format!("addon{i}")) > pos("rjw"));
+            assert!(pos(&format!("addon{i}")) < pos("amo"), "add-ons come before the performance mods: {:?}", &r.order[pos("rjw")..]);
+        }
+        assert!(pos("amo") < pos("perfopt") && pos("perfopt") < pos("rocket") && pos("rocket") < pos("rocketfix"));
+        assert!(r.issues.iter().all(|i| !matches!(i, Issue::MisplacedOptimization { .. } | Issue::OrderViolation { .. } | Issue::Cycle { .. })), "{:?}", r.issues);
+        // The complained-about order is flagged, but only for the mods no rule forces after.
+        let before = validate(&current, &ctx);
+        let flagged: Vec<&Issue> = before.iter().filter(|i| matches!(i, Issue::MisplacedOptimization { .. })).collect();
+        assert!(flagged.iter().any(|i| matches!(i, Issue::MisplacedOptimization { uid, after_uids } if uid == "amo" && after_uids.len() == 62)), "{flagged:?}");
+        assert!(!flagged.iter().any(|i| matches!(i, Issue::MisplacedOptimization { uid, .. } if uid == "rocket")), "RocketMan Compat must load after RocketMan, so it is not a complaint");
+        // A dependency that loads after the mod that needs it is an order violation now.
+        let mut wrong = current.clone();
+        wrong.swap(1, 2); // furniture before HugsLib is fine; move HugsLib below RimJobWorld
+        let h = wrong.iter().position(|u| u == "hugs").unwrap();
+        let hugs_uid = wrong.remove(h);
+        let at = wrong.iter().position(|u| u == "perfopt").unwrap();
+        wrong.insert(at, hugs_uid);
+        let v = validate(&wrong, &ctx);
+        assert!(v.iter().any(|i| matches!(i, Issue::OrderViolation { uid, target_uid, comment, .. } if uid == "rjw" && target_uid == "hugs" && comment.as_deref() == Some(crate::rules::NEEDS))), "{v:?}");
     }
 
     #[test]

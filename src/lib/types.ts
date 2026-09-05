@@ -2,7 +2,7 @@
 
 export type Source = "ludeon" | "workshop" | "local" | "steamcmd" | "git";
 export type ModKind = "unknown" | "official" | "code" | "xml" | "textures" | "translation" | "scenario";
-export type Phase = "core" | "prepatch" | "framework" | "content" | "patch" | "texture" | "optimization";
+export type Phase = "core" | "prepatch" | "framework" | "content" | "patch" | "texture" | "late" | "optimization";
 export type RuleSource = "about" | "manifest" | "community" | "user" | "halo";
 export type RuleKind = "loadAfter" | "loadBefore" | "incompatible" | "loadTop" | "loadBottom";
 export type Severity = "error" | "warning" | "note";
@@ -489,6 +489,7 @@ export const PHASES: { id: Phase; name: string; color: string; note: string }[] 
   { id: "content", name: "Content", color: "green", note: "Things, pawns, biomes, rules" },
   { id: "patch", name: "Patches", color: "pink", note: "Load after the mods they change" },
   { id: "texture", name: "Texture packs", color: "amber", note: "The later pack wins" },
+  { id: "late", name: "Late loaders", color: "slate", note: "Asked to load near the bottom, with their add-ons" },
   { id: "optimization", name: "Performance", color: "coral", note: "Load last to see everything" }
 ];
 

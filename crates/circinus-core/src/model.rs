@@ -206,17 +206,21 @@ pub enum Phase {
     Content,
     Patch,
     Texture,
+    /// Asked to load near the bottom (a `loadBottom` rule), together with everything that must
+    /// load after it. Big content mods with many add-ons live here, not performance mods.
+    Late,
     Optimization,
 }
 
 impl Phase {
-    pub const ALL: [Phase; 7] = [
+    pub const ALL: [Phase; 8] = [
         Phase::Prepatch,
         Phase::Core,
         Phase::Framework,
         Phase::Content,
         Phase::Patch,
         Phase::Texture,
+        Phase::Late,
         Phase::Optimization,
     ];
     pub fn label(self) -> &'static str {
@@ -227,6 +231,7 @@ impl Phase {
             Phase::Content => "Content",
             Phase::Patch => "Patches",
             Phase::Texture => "Texture packs",
+            Phase::Late => "Late loaders",
             Phase::Optimization => "Performance",
         }
     }
