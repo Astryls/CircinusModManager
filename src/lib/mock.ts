@@ -1,8 +1,8 @@
 // Browser-only stand-in for the Rust backend: lets `npm run dev` show the UI with example data.
 // Nothing here ships in the Tauri build path (api.ts only imports it outside Tauri).
 
-import type { BuiltinRule, Issue, ModChange, ModInfo, ModPatchDetail, ModPatches, PatchJob, PatchReport, PatchSummary, PatchTarget, Patcher, Phase, Placement, QueueState, Rule, Snapshot, SortResult, Source, TargetGroup, TexState, UserData, Weight, Settings } from "./types";
-import { PHASES, patchTargetName } from "./types";
+import type { BuiltinRule, Instance, Issue, LaunchSettings, Locations, ModChange, ModInfo, ModPatchDetail, ModPatches, Patcher, PatchJob, PatchReport, PatchSummary, PatchTarget, Phase, Placement, QueueState, Rule, Settings, Snapshot, SortResult, Source, TargetGroup, TexState, UserData, Weight } from "./types";
+import { patchTargetName, PHASES } from "./types";
 
 type Seed = [name: string, author: string, pkg: string, pfid: string | null, src: Source, phase: Phase, group: string, ver: string[], size: number, flags?: string];
 
@@ -238,8 +238,9 @@ function snapshot(): Snapshot {
     weights,
     weightsFetchedAt: 1_757_000_000,
     dirty,
-    currentList: currentList ?? undefined,
-    namedLists: namedLists.map((l) => ({ name: l.name, path: `C:\\Users\\Player\\AppData\\Local\\Circinus\\lists\\named\\${l.name}.xml`, count: l.uids.length, updatedAt: l.updatedAt, gameVersion: "1.6.4530 rev1235" })),
+    currentList: currentList() ?? undefined,
+    namedLists: namedLists().map((l) => ({ name: l.name, path: `C:\\Users\\Player\\AppData\\Local\\Circinus\\lists\\named\\${current}\\${l.name}.xml`, count: l.uids.length, updatedAt: l.updatedAt, gameVersion: "1.6.4530 rev1235" })),
+    instance: instances.find((i) => i.id === current)!,
     dbLoaded: ["communityRules.json (7,412 rules)", "steamDB.json (31,988 items)"],
     scannedAt: 1_757_000_000,
     inspecting: 0,
@@ -273,12 +274,44 @@ const HALO_RULES: BuiltinRule[] = [
 ];
 
 const resetSimulated = typeof location !== "undefined" && location.search.includes("reset");
-// Named lists, kept in memory for the preview.
-let namedLists: { name: string; uids: string[]; updatedAt: number }[] = [
-  { name: "Vanilla plus", uids: SEED.filter((s) => s[4] === "ludeon" || s[5] === "framework").map((s) => uidOf(s[2])), updatedAt: 1_756_990_000 },
-  { name: "Full run", uids: SEED.filter((s) => !(s[9] ?? "").includes("off")).map((s) => uidOf(s[2])), updatedAt: 1_756_900_000 }
+// Three instances, the way a player who keeps a vanilla-ish game, a CE playthrough and a
+// modding sandbox would have them: two share the game folder and differ only in config, and
+// two share the Workshop folder. Each owns its named lists and remembers which one is open.
+const STEAM = "C:\\Program Files (x86)\\Steam\\steamapps";
+const launchDefaults: LaunchSettings = { method: "auto", executable: null, args: "", saveFirst: true };
+const instances: Instance[] = [
+  { id: "default", name: "1.6 vanilla-ish", locations: { gameDir: `${STEAM}\\common\\RimWorld`, configDir: "C:\\Users\\Player\\AppData\\LocalLow\\Ludeon Studios\\RimWorld by Ludeon Studios\\Config", localModsDir: `${STEAM}\\common\\RimWorld\\Mods`, workshopDir: `${STEAM}\\workshop\\content\\294100` }, launch: { ...launchDefaults }, createdAt: 1_740_000_000 },
+  { id: "ce-playthrough", name: "CE playthrough", locations: { gameDir: `${STEAM}\\common\\RimWorld`, configDir: "D:\\RimWorld\\CE\\Config", localModsDir: "D:\\RimWorld\\CE\\Mods", workshopDir: `${STEAM}\\workshop\\content\\294100` }, launch: { ...launchDefaults, args: "-popupwindow" }, createdAt: 1_750_000_000 },
+  { id: "modding-sandbox", name: "Modding sandbox", locations: { gameDir: "D:\\RimWorld\\1.5", configDir: "D:\\RimWorld\\1.5\\Config", localModsDir: "D:\\RimWorld\\1.5\\Mods", workshopDir: null }, launch: { ...launchDefaults, method: "executable" }, createdAt: 1_756_000_000 }
 ];
-let currentList: string | null = null;
+let current = "default";
+// Named lists, kept in memory for the preview: each instance has its own.
+const listsPerInstance: Record<string, { name: string; uids: string[]; updatedAt: number }[]> = {
+  default: [
+    { name: "Vanilla plus", uids: SEED.filter((s) => s[4] === "ludeon" || s[5] === "framework").map((s) => uidOf(s[2])), updatedAt: 1_756_990_000 },
+    { name: "Full run", uids: SEED.filter((s) => !(s[9] ?? "").includes("off")).map((s) => uidOf(s[2])), updatedAt: 1_756_900_000 }
+  ],
+  "ce-playthrough": [{ name: "CE core", uids: SEED.filter((s) => s[4] === "ludeon").map((s) => uidOf(s[2])), updatedAt: 1_756_500_000 }],
+  "modding-sandbox": []
+};
+const currentListPerInstance: Record<string, string | null> = { default: null, "ce-playthrough": "CE core", "modding-sandbox": null };
+const slug = (name: string) => name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "instance";
+/** Where the game would keep its config and saves for the instance that is open, when that is
+ *  not the usual folder — mirrors instances::save_data_folder on the Rust side. */
+function mockSaveDataFolder(): string | null {
+  const cfg = settings.locations.configDir;
+  if (!cfg || cfg.includes("LocalLow")) return null;
+  return /[\\/]config$/i.test(cfg) ? cfg.replace(/[\\/]config$/i, "") : cfg;
+}
+function mockLaunchArgs(): string[] {
+  const args = (settings.launch.args ?? "").split(/\s+/).filter(Boolean);
+  if (args.some((a) => a.toLowerCase().startsWith("-savedatafolder"))) return args;
+  const folder = mockSaveDataFolder();
+  return folder ? [...args, `-savedatafolder=${folder}`] : args;
+}
+const namedLists = () => (listsPerInstance[current] ??= []);
+const currentList = () => currentListPerInstance[current] ?? null;
+const setCurrentList = (name: string | null) => (currentListPerInstance[current] = name);
 const savedLists = [
   { path: "C:\\Users\\Player\\AppData\\Local\\Circinus\\lists\\1757000000-saved.xml", savedAt: 1_757_000_000, label: "saved", count: 44, gameVersion: "1.6.4530 rev1235" },
   { path: "C:\\Users\\Player\\AppData\\Local\\Circinus\\lists\\1756900000-seen.xml", savedAt: 1_756_900_000, label: "seen", count: 41, gameVersion: "1.6.4530 rev1235" },
@@ -845,9 +878,14 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
       else active = A.uids as string[];
       dirty = true;
       return snapshot() as T;
-    case "update_settings":
+    case "update_settings": {
       settings = A.settings as Settings;
+      // Settings edits the instance that is open, the way the backend does it.
+      const inst = instances.find((i) => i.id === current)!;
+      inst.locations = settings.locations;
+      inst.launch = settings.launch;
       return snapshot() as T;
+    }
     case "autodetect_locations":
       return settings.locations as T;
     case "update_user":
@@ -900,34 +938,34 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
     case "save_named_list": {
       const name = (A.name as string).trim();
       if (!name) throw new Error("Give the list a name");
-      const existing = namedLists.find((l) => l.name === name);
+      const existing = namedLists().find((l) => l.name === name);
       if (existing) { existing.uids = [...active]; existing.updatedAt = Math.floor(Date.now() / 1000); }
-      else namedLists.unshift({ name, uids: [...active], updatedAt: Math.floor(Date.now() / 1000) });
-      currentList = name;
+      else namedLists().unshift({ name, uids: [...active], updatedAt: Math.floor(Date.now() / 1000) });
+      setCurrentList(name);
       return snapshot() as T;
     }
     case "load_named_list": {
-      const l = namedLists.find((l) => l.name === A.name);
+      const l = namedLists().find((l) => l.name === A.name);
       if (!l) throw new Error(`No list called ${A.name}`);
       active = [...l.uids];
       dirty = true;
-      currentList = l.name;
+      setCurrentList(l.name);
       return { snapshot: snapshot(), restored: l.uids.length, missing: [] } as T;
     }
     case "delete_named_list":
-      namedLists = namedLists.filter((l) => l.name !== A.name);
-      if (currentList === A.name) currentList = null;
+      listsPerInstance[current] = namedLists().filter((l) => l.name !== A.name);
+      if (currentList() === A.name) setCurrentList(null);
       return snapshot() as T;
     case "rename_named_list": {
-      const l = namedLists.find((l) => l.name === A.from);
+      const l = namedLists().find((l) => l.name === A.from);
       if (!l) throw new Error(`No list called ${A.from}`);
-      if (namedLists.some((x) => x.name === A.to)) throw new Error(`There is already a list called ${A.to}`);
+      if (namedLists().some((x) => x.name === A.to)) throw new Error(`There is already a list called ${A.to}`);
       l.name = A.to as string;
-      if (currentList === A.from) currentList = l.name;
+      if (currentList() === A.from) setCurrentList(l.name);
       return snapshot() as T;
     }
     case "detach_list":
-      currentList = null;
+      setCurrentList(null);
       return snapshot() as T;
     case "delete_mod": {
       const m = mods.find((m) => m.uid === A.uid);
@@ -961,8 +999,72 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
     case "collection_untrack":
       user.collections = (user.collections ?? []).filter((c) => c.id !== A.id);
       return snapshot() as T;
-    case "get_launch_info":
-      return { executable: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld\\RimWorldWin64.exe", executableExists: true, steamInstall: true, autoResolvesTo: "steam" } as T;
+    case "get_launch_info": {
+      const args = mockLaunchArgs();
+      return { executable: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld\\RimWorldWin64.exe", executableExists: true, steamInstall: true, autoResolvesTo: "steam", args, saveDataFolder: mockSaveDataFolder() } as T;
+    }
+    // ---- instances ----
+    case "instances_list":
+      return instances as T;
+    case "instance_current":
+      return instances.find((i) => i.id === current)! as T;
+    case "instance_create": {
+      const name = String(A.name ?? "").trim();
+      if (!name) throw new Error("Give the instance a name of up to 80 characters");
+      const inst: Instance = { id: `${slug(name)}-${Math.random().toString(16).slice(2, 7)}`, name, locations: A.fromCurrent ? { ...settings.locations } : {}, launch: A.fromCurrent ? { ...settings.launch } : { ...launchDefaults }, createdAt: Math.floor(Date.now() / 1000) };
+      instances.push(inst);
+      listsPerInstance[inst.id] = [];
+      currentListPerInstance[inst.id] = null;
+      return inst as T;
+    }
+    case "instance_duplicate": {
+      const src = instances.find((i) => i.id === A.id);
+      if (!src) throw new Error("No such instance");
+      const name = String(A.name ?? `${src.name} copy`);
+      const inst: Instance = { ...src, id: `${slug(name)}-${Math.random().toString(16).slice(2, 7)}`, name, locations: { ...src.locations }, launch: { ...src.launch }, createdAt: Math.floor(Date.now() / 1000) };
+      instances.push(inst);
+      listsPerInstance[inst.id] = [];
+      currentListPerInstance[inst.id] = null;
+      return inst as T;
+    }
+    case "instance_rename": {
+      const inst = instances.find((i) => i.id === A.id);
+      if (!inst) throw new Error("No such instance");
+      const name = String(A.name ?? "").trim();
+      if (!name) throw new Error("Give the instance a name of up to 80 characters");
+      inst.name = name;
+      return inst as T;
+    }
+    case "instance_update": {
+      const inst = instances.find((i) => i.id === A.id);
+      if (!inst) throw new Error("No such instance");
+      inst.locations = A.locations as Locations;
+      inst.launch = A.launch as LaunchSettings;
+      if (inst.id === current) settings = { ...settings, locations: inst.locations, launch: inst.launch };
+      return inst as T;
+    }
+    case "instance_delete": {
+      const inst = instances.find((i) => i.id === A.id);
+      if (!inst) throw new Error("No such instance");
+      if (instances.length < 2) throw new Error("This is the only instance. Make another one first.");
+      instances.splice(instances.indexOf(inst), 1);
+      if (current === inst.id) current = instances[0].id;
+      settings = { ...settings, locations: instances.find((i) => i.id === current)!.locations, launch: instances.find((i) => i.id === current)!.launch };
+      return `Forgot the instance ${inst.name}. Its mods, saves and config folder are where they were.` as T;
+    }
+    case "instance_switch": {
+      const inst = instances.find((i) => i.id === A.id);
+      if (!inst) throw new Error("No such instance");
+      if (dirty && !A.discard) throw new Error("The list has unsaved changes. Save it first, or switch and lose them.");
+      current = inst.id;
+      dirty = false;
+      // The real backend re-scans the new folders; the mock keeps one set of mods and only
+      // moves the folders, the named lists and the list being worked on.
+      settings = { ...settings, locations: inst.locations, launch: inst.launch };
+      const list = namedLists().find((l) => l.name === currentList());
+      if (list) active = [...list.uids];
+      return inst as T;
+    }
     case "launch_game":
       dirty = false;
       return "Asked Steam to start RimWorld (mock)" as T;

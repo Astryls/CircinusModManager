@@ -1,6 +1,7 @@
 //! Application state: everything the UI sees, and the operations that change it.
 //! No Tauri types here so it stays testable.
 
+use crate::instances::{self, Instance};
 use circinus_core::cache::Cache;
 use circinus_core::changes::{self, Baseline, ListChange, ModChange};
 use circinus_core::dds;
@@ -322,6 +323,8 @@ pub struct Snapshot {
     /// The user's named lists, newest first.
     #[serde(default)]
     pub named_lists: Vec<NamedList>,
+    /// The instance these folders and lists belong to.
+    pub instance: Instance,
 }
 
 /// RimWorld gave up loading and wrote a Core-only list; here is what to put back.
@@ -387,14 +390,14 @@ pub struct App {
     pub list_reset: Option<ListReset>,
     /// The named list the active list came from, or was last saved to. Save writes it too.
     pub current_list: Option<String>,
+    /// The instance that is open: which folders these mods came from. Its `locations` and
+    /// `launch` are the same values as `settings.locations` and `settings.launch` — Settings
+    /// edits the instance that is open.
+    pub instance: Instance,
 }
-
-const CURRENT_LIST_KEY: &str = "current_list";
 
 /// How many archived lists to keep.
 const LIST_HISTORY: usize = 40;
-
-const BASELINE_KEY: &str = "mod_baseline";
 
 /// Unix seconds.
 pub fn now_secs() -> i64 {
@@ -414,7 +417,8 @@ impl App {
     pub fn open_at(data_dir: PathBuf, settings_override: Option<Settings>) -> Result<App> {
         std::fs::create_dir_all(data_dir.join("dbs"))?;
         let cache = Cache::open(&data_dir.join("cache.sqlite"))?;
-        let settings: Settings = match settings_override {
+        let explicit = settings_override.is_some();
+        let mut settings: Settings = match settings_override {
             Some(s) => s,
             None => {
                 let mut s: Settings = cache.get("settings")?.unwrap_or_default();
@@ -437,7 +441,21 @@ impl App {
                 tracing::warn!("could not store the user data: {e}");
             }
         }
-        let baseline: Option<Baseline> = cache.get(BASELINE_KEY).unwrap_or(None);
+        // Instances first: which one is open decides where the named lists, the current list and
+        // the change baseline are read from. An install made before instances existed becomes the
+        // Default instance here, with its settings and lists intact.
+        let store = instances::load(&cache, &data_dir, &settings)?;
+        let mut instance = store.current().cloned().unwrap_or_else(|| store.instances[0].clone());
+        if explicit {
+            // Settings handed in by a test or a tool are the folders to use; the instance follows.
+            instance.locations = settings.locations.clone();
+            instance.launch = settings.launch.clone();
+        } else {
+            settings.locations = instance.locations.clone();
+            settings.launch = instance.launch.clone();
+        }
+        let baseline: Option<Baseline> = cache.get(&instances::baseline_key(&instance.id)).unwrap_or(None);
+        let current_list: Option<String> = cache.get(&instances::current_list_key(&instance.id)).unwrap_or(None).flatten();
         let mut app = App {
             data_dir,
             cache,
@@ -469,14 +487,21 @@ impl App {
             file_active: Vec::new(),
             dds_index: HashMap::new(),
             list_reset: None,
-            current_list: None,
+            current_list,
+            instance,
         };
-        app.current_list = app.cache.get(CURRENT_LIST_KEY).unwrap_or(None);
         app.resolve_locations();
         app.load_databases();
         app.load_cached_weights()?;
         app.reload_dds_index();
         Ok(app)
+    }
+
+    /// Read the state that belongs to the instance now open: which named list is being worked
+    /// on, and what its changes are measured from. Called after switching instance.
+    pub fn adopt_instance_state(&mut self) {
+        self.current_list = self.cache.get::<Option<String>>(&instances::current_list_key(&self.instance.id)).unwrap_or(None).flatten();
+        self.baseline = self.cache.get(&instances::baseline_key(&self.instance.id)).unwrap_or(None);
     }
 
     /// Rebuild the per-mod summary from the manifest table.
@@ -617,7 +642,7 @@ impl App {
     /// would otherwise read as changes a moment later).
     fn store_baseline(&mut self) {
         let b = Baseline::take(&self.mods, &self.workshop_updated, &self.file_active, now());
-        if let Err(e) = self.cache.set(BASELINE_KEY, &b) {
+        if let Err(e) = self.cache.set(&instances::baseline_key(&self.instance.id), &b) {
             tracing::warn!("could not store the mod baseline: {e}");
         }
         if self.baseline.is_none() && self.shallow.is_empty() {
@@ -628,7 +653,7 @@ impl App {
     /// The user has seen the changes: measure from now on.
     pub fn acknowledge_changes(&mut self) {
         let b = Baseline::take(&self.mods, &self.workshop_updated, &self.file_active, now());
-        if let Err(e) = self.cache.set(BASELINE_KEY, &b) {
+        if let Err(e) = self.cache.set(&instances::baseline_key(&self.instance.id), &b) {
             tracing::warn!("could not store the mod baseline: {e}");
         }
         self.baseline = Some(b);
@@ -785,13 +810,15 @@ impl App {
             list_reset: self.list_reset.clone(),
             current_list: self.current_list.clone(),
             named_lists: self.named_lists(),
+            instance: self.instance.clone(),
         }
     }
 
     // ---- named lists ----
 
+    /// Each instance keeps its named lists in a folder of its own.
     pub fn named_dir(&self) -> PathBuf {
-        self.lists_dir().join("named")
+        instances::named_dir_for(&self.data_dir, &self.instance.id)
     }
 
     /// A file name for a list name: the characters no file system takes are replaced.
@@ -824,7 +851,7 @@ impl App {
 
     fn set_current_list(&mut self, name: Option<String>) {
         self.current_list = name;
-        if let Err(e) = self.cache.set(CURRENT_LIST_KEY, &self.current_list) {
+        if let Err(e) = self.cache.set(&instances::current_list_key(&self.instance.id), &self.current_list) {
             tracing::warn!("could not remember the current list: {e}");
         }
     }
@@ -1021,10 +1048,12 @@ impl App {
         modsconfig::resolve_active(&list.package_ids, &self.mods)
     }
 
-    pub fn persist(&self) -> Result<()> {
+    pub fn persist(&mut self) -> Result<()> {
         self.cache.set("settings", &self.settings)?;
         self.cache.set("user", &self.user)?;
-        Ok(())
+        // The folders and launch settings belong to the instance that is open: keep the two in
+        // step so a switch never writes one instance's folders into another.
+        instances::sync_current(self)
     }
 
     /// Where the window was last time, if it was ever closed cleanly.

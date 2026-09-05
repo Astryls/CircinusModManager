@@ -170,6 +170,19 @@ export interface LaunchInfo {
   executableExists: boolean;
   steamInstall: boolean;
   autoResolvesTo: "steam" | "executable";
+  /** The whole command line Play uses, `-savedatafolder` included. */
+  args: string[];
+  /** Where the game will keep its config and saves, when that is not the usual folder. */
+  saveDataFolder: string | null;
+}
+
+/** A named set of folders with its own launch settings and its own named lists. */
+export interface Instance {
+  id: string;
+  name: string;
+  locations: Locations;
+  launch: LaunchSettings;
+  createdAt: number;
 }
 
 export interface Settings {
@@ -311,6 +324,8 @@ export interface Snapshot {
   currentList?: string;
   /** The user's named lists, newest first. */
   namedLists?: NamedList[];
+  /** The instance these folders and lists belong to. */
+  instance?: Instance;
 }
 
 export interface SavedList {

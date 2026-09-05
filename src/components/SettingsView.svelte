@@ -68,7 +68,8 @@
 <main class="scroll">
   <div class="settings">
     <section class="card">
-      <h3>Where RimWorld lives</h3>
+      <h3>Where RimWorld lives <span class="aside">{store.instance?.name ?? ""}</span></h3>
+      <p class="hint">These are the folders of the instance you have open{store.instance ? `, ${store.instance.name}` : ""}. Changing one changes that instance, not the others. <button class="lnk" onclick={() => (store.showInstances = true)}>All instances…</button></p>
       {#each fields as f}
         <div class="loc">
           <div class="lt"><b>{f.label}</b><span>{f.hint}</span></div>
@@ -114,6 +115,9 @@
         <div class="lv"><input class="input mono" value={L?.args ?? ""} placeholder="none" onchange={(e) => updateLaunch({ args: e.currentTarget.value })} /></div>
       </div>
       <label class="switch"><input type="checkbox" checked={L?.saveFirst ?? true} onchange={(e) => updateLaunch({ saveFirst: e.currentTarget.checked })} />Save ModsConfig.xml first when there are unsaved changes</label>
+      {#if launch?.saveDataFolder}
+        <p class="hint">This instance keeps its config and saves in <span class="mono">{launch.saveDataFolder}</span>, so Play starts the game with <span class="mono">-savedatafolder</span>. Without it the game would use the usual folder and rewrite the wrong ModsConfig.xml.</p>
+      {/if}
       <div class="row">
         <button class="btn primary" onclick={() => store.launch()}>{@html I.play}Play now</button>
         <span class="hint">Game installed somewhere unusual? Set the RimWorld folder above, then choose the executable here if it is not found.</span>
