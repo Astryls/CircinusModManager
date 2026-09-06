@@ -321,6 +321,7 @@ jobs:
     env:
       CIRCINUS_BUILD_KEY: ${{ secrets.CIRCINUS_BUILD_KEY }}
       VERSION: ${{ needs.tag.outputs.version }}
+      HAS_APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -334,8 +335,13 @@ jobs:
           path: artifacts
       - name: Push it to circinus.sh
         if: env.CIRCINUS_BUILD_KEY != ''
-        # The version came either from the button or from the tag that started this run.
-        run: node tools/push-build.mjs --version "${VERSION:-${GITHUB_REF_NAME#v}}" --dir artifacts
+        # The version came either from the button or from the tag that started this run. The Mac
+        # note goes on only while there is no Apple certificate to sign with, so it stops being
+        # published the moment one exists rather than when somebody remembers to delete it.
+        run: |
+          mac=""
+          [ "$HAS_APPLE_CERT" = "true" ] || mac="--mac-unsigned"
+          node tools/push-build.mjs --version "${VERSION:-${GITHUB_REF_NAME#v}}" --dir artifacts $mac
       - name: Say why nothing was pushed
         if: env.CIRCINUS_BUILD_KEY == ''
         run: |

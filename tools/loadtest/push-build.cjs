@@ -200,6 +200,27 @@ const make = (name, opts) => { const d = path.join(tmp, name); fs.mkdirSync(d); 
   const { seen } = await run(dir, {}, ['--notes', 'Faster scan — and a fix for “linked” folders.']);
   ok('em dashes and curly quotes are flattened, since the site rejects them', seen.notes === 'Faster scan - and a fix for "linked" folders.', JSON.stringify(seen.notes));
 }
+// The note that saves a Mac user from believing the download is broken. macOS reports an app it
+// cannot check a signature for as "damaged", so the release page has to say otherwise before
+// anyone reads that and deletes it.
+{
+  const { dir } = make('mac-note');
+  const { seen } = await run(dir, {}, ['--notes', 'A fix.', '--mac-unsigned']);
+  ok('an unsigned Mac build says so on the release page', /macOS says it is damaged/.test(seen.notes ?? ''), JSON.stringify(seen.notes));
+  ok('and gives the command that fixes it', /xattr -dr com\.apple\.quarantine/.test(seen.notes ?? ''));
+  ok('without losing what the release was about', /^A fix\./.test(seen.notes ?? ''));
+}
+{
+  const { dir } = make('mac-note-off');
+  const { seen } = await run(dir, {}, ['--notes', 'A fix.']);
+  ok('and nothing is said when the build was signed', seen.notes === 'A fix.', JSON.stringify(seen.notes));
+}
+{
+  // No Mac build in the release, so nothing to warn about even with the flag on.
+  const { dir } = make('mac-note-none', { platforms: ['win'] });
+  const { seen } = await run(dir, {}, ['--notes', 'A fix.', '--mac-unsigned']);
+  ok('nor when there is no Mac build in the release at all', seen.notes === 'A fix.', JSON.stringify(seen.notes));
+}
 {
   const { dir } = make('dry');
   const { out, code, seen } = await run(dir, {}, ['--dry-run']);

@@ -4,6 +4,22 @@ A mod manager for RimWorld with **HALO** — the Harmonized Automated Load Order
 
 Built with Tauri 2 (Rust) and Svelte 5. MIT licensed, clean-room: it shares file formats and database schemas with RimSort/RimPy so mod lists and rules interoperate, but contains none of their code.
 
+## Installing
+
+Downloads are at <https://circinus.sh>.
+
+**Windows** — run the installer.
+
+**Linux** — mark the AppImage executable (`chmod +x`) and run it.
+
+**macOS** — the first time you open it, macOS says the app *"is damaged and can't be opened"*. It is not damaged. That is what macOS says about any app it cannot check an Apple signature for, and this one is not signed yet — signing and notarising need a paid Apple Developer account. Drag the app to Applications, then run this once:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/Circinus Mod Manager.app"
+```
+
+Then open it normally. That command removes the "downloaded from the internet" mark macOS puts on the file; it does not turn off any other protection.
+
 ## Layout
 
 ```
@@ -161,12 +177,20 @@ The columns then stop being the two orders and become **what leaves** and **what
 
 ## Making a release
 
+**Actions → Release → Run workflow**, type the version and what changed, press the button. Nothing runs on your own machine: GitHub sets the version in the three files that carry it, commits, tags, builds the Windows installer, the Mac disk image and update bundle and the Linux AppImage on three machines, and uploads all four to circinus.sh. A Windows installer can only be built on Windows, so no single machine can make the set.
+
+Leaving the version box **empty** builds all three and publishes nothing. That is the rehearsal, and it is the cheapest way to find out that a platform stopped building.
+
+The release commit belongs to the tag rather than to `main`: the tag is the record that a version happened, and pushing a tag carries the commit with it. `main` keeps the version it had, because the version is chosen when a release is cut.
+
+From a terminal instead, if you want the tests to run here first:
+
 ```sh
 node tools/setup-release.mjs    # once per checkout: the workflow, the leftovers, the secrets
-node tools/release.mjs 0.2.0    # every time after that
+node tools/release.mjs 0.2.0    # cuts it, then follows the run
 ```
 
-That writes the version into the three files that carry it, runs the tests, tags it and pushes. The tag is what builds the Windows installer, the Mac disk image and update bundle, and the Linux AppImage, on three machines, and uploads all four files to circinus.sh - a Windows installer can only be built on Windows, so no single machine can make the set. `--local` builds and pushes only the platform you are on, for a one-platform fix; `--dry-run` says what would happen. `docs/update-feed.md` has the whole of it, including what the site refuses and why.
+`--checks-in-ci` skips the local tests and lets the three build jobs be the judge; `--local` builds and pushes only the platform you are on, for a one-platform fix; `--dry-run` says what would happen. `docs/update-feed.md` has the whole of it, including what the site refuses and why.
 
 ## Getting help
 

@@ -11,6 +11,9 @@
 //               a local bundle directory (asked of cargo) and a directory of downloaded CI
 //               artifacts work.
 //   --notes     release notes. Defaults to the annotated tag's message, then to one sentence.
+//   --mac-unsigned  add the note telling Mac users why macOS calls the app damaged. The workflow
+//               passes this whenever the build had no Apple certificate, so it stops appearing
+//               by itself once there is one.
 //   --force     publish without all three platforms. For a single-platform fix, not for a
 //               release that is simply missing a build.
 //   --dry-run   say what would be sent and send nothing.
@@ -178,7 +181,22 @@ const main = async () => {
   }
   if (!uploads.length) die(`Found files under ${dir} but none of them is a release bundle.`);
 
-  const notes = plain(flag("notes") ?? tagNotes(version) ?? `Circinus Mod Manager ${version}.`);
+  // What a Mac user is about to be told, said before they are told it. An app with no Apple
+  // signature is reported by macOS as "damaged and can't be opened", which reads as a broken
+  // download rather than a missing certificate, and someone who believes it deletes the app and
+  // does not come back. The note is added by the workflow only when nothing signed the build, so
+  // the day a certificate exists it stops appearing without anyone remembering to remove it.
+  const macNote = [
+    "",
+    "On macOS this app is not signed with an Apple certificate yet, so the first time you open it",
+    "macOS says it is damaged. It is not. Drag it to Applications, then run this once in Terminal:",
+    "",
+    '  xattr -dr com.apple.quarantine "/Applications/Circinus Mod Manager.app"',
+    "",
+    "and open it as usual."
+  ].join("\n");
+  const saysMac = has("mac-unsigned") && uploads.some((u) => u.platform === "mac");
+  const notes = plain(flag("notes") ?? tagNotes(version) ?? `Circinus Mod Manager ${version}.`) + (saysMac ? `\n${macNote}` : "");
   console.log(`Circinus Mod Manager ${version} -> ${BASE}${dry ? "  (dry run)" : ""}`);
   for (const u of uploads) console.log(`  ${u.platform}/${u.kind}  ${path.basename(u.file)}  ${(u.size / 1048576).toFixed(1)} MB  ${u.signature ? "signed" : "unsigned"}`);
   for (const m of missing) console.log(`  ${m.platform}/${m.kind}  not built: ${m.what} is missing`);
