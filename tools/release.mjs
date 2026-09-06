@@ -4,6 +4,7 @@
 //
 //   node tools/release.mjs 0.2.0            the normal path: three platforms, built by CI
 //   node tools/release.mjs 0.2.0 --dry-run  say what would happen and change nothing
+//   node tools/release.mjs 0.2.0 --notes "..."   the release notes players will read
 //   node tools/release.mjs --local          build this machine's platform and push only that
 //   node tools/release.mjs --setup          wire this checkout up to release (tools/setup-release.mjs)
 //
@@ -21,6 +22,10 @@ const BASE = process.env.CIRCINUS_BASE ?? "https://circinus.sh";
 
 const args = process.argv.slice(2);
 const has = (f) => args.includes(`--${f}`);
+const flag = (f) => {
+  const i = args.indexOf(`--${f}`);
+  return i >= 0 && args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : null;
+};
 const dry = has("dry-run");
 const version = args.find((a) => !a.startsWith("--")) ?? null;
 
@@ -154,11 +159,19 @@ async function cut(v) {
   run("npm", ["run", "build"]);
   run("node", ["tools/loadtest/push-build.cjs"]);
 
+  // The tag's message becomes the release notes: what the download page shows and what the app
+  // puts in the update banner. Left to itself that is the version number, which tells a player
+  // nothing about whether to take the update.
+  const notes = (flag("notes") ?? `Circinus Mod Manager ${v}`).replace(/[—–]/g, "-").replace(/[‘’]/g, "'").replace(/[“”]/g, '"');
+  if (!flag("notes")) {
+    say(`\nNo release notes given, so they will read "${notes}".`);
+    say("Pass --notes \"what changed, in a sentence or two\" to say something a player can act on.");
+  }
   say("\nTagging:");
   run("git", ["add", "-A"]);
   run("git", ["-c", "user.name=Circinus", "-c", "user.email=noreply@circinus.sh", "commit", "-m", `Circinus Mod Manager ${v}`]);
-  // An annotated tag, because its message becomes the release notes on the site and in the app.
-  run("git", ["tag", "-a", tag, "-m", `Circinus Mod Manager ${v}`]);
+  // An annotated tag, because its message is what tools/push-build.mjs sends as the notes.
+  run("git", ["tag", "-a", tag, "-m", notes]);
   run("git", ["push", "origin", branch]);
   run("git", ["push", "origin", tag]);
   if (dry) return say("\nDry run: nothing was changed, committed or pushed.");
