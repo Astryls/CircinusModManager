@@ -10,9 +10,15 @@
 # Linux box: `macos-latest` is Apple Silicon and `ubuntu-22.04` is Linux, and the three jobs
 # below are what makes the set that circinus.sh takes.
 #
-# Push a tag (`v0.2.0`) to build, push to circinus.sh and draft a GitHub release; or run it by
-# hand from the Actions tab to get all three as artifacts, publishing nothing. Do that first,
-# before the first tag: it is the cheapest way to find out that a platform does not build.
+# There are three ways in, and the first is the one to use:
+#
+#   Actions -> Release -> Run workflow, type a version    releases it, start to finish
+#   Actions -> Release -> Run workflow, leave it empty    builds all three, publishes nothing
+#   push a tag (`v0.2.0`)                                 releases it, from a terminal
+#
+# The empty one is a rehearsal and costs nothing but minutes. Do it before the first release of
+# a version that changed the build: it is the cheapest way to find out that a platform no longer
+# compiles.
 
 name: Release
 
@@ -20,12 +26,66 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. 1.0.1. Leave empty to build all three and publish nothing."
+        required: false
+        default: ""
+      notes:
+        description: "What changed, in a sentence or two. Players read this on the download page and in the update banner."
+        required: false
+        default: ""
 
 permissions:
   contents: write
 
 jobs:
+  # Given a version, do what a person would have done at a terminal before pushing a tag: set it
+  # in the three files that carry it, commit, tag, push. tools/release.mjs is that work and has
+  # the guards on it -- a version that is not newer than the last one, a tag that already exists,
+  # a version the three files disagree about -- so this runs that rather than a second copy of it
+  # written in YAML. The jobs below then build the commit it made.
+  #
+  # A tag pushed by a workflow does not start another workflow run, which is what we want here:
+  # this run carries on and builds it, instead of a second run starting from the tag.
+  tag:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.version != '' }}
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.cut.outputs.version }}
+      sha: ${{ steps.cut.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # so it can see the last tag and refuse to go backwards
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # Only so that `cargo update --workspace` can follow Cargo.toml's new version into
+      # Cargo.lock. Without it the tagged commit carries a lock that disagrees with the manifest
+      # beside it, which costs nothing until the day something builds with --locked and the only
+      # commit that fails is the one every release is cut from.
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Set the version, commit and tag
+        id: cut
+        env:
+          VERSION: ${{ inputs.version }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          set -e
+          if [ -n "$NOTES" ]; then
+            node tools/release.mjs "$VERSION" --tag-only --notes "$NOTES"
+          else
+            node tools/release.mjs "$VERSION" --tag-only
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: tag
+    # `tag` is skipped for a tag push and for a rehearsal, and a skipped job must not take the
+    # builds down with it. Only its failing does that.
+    if: ${{ !cancelled() && needs.tag.result != 'failure' }}
     strategy:
       fail-fast: false
       matrix:
@@ -42,7 +102,10 @@ jobs:
     name: ${{ matrix.target }}
 
     steps:
+      # The commit the tag job just made, when there was one; otherwise whatever started this run.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.sha || github.sha }}
 
       # Tauri's Linux prerequisites. 22.04 is deliberate: the AppImage links against the glibc
       # of the machine that built it, so building on the oldest distribution we support is what
@@ -171,16 +234,20 @@ jobs:
   # on GitHub. tools/push-build.mjs is the whole interface and refuses before it sends anything
   # that would publish a build the updater cannot install.
   publish:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [tag, build]
+    # A release happens when a tag was pushed, or when this run made one. A rehearsal made
+    # neither, and stops here with three artifacts and nothing published.
+    if: ${{ !cancelled() && needs.build.result == 'success' && (startsWith(github.ref, 'refs/tags/') || needs.tag.outputs.version != '') }}
     runs-on: ubuntu-latest
     # At the job level so the steps below can ask whether the key exists: a step's own `env` is
     # not in scope for its own `if`.
     env:
       CIRCINUS_BUILD_KEY: ${{ secrets.CIRCINUS_BUILD_KEY }}
+      VERSION: ${{ needs.tag.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ needs.tag.outputs.sha || github.sha }}
           fetch-depth: 0 # the tag's own message becomes the release notes
       - uses: actions/setup-node@v4
         with:
@@ -190,7 +257,8 @@ jobs:
           path: artifacts
       - name: Push it to circinus.sh
         if: env.CIRCINUS_BUILD_KEY != ''
-        run: node tools/push-build.mjs --version "${GITHUB_REF_NAME#v}" --dir artifacts
+        # The version came either from the button or from the tag that started this run.
+        run: node tools/push-build.mjs --version "${VERSION:-${GITHUB_REF_NAME#v}}" --dir artifacts
       - name: Say why nothing was pushed
         if: env.CIRCINUS_BUILD_KEY == ''
         run: |
@@ -200,8 +268,8 @@ jobs:
           echo "to the draft release below."
 
   draft:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [tag, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' && (startsWith(github.ref, 'refs/tags/') || needs.tag.outputs.version != '') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -210,6 +278,10 @@ jobs:
       - name: Draft the release
         uses: softprops/action-gh-release@v2
         with:
+          # Named explicitly: on a tag push this run is already at the tag, but a run started
+          # from the button is on a branch, and a release drafted against a branch name is not
+          # attached to the version anyone is looking for.
+          tag_name: ${{ needs.tag.outputs.version && format('v{0}', needs.tag.outputs.version) || github.ref_name }}
           draft: true
           generate_release_notes: true
           files: artifacts/**/*

@@ -8,6 +8,12 @@
 //   node tools/release.mjs --local          build this machine's platform and push only that
 //   node tools/release.mjs --setup          wire this checkout up to release (tools/setup-release.mjs)
 //   node tools/release.mjs 0.2.0 --checks-in-ci   do not run the tests here; let CI run them
+//   node tools/release.mjs 0.2.0 --tag-only  set the version, commit, tag, push, and stop
+//
+// The easiest way to release is not to run this at all: Actions -> Release -> Run workflow, type
+// the version, press the button. That runs this with --tag-only on GitHub's machine and then
+// builds and publishes in the same run. This script by hand is for when you want the checks to
+// run here first, or want to watch it from a terminal.
 //
 // `--checks-in-ci` is for when this machine cannot get through a test that has nothing to do
 // with the release. CI runs the same tests on Windows, macOS and Linux before it builds
@@ -163,7 +169,13 @@ async function preflight() {
 
 async function cut(v) {
   if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(v)) die(`"${v}" is not a version. Use 0.2.0, or 0.3.0-beta.1 for a pre-release.`);
-  if (!dry) await preflight();
+  // `--tag-only` is this same script running inside the workflow, doing the half a release
+  // needs before there is anything to build: set the version, commit, tag, push. Everything
+  // after that is the workflow's own jobs, so it stops there. It skips preflight because
+  // preflight asks whether the workflow is in place and its secrets are set, which is a strange
+  // question to ask from inside a run of that workflow using those secrets.
+  const inCi = has("tag-only");
+  if (!dry && !inCi) await preflight();
 
   // Nothing half-finished, and nothing that only exists on this machine.
   const status = capture("git", ["status", "--porcelain"]).stdout.trim();
@@ -188,7 +200,9 @@ async function cut(v) {
   // there costs a version number. But when the only thing failing is this machine's platform,
   // waiting on it means the release cannot happen at all, and CI is the better judge anyway:
   // it runs the same tests on three machines instead of one.
-  if (has("checks-in-ci")) {
+  if (inCi) {
+    say("\nChecks: the three build jobs in this run do them, on the platform each one ships.");
+  } else if (has("checks-in-ci")) {
     say("\nChecks: skipped here at your asking. CI runs cargo test and npm run check on all three");
     say("platforms before it builds anything, and publishes nothing unless they pass. If they fail");
     say(`there, ${tag} is spent: no build goes out under it and the next attempt needs a new number.`);
@@ -222,6 +236,10 @@ async function cut(v) {
   run("git", ["push", "origin", branch]);
   run("git", ["push", "origin", tag]);
   if (dry) return say("\nDry run: nothing was changed, committed or pushed.");
+  // Inside the workflow there is nothing left to say: the jobs that build and publish are the
+  // rest of the run this is part of, and a tag pushed by a workflow deliberately does not start
+  // a second one.
+  if (inCi) return say(`\n${tag} is pushed at ${capture("git", ["rev-parse", "HEAD"]).stdout.trim()}.`);
 
   say(`\n${tag} is pushed. Three machines are now building it:`);
   say("  Windows  the NSIS installer");
