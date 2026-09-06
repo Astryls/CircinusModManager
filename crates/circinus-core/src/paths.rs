@@ -36,7 +36,7 @@ impl Locations {
             }
         }
         if loc.game_dir.is_none() {
-            loc.game_dir = fallback_game_dirs().into_iter().find(|p| p.join("Version.txt").is_file());
+            loc.game_dir = fallback_game_dirs().into_iter().map(|p| game_root(&p)).find(|p| p.join("Version.txt").is_file());
             // A game folder inside a Steam library has its Workshop content two folders over.
             loc.workshop_dir = loc.game_dir.as_deref().and_then(workshop_dir_for_game);
         }
@@ -78,8 +78,10 @@ impl Locations {
             .unwrap_or_default()
     }
 
+    /// Whether the game folder is one. Asked of the resolved root, so a Mac player who could
+    /// only pick the folder the bundle sits in is not told their choice is wrong.
     pub fn is_usable(&self) -> bool {
-        self.game_dir.as_ref().map(|g| g.join("Version.txt").is_file()).unwrap_or(false)
+        self.game_dir.as_ref().map(|g| game_root(g).join("Version.txt").is_file()).unwrap_or(false)
     }
 }
 
@@ -93,14 +95,12 @@ pub fn is_steam_install(game: &Path) -> bool {
 /// bundle on macOS, `RimWorldLinux` (or the launcher script) on Linux. None when nothing
 /// recognisable is there (a GOG or DRM-free copy still uses these names).
 pub fn detect_executable(game: &Path) -> Option<PathBuf> {
-    if cfg!(target_os = "macos") {
-        if game.extension().map(|e| e == "app").unwrap_or(false) {
-            return Some(game.to_path_buf());
-        }
-        return std::fs::read_dir(game).ok()?.filter_map(|e| e.ok()).map(|e| e.path()).find(|p| p.extension().map(|e| e == "app").unwrap_or(false));
+    let root = game_root(game);
+    if root.extension().map(|e| e == "app").unwrap_or(false) {
+        return Some(root);
     }
     let names: &[&str] = if cfg!(target_os = "windows") { &["RimWorldWin64.exe", "RimWorldWin.exe", "RimWorld.exe"] } else { &["RimWorldLinux", "RimWorldLinux.x86_64", "start_RimWorld.sh"] };
-    names.iter().map(|n| game.join(n)).find(|p| p.is_file())
+    names.iter().map(|n| root.join(n)).find(|p| p.is_file())
 }
 
 /// Split a command line the way a shell would for simple cases: whitespace separates,
@@ -133,22 +133,72 @@ pub fn split_args(s: &str) -> Vec<String> {
     out
 }
 
-/// On macOS the game is an app bundle; Data/ and Mods/ live inside it.
-pub fn data_dir_for_game(game: &Path) -> PathBuf {
-    let inside = game.join("Contents").join("Resources").join("Data");
-    if cfg!(target_os = "macos") && inside.is_dir() {
-        inside
-    } else {
-        game.join("Data")
+/// The folder the game really is, given whatever the user was able to choose.
+///
+/// On macOS RimWorld is `RimWorldMac.app`, and the Finder treats a `.app` as a file rather than
+/// a folder: a folder picker will not let anyone select one or look inside it. So the best a Mac
+/// player can do is choose the folder the bundle sits in -- which is not the game, and nothing
+/// under it holds Data or Mods. A folder holding exactly one `.app` therefore means that `.app`.
+///
+/// Not written as a macOS-only branch, although only macOS has app bundles. A rule that runs
+/// nowhere but the platform we cannot run the tests on is a rule nobody checks; this one is
+/// harmless where `.app` folders do not exist, and provable everywhere.
+pub fn game_root(game: &Path) -> PathBuf {
+    if game.extension().map(|e| e == "app").unwrap_or(false) {
+        return game.to_path_buf();
+    }
+    // A folder that is already the game is left alone, whatever else is in it.
+    if game.join("Version.txt").is_file() {
+        return game.to_path_buf();
+    }
+    let Ok(entries) = std::fs::read_dir(game) else { return game.to_path_buf() };
+    let apps: Vec<PathBuf> = entries.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.is_dir() && p.extension().map(|e| e == "app").unwrap_or(false)).collect();
+    match apps.len() {
+        1 => apps.into_iter().next().unwrap_or_else(|| game.to_path_buf()),
+        // More than one: prefer the one that looks like RimWorld rather than guessing, and if
+        // that does not single one out, leave the folder alone. A wrong game folder is worse
+        // than none, because none of it says so.
+        _ => apps.into_iter().find(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase().starts_with("rimworld")).unwrap_or(false)).unwrap_or_else(|| game.to_path_buf()),
     }
 }
 
-pub fn mods_dir_for_game(game: &Path) -> PathBuf {
-    let inside = game.join("Contents").join("Resources").join("Mods");
-    if cfg!(target_os = "macos") && (inside.is_dir() || game.extension().map(|e| e == "app").unwrap_or(false)) {
+/// Where the game's own content lives: the folder holding Core and the DLC.
+///
+/// Both places are tried and the one that is really there wins, because the layout differs and
+/// guessing it by platform got this wrong. On macOS `Contents/Resources/Data` exists too -- it
+/// is Unity's, full of engine assets -- so preferring it by name pointed Circinus at a folder
+/// that has no Core in it, which is exactly what "cannot see Core and the DLCs" looks like.
+/// Core is the thing that tells the two apart, so Core is what is looked for.
+pub fn data_dir_for_game(game: &Path) -> PathBuf {
+    let root = game_root(game);
+    let beside = root.join("Data");
+    let inside = root.join("Contents").join("Resources").join("Data");
+    if beside.join("Core").is_dir() {
+        beside
+    } else if inside.join("Core").is_dir() {
+        inside
+    } else if beside.is_dir() {
+        beside
+    } else if inside.is_dir() {
         inside
     } else {
-        game.join("Mods")
+        beside
+    }
+}
+
+/// Where mods the player installed by hand live. Same two candidates, same rule: whichever is
+/// really there, and the one beside the bundle when neither is (that is where the Finder's
+/// "Show Package Contents" leads, and where every Mac instruction for installing a mod says).
+pub fn mods_dir_for_game(game: &Path) -> PathBuf {
+    let root = game_root(game);
+    let beside = root.join("Mods");
+    let inside = root.join("Contents").join("Resources").join("Mods");
+    if beside.is_dir() {
+        beside
+    } else if inside.is_dir() {
+        inside
+    } else {
+        beside
     }
 }
 
@@ -157,15 +207,9 @@ fn detect_steam() -> Option<(PathBuf, PathBuf)> {
     let (app, library) = steam.find_app(RIMWORLD_APP_ID).ok().flatten()?;
     let game = library.resolve_app_dir(&app);
     let workshop = library.path().join("steamapps").join("workshop").join("content").join(RIMWORLD_APP_ID.to_string());
-    let game = if cfg!(target_os = "macos") {
-        // Steam installs `RimWorldMac.app` inside the app dir.
-        std::fs::read_dir(&game)
-            .ok()
-            .and_then(|rd| rd.filter_map(|e| e.ok()).map(|e| e.path()).find(|p| p.extension().map(|e| e == "app").unwrap_or(false)))
-            .unwrap_or(game)
-    } else {
-        game
-    };
+    // Steam installs `RimWorldMac.app` inside the app dir; `game_root` steps into it there and
+    // changes nothing anywhere else.
+    let game = game_root(&game);
     Some((game, workshop))
 }
 
@@ -245,10 +289,12 @@ fn detect_from_library_files() -> Option<(PathBuf, PathBuf)> {
         }
     }
     for lib in libraries {
-        let game = lib.join("steamapps").join("common").join("RimWorld");
-        let game = if cfg!(target_os = "macos") { std::fs::read_dir(&game).ok().and_then(|rd| rd.filter_map(|e| e.ok()).map(|e| e.path()).find(|p| p.extension().map(|e| e == "app").unwrap_or(false))).unwrap_or(game) } else { game };
-        let is_game = if cfg!(target_os = "macos") { game.extension().map(|e| e == "app").unwrap_or(false) } else { game.join("Version.txt").is_file() };
-        if is_game {
+        // `game_root` steps into the bundle on macOS and leaves the folder alone everywhere
+        // else, so the same two lines are right on all three platforms -- and "is this the game"
+        // is answered by Version.txt being there rather than by a file extension, which is a
+        // guess that a folder named `Anything.app` would satisfy.
+        let game = game_root(&lib.join("steamapps").join("common").join("RimWorld"));
+        if game.join("Version.txt").is_file() {
             let workshop = lib.join("steamapps").join("workshop").join("content").join(RIMWORLD_APP_ID.to_string());
             return Some((game, workshop));
         }
@@ -314,6 +360,105 @@ pub fn default_config_dir() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Build a Mac install: the folder Steam makes, with the bundle inside it. Both Data folders
+    /// are created, because both are really there -- `Contents/Resources/Data` is Unity's, and
+    /// mistaking it for the game's is what hid Core.
+    fn mac_install(root: &std::path::Path) -> PathBuf {
+        let app = root.join("RimWorldMac.app");
+        std::fs::create_dir_all(app.join("Data").join("Core")).unwrap();
+        std::fs::create_dir_all(app.join("Data").join("Royalty")).unwrap();
+        std::fs::create_dir_all(app.join("Mods")).unwrap();
+        std::fs::create_dir_all(app.join("Contents").join("Resources").join("Data")).unwrap();
+        std::fs::create_dir_all(app.join("Contents").join("MacOS")).unwrap();
+        std::fs::write(app.join("Version.txt"), "1.6.4530 rev1235").unwrap();
+        app
+    }
+
+    /// A Mac player cannot choose the `.app`: the Finder treats it as a file, so the folder
+    /// picker offers only the folder it sits in. That folder has to work.
+    #[test]
+    fn the_folder_a_mac_player_can_actually_pick_is_the_game() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outer = tmp.path().join("common").join("RimWorld");
+        let app = mac_install(&outer);
+
+        assert_eq!(game_root(&outer), app, "the folder holding the bundle means the bundle");
+        assert_eq!(game_root(&app), app, "and the bundle itself still means itself");
+
+        let loc = Locations { game_dir: Some(outer.clone()), ..Default::default() };
+        assert!(loc.is_usable(), "Version.txt is inside the bundle, so looking beside it found nothing");
+        assert_eq!(crate::game::GameVersion::read(&outer).map(|v| v.major_minor), Some("1.6".into()));
+        assert_eq!(detect_executable(&outer), Some(app.clone()));
+    }
+
+    /// Unity keeps its own Data inside the bundle. Preferring it by name pointed Circinus at
+    /// engine assets and left the player with no Core and no DLC, which is the report.
+    #[test]
+    fn core_is_found_in_the_games_data_and_not_in_unitys() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outer = tmp.path().join("RimWorld");
+        let app = mac_install(&outer);
+
+        for picked in [&outer, &app] {
+            let data = data_dir_for_game(picked);
+            assert_eq!(data, app.join("Data"), "picked {picked:?}");
+            assert!(data.join("Core").is_dir(), "Core has to be in the folder we point at");
+            assert!(data.join("Royalty").is_dir());
+            assert_eq!(mods_dir_for_game(picked), app.join("Mods"));
+        }
+
+        // And through Locations, which is how the rest of the app asks.
+        let mut loc = Locations { game_dir: Some(outer.clone()), ..Default::default() };
+        loc.fill_derived();
+        assert_eq!(loc.data_dir(), Some(app.join("Data")));
+        assert_eq!(loc.local_mods_dir, Some(app.join("Mods")));
+    }
+
+    /// The Windows and Linux shape, unchanged: Data and Mods sit beside Version.txt.
+    #[test]
+    fn a_plain_game_folder_is_left_alone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let game = tmp.path().join("RimWorld");
+        std::fs::create_dir_all(game.join("Data").join("Core")).unwrap();
+        std::fs::create_dir_all(game.join("Mods")).unwrap();
+        std::fs::write(game.join("Version.txt"), "1.6.4530 rev1235").unwrap();
+
+        assert_eq!(game_root(&game), game);
+        assert_eq!(data_dir_for_game(&game), game.join("Data"));
+        assert_eq!(mods_dir_for_game(&game), game.join("Mods"));
+        assert!(Locations { game_dir: Some(game.clone()), ..Default::default() }.is_usable());
+    }
+
+    /// A folder holding a game and something else's bundle is not guessed at twice over.
+    #[test]
+    fn two_bundles_are_not_guessed_between() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outer = tmp.path().join("games");
+        let app = mac_install(&outer);
+        std::fs::create_dir_all(outer.join("Something Else.app").join("Contents")).unwrap();
+        assert_eq!(game_root(&outer), app, "the one called RimWorld is the one meant");
+
+        // Neither of them named RimWorld: leave the folder alone rather than pick one. A wrong
+        // game folder is worse than none, because none of it says so.
+        let other = tmp.path().join("two");
+        std::fs::create_dir_all(other.join("A.app")).unwrap();
+        std::fs::create_dir_all(other.join("B.app")).unwrap();
+        assert_eq!(game_root(&other), other);
+    }
+
+    /// A folder that is already the game wins over anything sitting in it, so an install that
+    /// happens to contain a bundle is not redirected into it.
+    #[test]
+    fn a_folder_with_version_txt_is_the_game_whatever_else_is_in_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let game = tmp.path().join("RimWorld");
+        std::fs::create_dir_all(game.join("Data").join("Core")).unwrap();
+        std::fs::create_dir_all(game.join("Tools.app")).unwrap();
+        std::fs::write(game.join("Version.txt"), "1.6.4530 rev1235").unwrap();
+        assert_eq!(game_root(&game), game);
+        assert_eq!(data_dir_for_game(&game), game.join("Data"));
+    }
 
     #[test]
     fn splits_arguments() {

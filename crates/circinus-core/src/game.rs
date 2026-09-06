@@ -22,8 +22,10 @@ impl GameVersion {
         Some(GameVersion { major_minor: format!("{major}.{minor}"), full })
     }
 
+    /// Read from the folder the game really is: on macOS a player can only pick the folder the
+    /// `.app` sits in, and Version.txt is inside the bundle.
     pub fn read(game_dir: &Path) -> Option<GameVersion> {
-        std::fs::read_to_string(game_dir.join("Version.txt")).ok().and_then(|t| GameVersion::parse(&t))
+        std::fs::read_to_string(crate::paths::game_root(game_dir).join("Version.txt")).ok().and_then(|t| GameVersion::parse(&t))
     }
 
     pub fn fallback(major_minor: &str) -> GameVersion {

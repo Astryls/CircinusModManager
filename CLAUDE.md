@@ -76,6 +76,13 @@ without one manual reinstall for everyone, since an app carries the public key i
   one. Sorting `visibleActive` rather than the sections is what makes "by phase" sort within each
   section for free, since `layout` builds sections by filtering. Dragging is refused while
   sorted — a drop between two rows of a list sorted by name writes a position nobody chose.
+- macOS paths: RimWorld is `RimWorldMac.app`, and the Finder treats a `.app` as a file, so a
+  folder picker only ever offers the folder it sits in. `paths::game_root` resolves that folder
+  to the bundle, and everything (Version.txt, Data, Mods, the executable, Steam detection) asks
+  through it. The game's Data is `<app>/Data`, holding Core and the DLC; `Contents/Resources/Data`
+  is Unity's and preferring it by name is what hid Core. Both candidates are tried and the one
+  with Core in it wins. None of this is behind `cfg!(target_os = "macos")` on purpose: a rule
+  that only runs where the tests cannot is a rule nobody checks.
 - `defs`: builds the document the game builds — every active mod's Defs merged in load order,
   every PatchOperation applied in load order, then Name/ParentName inheritance — with the origin
   of every node recorded, so "who wins this value" has an answer. `defs::xpath` is XPath 1.0 as
