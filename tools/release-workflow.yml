@@ -163,9 +163,33 @@ jobs:
           echo "BUNDLE_DIR=$dir/release/bundle" >> "$GITHUB_ENV"
           echo "bundles will be under $dir/release/bundle"
 
-      - name: Tests
+      # Compiling the tests and running them are separate steps because they are separate costs
+      # and one of them is nearly all of it. On Windows this pair took 35 minutes with nothing
+      # cached, which is longer than building the installer, and a single step could not say
+      # which half to do anything about.
+      #
+      # Two settings, here rather than in Cargo.toml, so a local `cargo test` is unaffected:
+      #   CARGO_INCREMENTAL       incremental compilation exists to reuse the last build, and a
+      #                           fresh runner has no last build. It only writes files nobody
+      #                           reads, and they go into the cache afterwards.
+      #   CARGO_PROFILE_DEV_DEBUG line tables instead of full debug info. Panics still name the
+      #                           file and line, which is all a test failure needs from a
+      #                           backtrace; the rest is for a debugger nobody attaches here,
+      #                           and on Windows generating it is slow.
+      - name: Compile the tests
+        env:
+          CARGO_INCREMENTAL: 0
+          CARGO_PROFILE_DEV_DEBUG: 1
+        run: cargo test --workspace --no-run
+
+      - name: Run the tests
+        env:
+          CARGO_INCREMENTAL: 0
+          CARGO_PROFILE_DEV_DEBUG: 1
+        run: cargo test --workspace
+
+      - name: Check the front end
         run: |
-          cargo test --workspace
           npm run check
           node tools/loadtest/release-args.mjs
 
