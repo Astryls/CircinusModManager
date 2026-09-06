@@ -20,7 +20,7 @@
 
   type Key = keyof Locations;
   const fields: { key: Key; label: string; hint: string }[] = [
-    { key: "gameDir", label: "RimWorld folder", hint: "Has Version.txt and Data in it. On macOS: the RimWorldMac.app bundle" },
+    { key: "gameDir", label: "RimWorld folder", hint: "Has Version.txt and Data in it. On macOS pick the folder RimWorldMac.app sits in - the Finder will not let you choose the bundle itself, and Circinus looks inside it" },
     { key: "configDir", label: "Config folder", hint: "Has ModsConfig.xml in it. A folder of its own is what gives this instance its own saves" },
     { key: "localModsDir", label: "Local mods folder", hint: "Usually RimWorld/Mods. SteamCMD downloads go here" },
     { key: "workshopDir", label: "Workshop folder", hint: "steamapps/workshop/content/294100" }
