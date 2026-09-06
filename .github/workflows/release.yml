@@ -74,6 +74,7 @@ jobs:
         run: |
           cargo test --workspace
           npm run check
+          node tools/loadtest/release-args.mjs
 
       # macOS: an unsigned helper inside a signed .app fails notarization, so the scanner has to
       # be signed too. Tauri signs everything in the bundle when these are set; without them the

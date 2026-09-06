@@ -41,18 +41,31 @@ const die = (m) => {
   process.exit(1);
 };
 
+/**
+ * Windows cannot start npm or gh without a shell: they are `.cmd` files, and Node refuses to
+ * execute one directly. But a shell means the arguments stop being a list and become a string
+ * the shell splits again on spaces, so `-m Circinus Mod Manager 1.0.0` arrives as four arguments
+ * and git reads three of them as pathspecs. Everything else here is a real `.exe` and needs no
+ * shell, so it does not get one; what does get one gets its arguments quoted for it.
+ */
+const NEEDS_SHELL = new Set(["npm", "npx", "gh"]);
+const shelled = (cmd) => process.platform === "win32" && NEEDS_SHELL.has(cmd);
+/** Quote one argument the way cmd.exe will take it back apart into exactly what was meant. */
+const quote = (a) => (/[\s"^&|<>()%!]/.test(a) ? `"${a.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, "$1$1")}"` : a);
+const forShell = (cmd, a) => (shelled(cmd) ? a.map(quote) : a);
+
 /** Run a command where the user can see it, and stop the release if it fails. */
 function run(cmd, cmdArgs, { allowFail = false, quiet = false } = {}) {
   if (dry) {
-    say(`  would run: ${cmd} ${cmdArgs.join(" ")}`);
+    say(`  would run: ${cmd} ${cmdArgs.map(quote).join(" ")}`);
     return { ok: true, out: "" };
   }
-  const r = spawnSync(cmd, cmdArgs, { cwd: ROOT, encoding: "utf8", stdio: quiet ? "pipe" : "inherit", shell: process.platform === "win32" });
+  const r = spawnSync(cmd, forShell(cmd, cmdArgs), { cwd: ROOT, encoding: "utf8", stdio: quiet ? "pipe" : "inherit", shell: shelled(cmd) });
   const out = (r.stdout ?? "") + (r.stderr ?? "");
-  if (r.status !== 0 && !allowFail) die(`${cmd} ${cmdArgs.join(" ")} failed.${quiet ? `\n${out}` : ""}`);
+  if (r.status !== 0 && !allowFail) die(`${cmd} ${cmdArgs.map(quote).join(" ")} failed.${quiet ? `\n${out}` : ""}`);
   return { ok: r.status === 0, out: out.trim() };
 }
-const capture = (cmd, cmdArgs) => spawnSync(cmd, cmdArgs, { cwd: ROOT, encoding: "utf8", shell: process.platform === "win32" });
+const capture = (cmd, cmdArgs) => spawnSync(cmd, forShell(cmd, cmdArgs), { cwd: ROOT, encoding: "utf8", shell: shelled(cmd) });
 const have = (cmd) => capture(process.platform === "win32" ? "where" : "which", [cmd]).status === 0;
 
 /** Semver, only as far as this needs it: is `a` newer than `b`? */
@@ -66,18 +79,28 @@ function newer(a, b) {
 
 /** The three files that carry the version, and Cargo.lock which follows them. */
 async function setVersion(v) {
+  // Each is the place the version is written and a way to recognise it: the pattern says whether
+  // this file has a version at all, and the group inside it is the number. Keeping those two
+  // questions apart is what lets a re-run tell "already done" from "not found", which are the
+  // same edit and opposite problems.
   const edits = [
-    ["package.json", (s) => s.replace(/("version":\s*")[^"]+(")/, `$1${v}$2`)],
-    ["src-tauri/tauri.conf.json", (s) => s.replace(/("version":\s*")[^"]+(")/, `$1${v}$2`)],
-    ["Cargo.toml", (s) => s.replace(/(\[workspace\.package\][\s\S]*?\nversion\s*=\s*")[^"]+(")/, `$1${v}$2`)]
+    ["package.json", /("version":\s*")([^"]+)(")/],
+    ["src-tauri/tauri.conf.json", /("version":\s*")([^"]+)(")/],
+    ["Cargo.toml", /(\[workspace\.package\][\s\S]*?\nversion\s*=\s*")([^"]+)(")/]
   ];
-  for (const [file, edit] of edits) {
+  for (const [file, pattern] of edits) {
     const p = path.join(ROOT, file);
     const before = await readFile(p, "utf8");
-    const after = edit(before);
-    if (before === after) die(`Could not find the version in ${file}. It is written in three places and all three have to agree; set it by hand and run again.`);
-    if (!dry) await writeFile(p, after);
-    say(`  ${file} -> ${v}`);
+    const found = before.match(pattern);
+    if (!found) die(`Could not find the version in ${file}. It is written in three places and all three have to agree; set it by hand and run again.`);
+    // A re-run after something later failed finds its own earlier work here. That is not an
+    // error and saying it is leaves the run stuck with nothing it can fix.
+    if (found[2] === v) {
+      say(`  ${file} already ${v}`);
+      continue;
+    }
+    if (!dry) await writeFile(p, before.replace(pattern, `$1${v}$3`));
+    say(`  ${file} ${found[2]} -> ${v}`);
   }
   // Cargo.lock carries the workspace crates' own versions. If this cannot run, the next build
   // updates the lock itself, which is harmless as long as nothing builds with --locked.
@@ -177,6 +200,11 @@ async function cut(v) {
     run("npm", ["run", "build"]);
     run("node", ["tools/loadtest/push-build.cjs"]);
   }
+  // This one runs either way: it is a check on the release machinery itself rather than on the
+  // app, it takes a second, and skipping it would skip the test for the bug that made this flag
+  // necessary.
+  run("node", ["tools/loadtest/release-args.mjs"], { quiet: true });
+  say("  the release's own command lines hold together");
 
   // The tag's message becomes the release notes: what the download page shows and what the app
   // puts in the update banner. Left to itself that is the version number, which tells a player
@@ -248,4 +276,10 @@ const main = async () => {
   await cut(version.replace(/^v/, ""));
 };
 
-main().catch((e) => die(e?.stack ?? String(e)));
+// Run when invoked, importable when tested: the argument quoting below is the reason 1.0.0 did
+// not get tagged the first time, and a rule that decides how a command line is built deserves a
+// test that does not involve cutting a release to find out.
+export { quote, forShell, newer };
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((e) => die(e?.stack ?? String(e)));
+}
