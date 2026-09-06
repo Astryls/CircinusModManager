@@ -685,6 +685,9 @@ export const PHASES: { id: Phase; name: string; color: string; note: string }[] 
   { id: "optimization", name: "Performance", color: "coral", note: "Load last to see everything" }
 ];
 
+/** Where players ask for help and report a mod sorted somewhere odd. */
+export const DISCORD = "https://discord.gg/JvsdeBw897";
+
 export const SOURCE_LABEL: Record<Source, string> = { ludeon: "Ludeon", workshop: "Steam", local: "Local", steamcmd: "SteamCMD", git: "Git" };
 export const SOURCE_GLYPH: Record<Source, string> = { ludeon: "L", workshop: "S", local: "F", steamcmd: "C", git: "G" };
 

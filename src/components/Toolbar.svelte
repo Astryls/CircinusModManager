@@ -60,8 +60,8 @@
   {/if}
   {#if store.splitMode === "library" || (!store.splitMode && store.tab !== "inactive")}
     <div class="seg arr" role="radiogroup" aria-label="Arrangement">
-      <button role="radio" class:on={!store.byPhase} aria-checked={!store.byPhase} title="The list exactly as ModsConfig.xml has it, top to bottom" onclick={() => store.byPhase && store.setByPhase(false)}>Load order</button>
-      <button role="radio" class:on={store.byPhase} aria-checked={store.byPhase} title="The same mods, gathered under the phase HALO files them in" onclick={() => !store.byPhase && store.setByPhase(true)}>By phase</button>
+      <button role="radio" class:on={!store.byPhase} aria-checked={!store.byPhase} title="The list exactly as ModsConfig.xml has it, top to bottom" onclick={() => store.byPhase && store.setByPhase(false)}><span class="lg">Load order</span><span class="sm">Order</span></button>
+      <button role="radio" class:on={store.byPhase} aria-checked={store.byPhase} title="The same mods, gathered under the phase HALO files them in" onclick={() => !store.byPhase && store.setByPhase(true)}><span class="lg">By phase</span><span class="sm">Phase</span></button>
     </div>
   {/if}
   <button class="btn split" class:on={store.splitMode === "library"} aria-pressed={store.splitMode === "library"} onclick={() => (store.split = store.split === "library" ? null : "library")} title="Show inactive and active mods in two panels, and drag between them">
@@ -102,7 +102,7 @@
       <button class="btn split" class:on={store.splitMode === "halo"} aria-pressed={store.splitMode === "halo"} onclick={() => (store.split = store.split === "halo" ? null : "halo")} title="Show which mods HALO would move, from where to where">
         {@html I.change}<span class="split-lbl">What changes</span>
       </button>
-      <button class="btn primary" onclick={() => store.haloApply()} title="Apply the {previewCount} move{previewCount === 1 ? '' : 's'} HALO proposes">{@html I.check}Apply<span class="opt-lbl"> {previewCount} move{previewCount === 1 ? "" : "s"}</span></button>
+      <button class="btn primary" onclick={() => store.haloApply()} title="Apply the {previewCount} move{previewCount === 1 ? '' : 's'} HALO proposes">{@html I.check}Apply<span class="cnt-lbl"> {previewCount} move{previewCount === 1 ? "" : "s"}</span></button>
       <button class="btn" onclick={() => store.clearPreview()} title="Discard the preview; nothing moves" aria-label="Discard the preview">{@html I.close}<span class="opt-lbl">Discard</span></button>
     </span>
   {:else}
@@ -116,18 +116,24 @@
   .sp { flex: 1; min-width: 0; }
   .toolbar .btn { height: 32px; flex: none; }
   .toolbar .seg { flex: none; }
-  .toolbar .filter { flex: 0 1 auto; min-width: 0; }
+  /* The filter is the one control that may shrink, but only to where its label still reads: past
+     that the toolbar drops the words below in order of what they are worth, rather than quietly
+     squeezing "Show: All mods" down to a lone icon while Import and Refresh keep theirs. */
+  .toolbar .filter { flex: 0 1 auto; min-width: 172px; }
   .filter > .btn { max-width: 100%; }
   .seg.arr button { font-size: 12px; padding: 0 10px; }
   .filter > .btn .lbl { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pair { display: inline-flex; gap: 6px; flex: none; }
   .btn.split.on { background: var(--amber-soft); color: var(--amber); }
-  /* Narrower toolbars: the secondary buttons keep their icons and tooltips, the tabs their names.
-     The two panel toggles hold on to their words longest, since the words are what they promise. */
-  @container (max-width: 1080px) { .opt-lbl { display: none; } }
-  @container (max-width: 900px) { .seg .num { display: none; } .filter > .btn .lbl { max-width: 90px; } }
-  @container (max-width: 860px) { .btn.split .split-lbl { display: none; } }
-  @container (max-width: 760px) { .seg.arr button { padding: 0 8px; } .filter > .btn .lbl { display: none; } }
+  .seg.arr .sm { display: none; }
+  /* Narrower toolbars give words up in order of what they are worth, and each step is set where
+     the step above it stops fitting rather than at a round number — a toolbar that overflows puts
+     Discard under the panel beside it, which is how this was found. Icons and tooltips remain. */
+  @container (max-width: 1420px) { .opt-lbl { display: none; } }
+  @container (max-width: 1300px) { .seg .num { display: none; } .filter > .btn .lbl { max-width: 90px; } }
+  @container (max-width: 1200px) { .btn.split .split-lbl { display: none; } }
+  @container (max-width: 980px) { .seg.arr button { padding: 0 8px; } .filter > .btn .lbl { display: none; } .toolbar .filter { min-width: 0; } }
+  @container (max-width: 800px) { .seg.arr .lg { display: none; } .seg.arr .sm { display: inline; } .cnt-lbl { display: none; } .toolbar .btn { padding: 0 9px; } }
   .filter { position: relative; }
   .filter > .btn.on { background: var(--amber-soft); color: var(--amber); }
   .filter .cnt { font-size: 11px; font-weight: 700; opacity: 0.8; }

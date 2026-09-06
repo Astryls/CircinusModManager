@@ -159,6 +159,10 @@ Auto-update, once **https://circinus.sh/modmanager** is serving builds (a separa
 
 The columns then stop being the two orders and become **what leaves** and **what arrives**: on the left a card per phase mods are leaving, on the right a card per phase they land in, and between them one arrow per journey, weighted by how many mods make it and carrying the count. That is the shape of the change in one look — three loaders pulled to the top, four libraries up behind them, three performance mods pushed to the end — which no row-by-row view says out loud. Each card lists its mods with the number they have and the number they would have, ten at a time with the rest a click away, and each row's tooltip is HALO's own reason for filing it there. Hovering an arrow or a phase dims everything not making that journey; clicking one keeps only those moves; the search box narrows the cards with everything else; clicking a mod selects it, so the panel can explain it. The sentence above says how many mods move and how many only change number, which is the question the old two-list view could not answer.
 
+## Getting help
+
+The sidebar ends with **Help on Discord**, and Settings has a *Help and about* card with the same link beside circinus.sh: <https://discord.gg/JvsdeBw897>. A mod sorted somewhere odd is worth reporting there with the mod's name and where you expected it instead.
+
 ## The list's columns
 
 The list opens **By phase** with the columns most people read: name, package id, Load and Versions (Cost joins them once weights are loaded). Phase and Group are off by default — under *By phase* the sections already say the phase — and Show → Columns turns any of them on or off. The header is one grid with the rows, so a column label always sits over its own column, and the six badge slots (changed, update, errors, warnings, notes, pinned) keep one fixed slot each.

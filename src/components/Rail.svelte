@@ -2,7 +2,8 @@
   import { store, type View } from "$lib/store.svelte";
   import { I } from "$lib/icons";
   import GroupEditor from "./GroupEditor.svelte";
-  import type { Group } from "$lib/types";
+  import { openUrl } from "$lib/api";
+  import { DISCORD, type Group } from "$lib/types";
 
   const snap = $derived(store.snap);
   const groupCounts = $derived(store.groupCounts);
@@ -200,10 +201,15 @@
     {/if}
   </section>
 
+  <!-- Last in the sidebar because it is what you reach for when the rest has not helped. -->
+  <button class="help" onclick={() => openUrl(DISCORD)} title="Ask for help, or say a mod sorted somewhere odd">{@html I.link}Help on Discord</button>
 </aside>
 
 <style>
   .rail { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: hidden auto; }
+  .help { display: flex; align-items: center; gap: 7px; flex: none; padding: 7px 12px; border-radius: 9px; color: var(--text-3); font-size: 12px; font-weight: 600; }
+  .help :global(svg) { width: 14px; height: 14px; }
+  .help:hover { background: var(--surface-2); color: var(--text-2); }
   .rail .card { padding: 12px; flex: none; }
   .inst .ver { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; display: flex; align-items: center; gap: 8px; }
   .inst .ver .dot { width: 8px; height: 8px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent); }

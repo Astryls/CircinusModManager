@@ -2,7 +2,7 @@
   import { store } from "$lib/store.svelte";
   import { api, pickFile, pickFolder, inTauri, openUrl, revealPath } from "$lib/api";
   import { I } from "$lib/icons";
-  import type { LaunchInfo, LaunchMethod, Locations } from "$lib/types";
+  import { DISCORD, type LaunchInfo, type LaunchMethod, type Locations } from "$lib/types";
 
   const s = $derived(store.snap?.settings);
   const loc = $derived(store.snap?.locations);
@@ -206,7 +206,12 @@
     </section>
 
     <section class="card">
-      <h3>About</h3>
+      <h3>Help and about</h3>
+      <p class="hint">Something wrong, or a mod sorted somewhere odd? The Discord is where to say so — bring the mod's name and what you expected instead.</p>
+      <div class="row">
+        <button class="btn" onclick={() => openUrl(DISCORD)}>{@html I.link}Circinus on Discord</button>
+        <button class="btn" onclick={() => openUrl("https://circinus.sh")}>{@html I.cloud}circinus.sh</button>
+      </div>
       <p class="hint">Circinus Mod Manager {store.appVersion ?? ""} · MIT licence · data folder <span class="mono">{appData || "loading"}</span></p>
       <p class="hint">Reads About.xml (with ByVersion blocks), Fluffy's Manifest.xml, LoadFolders.xml and PublishedFileId.txt. Writes ModsConfig.xml (and keeps a .bak) and your rules in dbs/userRules.json.</p>
     </section>
