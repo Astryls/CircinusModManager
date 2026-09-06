@@ -100,6 +100,10 @@ jobs:
             target: x86_64-unknown-linux-gnu
     runs-on: ${{ matrix.os }}
     name: ${{ matrix.target }}
+    # Whether there is an Apple certificate at all, as a word rather than as the certificate: a
+    # step can then ask the question without every step in the job carrying the answer.
+    env:
+      HAS_APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE != '' }}
 
     steps:
       # The commit the tag job just made, when there was one; otherwise whatever started this run.
@@ -139,26 +143,48 @@ jobs:
           npm run check
           node tools/loadtest/release-args.mjs
 
-      # macOS: an unsigned helper inside a signed .app fails notarization, so the scanner has to
-      # be signed too. Tauri signs everything in the bundle when these are set; without them the
-      # build still succeeds and produces an unsigned app for testing.
+      # Apple code signing is optional and these are passed on only when there is a certificate
+      # to pass. Setting them unconditionally is what broke the first 1.0.0: a GitHub secret that
+      # does not exist arrives as an empty string, an environment variable set to an empty string
+      # is still set, and Tauri signs whenever it finds APPLE_CERTIFICATE set. It handed `security
+      # import` an empty certificate, that failed, and the whole macOS build failed with it -- so
+      # not having an Apple account cost the release rather than costing a signature.
       #
-      # The updater key is different: it is required. tauri.conf.json carries the public key
-      # and asks for updater artifacts, so the build writes a `.sig` beside every installer and
-      # fails outright when TAURI_SIGNING_PRIVATE_KEY is missing. The key has no password, so
-      # the password variable is set but empty. docs/update-feed.md says where the key comes
-      # from and how to make a new one.
-      - name: Build the installer
-        run: npm run release
+      # Without them the build succeeds and produces an unsigned app. macOS then warns the first
+      # time someone opens it, and they have to right-click -> Open to get past it. That is a
+      # worse first impression, not a broken download, and it is fixed by adding the secrets
+      # rather than by changing anything here.
+      - name: Apple certificate, when there is one
+        if: runner.os == 'macOS' && env.HAS_APPLE_CERT == 'true'
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        shell: bash
+        run: |
+          set -e
+          # Only the ones that have a value, and each written as a heredoc so a certificate with
+          # newlines in it arrives whole.
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            eval "value=\${$name:-}"
+            [ -n "$value" ] || continue
+            printf '%s<<CIRCINUS_SECRET_EOF\n%s\nCIRCINUS_SECRET_EOF\n' "$name" "$value" >> "$GITHUB_ENV"
+            echo "passing $name to the build"
+          done
+
+      # The updater key is required, unlike the Apple one. tauri.conf.json carries the public key
+      # and asks for updater artifacts, so the build writes a `.sig` beside every installer and
+      # fails outright when TAURI_SIGNING_PRIVATE_KEY is missing. The key has no password, so the
+      # password variable is set but empty -- which is fine here, because Tauri reads it only
+      # after it has decided to sign. docs/update-feed.md says where the key comes from.
+      - name: Build the installer
+        run: npm run release
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       # And that every file the updater can be handed has its signature. An installer without
       # one is fine for a person to download and useless to the update feed, and the two look

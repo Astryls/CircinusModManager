@@ -229,8 +229,17 @@ async function cut(v) {
     say("Pass --notes \"what changed, in a sentence or two\" to say something a player can act on.");
   }
   say("\nTagging:");
-  run("git", ["add", "-A"]);
-  run("git", ["-c", "user.name=Circinus", "-c", "user.email=noreply@circinus.sh", "commit", "-m", `Circinus Mod Manager ${v}`]);
+  // A second attempt at a version whose files were already set has nothing to commit, and git
+  // exits non-zero saying so. That is not a problem: the commit to tag is the one already here.
+  // Only an empty commit would be wrong, because it would put a second commit on main claiming
+  // to be the release and leave the tag on neither obvious one.
+  const pending = capture("git", ["status", "--porcelain"]).stdout.trim();
+  if (pending) {
+    run("git", ["add", "-A"]);
+    run("git", ["-c", "user.name=Circinus", "-c", "user.email=noreply@circinus.sh", "commit", "-m", `Circinus Mod Manager ${v}`]);
+  } else {
+    say(`  nothing to commit: this checkout already says ${v}, so ${tag} goes on the commit that is here`);
+  }
   // An annotated tag, because its message is what tools/push-build.mjs sends as the notes.
   run("git", ["tag", "-a", tag, "-m", notes]);
   run("git", ["push", "origin", branch]);
