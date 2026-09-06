@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>New mods — three ways</title>
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #0b0b0d; --bg-2: #101013;
+  --surface: #19191c; --surface-2: #202024; --surface-3: #28282d; --surface-4: #313137;
+  --track: #2a2a2f;
+  --text: #f3f3f5; --text-2: #a0a0a8; --text-3: #6b6b73; --text-4: #4a4a51;
+  --amber: #e9a23b; --amber-ink: #1c1405; --amber-soft: rgba(233, 162, 59, 0.14);
+  --green: #3fc46a; --green-soft: rgba(63, 196, 106, 0.14);
+  --red: #f0554d; --red-soft: rgba(240, 85, 77, 0.14);
+  --blue: #4c8dff; --blue-soft: rgba(76, 141, 255, 0.16);
+  --teal: #38b8b0; --pink: #e0559a; --violet: #9b7bff; --coral: #ff8a5b; --slate: #8fa3c7;
+  --shadow-card: inset 0 1px 0 rgba(255,255,255,0.035), 0 6px 20px rgba(0,0,0,0.35);
+  --r-card: 14px; --r-row: 9px; --r-pill: 999px;
+  --font: -apple-system, "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, "DejaVu Sans Mono", Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; line-height: 1.35; }
+.page { padding: 24px 28px 40px; max-width: 1360px; }
+h1 { font-size: 17px; margin: 0 0 4px; }
+.sub { color: var(--text-3); font-size: 13px; margin: 0 0 26px; }
+.mock { margin-bottom: 34px; }
+.mh { display: flex; align-items: baseline; gap: 12px; margin-bottom: 3px; }
+.mh .tag { font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--amber); }
+.mh h2 { font-size: 15px; margin: 0; }
+.why { color: var(--text-2); font-size: 12.5px; margin: 0 0 12px; max-width: 900px; }
+.why b { color: var(--text); font-weight: 600; }
+.cols { display: grid; grid-template-columns: 1fr 300px; gap: 18px; align-items: start; }
+.frame { background: var(--surface); border-radius: var(--r-card); box-shadow: var(--shadow-card); overflow: hidden; }
+.cap { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-4); margin: 0 0 6px 2px; }
+
+/* toolbar */
+.tb { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--surface-3); }
+.seg { display: flex; background: var(--surface-2); border-radius: 9px; padding: 2px; gap: 2px; }
+.seg button { font: inherit; color: var(--text-2); background: none; border: 0; height: 26px; padding: 0 11px; border-radius: 7px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.seg button.on { background: var(--surface-4); color: var(--text); }
+.seg button .n { color: var(--text-3); font-weight: 600; margin-left: 5px; font-variant-numeric: tabular-nums; }
+.seg button.on .n { color: var(--text-2); }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 11px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--text-2); font-size: 12px; font-weight: 600; }
+.chip.new { background: rgba(63,196,106,.16); color: #7ede9c; }
+.chip .d { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+.spacer { flex: 1; }
+
+/* list */
+.list { padding: 0 6px 8px; }
+.hdr, .row { display: grid; grid-template-columns: 34px minmax(160px,1fr) 120px 58px 64px 232px; align-items: center; gap: 6px; padding: 0 8px 0 4px; }
+.pane .hdr, .pane .row { grid-template-columns: 26px minmax(110px,1fr) 138px; }
+.hdr { height: 34px; background: var(--surface); border-bottom: 1px solid var(--surface-3); margin: 0 -6px; padding-left: 10px; padding-right: 14px; }
+.hdr .h { font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-3); white-space: nowrap; }
+.hdr .idx, .hdr .vers, .hdr .load { text-align: right; }
+.hdr .b { display: grid; justify-items: center; gap: 1px; font-size: 8.5px; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.badges { display: grid; grid-template-columns: repeat(6, 1fr); align-items: center; }
+.pane .badges { grid-template-columns: repeat(6, 1fr); }
+.row { height: 40px; border-radius: var(--r-row); position: relative; }
+.row:nth-child(odd) { }
+.idx { font-family: var(--mono); font-size: 11.5px; color: var(--text-3); text-align: right; }
+.name { min-width: 0; display: flex; flex-direction: column; justify-content: center; line-height: 1.2; }
+.name b { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.name span { font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pkg { font-family: var(--mono); font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.load, .vers { display: flex; justify-content: flex-end; }
+.band { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: var(--r-pill); background: var(--surface-3); color: var(--text-2); }
+.band.g { background: rgba(63,196,106,.14); color: #7ede9c; }
+.band.a { background: var(--amber-soft); color: #f0b45f; }
+.vers span { font-family: var(--mono); font-size: 11px; color: var(--text-3); }
+.b { display: grid; place-items: center; height: 24px; }
+.ic { width: 15px; height: 15px; display: block; }
+.ph { height: 44px; display: flex; align-items: center; gap: 10px; padding: 14px 10px 6px; }
+.ph .dot { width: 7px; height: 7px; border-radius: 50%; }
+.ph .n { font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--text-2); }
+.ph .c { font-size: 11px; color: var(--text-3); font-weight: 600; }
+.ph .note { margin-left: auto; font-size: 11.5px; color: var(--text-3); }
+
+/* ---- the three treatments ---- */
+/* A: marked in place */
+.a .row.new { background: rgba(63,196,106,.09); box-shadow: inset 2px 0 0 var(--green); }
+.a .row.new .name b::after { content: "NEW"; margin-left: 8px; font-size: 9px; font-weight: 800; letter-spacing: .08em; color: #7ede9c; background: rgba(63,196,106,.16); padding: 1px 5px; border-radius: var(--r-pill); vertical-align: 1px; }
+
+/* B: a section at the top */
+.b-sec .ph.newhead { background: linear-gradient(90deg, rgba(63,196,106,.13), rgba(63,196,106,0)); border-radius: var(--r-row); }
+.b-sec .ph.newhead .n { color: #7ede9c; }
+.b-sec .row.new { box-shadow: inset 2px 0 0 var(--green); }
+.b-sec .row.ghost { opacity: .55; }
+.b-sec .row.ghost .name b { font-weight: 500; }
+.gotit { margin-left: auto; display: inline-flex; align-items: center; height: 22px; padding: 0 10px; border-radius: var(--r-pill); background: var(--surface-3); color: var(--text-2); font-size: 11px; font-weight: 700; }
+
+/* C: a dot only, plus its own tab */
+.c .row.new .newdot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); display: block; }
+
+.legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--text-3); }
+.legend i { font-style: normal; color: var(--text-2); }
+.mini { padding: 10px 12px; font-size: 12.5px; color: var(--text-2); }
+.mini .t { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-4); margin-bottom: 8px; }
+.mv { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 7px; font-size: 12.5px; }
+.mv .d { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.mv .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mv .to { font-family: var(--mono); font-size: 11px; color: var(--text-3); }
+.mv.new { box-shadow: inset 2px 0 0 var(--green); background: rgba(63,196,106,.09); }
+.mv.newdotonly .d { background: var(--green); }
+</style>
+</head>
+<body>
+<div class="page">
+<h1>New mods — three ways</h1>
+<p class="sub">Same data in each: 1&nbsp;204 mods installed, 3 of them arrived since you last looked. Left is the main list (By phase), right is what the same idea looks like in a split pane and in What changes.</p>
+
+<!-- ================= A ================= -->
+<section class="mock a">
+  <div class="mh"><span class="tag">A</span><h2>Marked where they already are</h2></div>
+  <p class="why">Nothing moves. A new mod keeps its place in the load order and gets a green edge, a faint tint and a <b>NEW</b> tag. The toolbar counts them and steps between them. <b>Reading the list is unchanged</b> — you just see which rows are new — but with three new mods among twelve hundred you are relying on the counter to find them.</p>
+  <div class="cols">
+    <div>
+      <p class="cap">Main list</p>
+      <div class="frame">
+        <div class="tb">
+          <div class="seg"><button class="on">All <span class="n">1204</span></button><button>Active <span class="n">318</span></button><button>Inactive <span class="n">886</span></button></div>
+          <span class="chip new"><span class="d"></span>3 new</span>
+          <span class="spacer"></span>
+          <span class="chip">By phase</span>
+        </div>
+        <div class="list">
+          <div class="hdr">
+            <span class="h idx">#</span><span class="h">Mod</span><span class="h">Package id</span><span class="h load">Load</span><span class="h vers">Versions</span>
+            <span class="badges"><span class="h b">◆<i>Changed</i></span><span class="h b">↑<i>Update</i></span><span class="h b">!<i>Errors</i></span><span class="h b">▲<i>Warning</i></span><span class="h b">•<i>Notes</i></span><span class="h b">📌<i>Pinned</i></span></span>
+          </div>
+          <div class="ph"><span class="dot" style="background:var(--violet)"></span><span class="n">Libraries</span><span class="c">14</span><span class="note">frameworks other mods build on</span></div>
+          <div class="row"><span class="idx">31</span><span class="name"><b>Harmony</b><span>brrainz</span></span><span class="pkg">brrainz.harmony</span><span class="load"><span class="band g">light</span></span><span class="vers"><span>1.5 1.6</span></span><span class="badges"><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+          <div class="row new"><span class="idx">32</span><span class="name"><b>Vanilla Expanded Framework</b><span>Oskar Potocki</span></span><span class="pkg">oskarpotocki.vanillafactionsexpanded.core</span><span class="load"><span class="band a">heavy</span></span><span class="vers"><span>1.6</span></span><span class="badges"><span class="b"><svg class="ic" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="#3fc46a" stroke-width="2" stroke-linecap="round"/></svg></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+          <div class="row"><span class="idx">33</span><span class="name"><b>HugsLib</b><span>UnlimitedHugs</span></span><span class="pkg">unlimitedhugs.hugslib</span><span class="load"><span class="band g">light</span></span><span class="vers"><span>1.5 1.6</span></span><span class="badges"><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+          <div class="ph"><span class="dot" style="background:var(--blue)"></span><span class="n">Content</span><span class="c">742</span><span class="note">the mods you play for</span></div>
+          <div class="row"><span class="idx">58</span><span class="name"><b>Alpha Animals</b><span>Sarg Bjornson</span></span><span class="pkg">sarg.alphaanimals</span><span class="load"><span class="band">medium</span></span><span class="vers"><span>1.6</span></span><span class="badges"><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+          <div class="row new"><span class="idx">59</span><span class="name"><b>Rimworld of Magic</b><span>Torann</span></span><span class="pkg">torann.arimworldofmagic</span><span class="load"><span class="band a">heavy</span></span><span class="vers"><span>1.6</span></span><span class="badges"><span class="b"><svg class="ic" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="#3fc46a" stroke-width="2" stroke-linecap="round"/></svg></span><span class="b"></span><span class="b"><svg class="ic" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="#f0554d" stroke-width="2"/><path d="M8 5v4" stroke="#f0554d" stroke-width="2" stroke-linecap="round"/></svg></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+          <div class="row"><span class="idx">60</span><span class="name"><b>Dubs Bad Hygiene</b><span>Dubwise</span></span><span class="pkg">dubwise.dubsbadhygiene</span><span class="load"><span class="band">medium</span></span><span class="vers"><span>1.5 1.6</span></span><span class="badges"><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="cap">Split pane</p>
+      <div class="frame pane">
+        <div class="list">
+          <div class="hdr"><span class="h idx">#</span><span class="h">Mod</span><span class="badges"><span class="h b">◆</span><span class="h b">↑</span><span class="h b">!</span><span class="h b">▲</span><span class="h b">•</span><span class="h b">📌</span></span></div>
+          <div class="row"><span class="idx">31</span><span class="name"><b>Harmony</b></span><span class="badges"><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+          <div class="row new"><span class="idx">32</span><span class="name"><b>Vanilla Expanded Fram…</b></span><span class="badges"><span class="b"><svg class="ic" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="#3fc46a" stroke-width="2" stroke-linecap="round"/></svg></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+          <div class="row"><span class="idx">33</span><span class="name"><b>HugsLib</b></span><span class="badges"><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+        </div>
+      </div>
+      <p class="cap" style="margin-top:14px">What changes</p>
+      <div class="frame"><div class="mini">
+        <div class="t">Arriving in Libraries</div>
+        <div class="mv new"><span class="d" style="background:var(--violet)"></span><span class="n">Vanilla Expanded Framework</span><span class="to">→ #32</span></div>
+        <div class="mv"><span class="d" style="background:var(--violet)"></span><span class="n">Fluffy Breakdowns</span><span class="to">→ #37</span></div>
+      </div></div>
+      <div class="legend"><span><i>Green edge</i> = new</span><span><i>Amber edge</i> = HALO moves it</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= B ================= -->
+<section class="mock b-sec">
+  <div class="mh"><span class="tag">B</span><h2>A section of their own, at the top</h2></div>
+  <p class="why">New mods are lifted into a <b>New</b> section above the phases, so you see them without hunting. They also stay faintly in their real place, so you can still tell where each one will load. <b>Got it</b> dismisses the section and the marks. Costs one heading of vertical space and shows each new mod twice.</p>
+  <div class="cols">
+    <div>
+      <p class="cap">Main list</p>
+      <div class="frame">
+        <div class="tb">
+          <div class="seg"><button class="on">All <span class="n">1204</span></button><button>Active <span class="n">318</span></button><button>Inactive <span class="n">886</span></button></div>
+          <span class="spacer"></span>
+          <span class="chip">By phase</span>
+        </div>
+        <div class="list">
+          <div class="hdr">
+            <span class="h idx">#</span><span class="h">Mod</span><span class="h">Package id</span><span class="h load">Load</span><span class="h vers">Versions</span>
+            <span class="badges"><span class="h b">◆<i>Changed</i></span><span class="h b">↑<i>Update</i></span><span class="h b">!<i>Errors</i></span><span class="h b">▲<i>Warning</i></span><span class="h b">•<i>Notes</i></span><span class="h b">📌<i>Pinned</i></span></span>
+          </div>
+          <div class="ph newhead"><span class="dot" style="background:var(--green)"></span><span class="n">New</span><span class="c">3</span><span class="note">first seen today</span><span class="gotit">Got it</span></div>
+          <div class="row new"><span class="idx">32</span><span class="name"><b>Vanilla Expanded Framework</b><span>Oskar Potocki · Libraries</span></span><span class="pkg">oskarpotocki.vanillafactionsexpanded.core</span><span class="load"><span class="band a">heavy</span></span><span class="vers"><span>1.6</span></span><span class="badges"><span class="b"><svg class="ic" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="#3fc46a" stroke-width="2" stroke-linecap="round"/></svg></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+          <div class="row new"><span class="idx">59</span><span class="name"><b>Rimworld of Magic</b><span>Torann · Content</span></span><span class="pkg">torann.arimworldofmagic</span><span class="load"><span class="band a">heavy</span></span><span class="vers"><span>1.6</span></span><span class="badges"><span class="b"><svg class="ic" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="#3fc46a" stroke-width="2" stroke-linecap="round"/></svg></span><span class="b"></span><span class="b"><svg class="ic" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="#f0554d" stroke-width="2"/><path d="M8 5v4" stroke="#f0554d" stroke-width="2" stroke-linecap="round"/></svg></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+          <div class="row new"><span class="idx">—</span><span class="name"><b>Toolmetrics</b><span>Owlchemist · not in the list yet</span></span><span class="pkg">owlchemist.toolmetrics</span><span class="load"><span class="band g">light</span></span><span class="vers"><span>1.6</span></span><span class="badges"><span class="b"><svg class="ic" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="#3fc46a" stroke-width="2" stroke-linecap="round"/></svg></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+          <div class="ph"><span class="dot" style="background:var(--violet)"></span><span class="n">Libraries</span><span class="c">14</span><span class="note">frameworks other mods build on</span></div>
+          <div class="row"><span class="idx">31</span><span class="name"><b>Harmony</b><span>brrainz</span></span><span class="pkg">brrainz.harmony</span><span class="load"><span class="band g">light</span></span><span class="vers"><span>1.5 1.6</span></span><span class="badges"><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+          <div class="row ghost new"><span class="idx">32</span><span class="name"><b>Vanilla Expanded Framework</b><span>Oskar Potocki</span></span><span class="pkg">oskarpotocki.vanillafactionsexpanded.core</span><span class="load"><span class="band a">heavy</span></span><span class="vers"><span>1.6</span></span><span class="badges"><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+          <div class="row"><span class="idx">33</span><span class="name"><b>HugsLib</b><span>UnlimitedHugs</span></span><span class="pkg">unlimitedhugs.hugslib</span><span class="load"><span class="band g">light</span></span><span class="vers"><span>1.5 1.6</span></span><span class="badges"><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="cap">Split pane</p>
+      <div class="frame pane">
+        <div class="list">
+          <div class="hdr"><span class="h idx">#</span><span class="h">Mod</span><span class="badges"><span class="h b">◆</span><span class="h b">↑</span><span class="h b">!</span><span class="h b">▲</span><span class="h b">•</span><span class="h b">📌</span></span></div>
+          <div class="ph newhead" style="padding:8px 8px 4px;height:34px"><span class="dot" style="background:var(--green)"></span><span class="n">New</span><span class="c">1</span></div>
+          <div class="row new"><span class="idx">—</span><span class="name"><b>Toolmetrics</b></span><span class="badges"><span class="b"><svg class="ic" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="#3fc46a" stroke-width="2" stroke-linecap="round"/></svg></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+          <div class="ph" style="padding:8px 8px 4px;height:34px"><span class="dot" style="background:var(--slate)"></span><span class="n">Inactive</span><span class="c">886</span></div>
+          <div class="row"><span class="idx">—</span><span class="name"><b>Achtung!</b></span><span class="badges"><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+        </div>
+      </div>
+      <p class="cap" style="margin-top:14px">What changes</p>
+      <div class="frame"><div class="mini">
+        <div class="t">Arriving in Libraries</div>
+        <div class="mv new"><span class="d" style="background:var(--violet)"></span><span class="n">Vanilla Expanded Framework</span><span class="to">→ #32</span></div>
+        <div class="mv"><span class="d" style="background:var(--violet)"></span><span class="n">Fluffy Breakdowns</span><span class="to">→ #37</span></div>
+      </div></div>
+      <div class="legend"><span><i>Solid</i> = in the New section</span><span><i>Faded</i> = the same mod in its real place</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= C ================= -->
+<section class="mock c">
+  <div class="mh"><span class="tag">C</span><h2>A tab of their own, and one dot</h2></div>
+  <p class="why">The list itself is untouched: a new mod gets a single green dot in the Changed slot and nothing else. Finding them is what the <b>New</b> tab is for, beside All / Active / Inactive — one click and the list <em>is</em> the new mods, with every column and every action still working. <b>Quietest in the list, one click away</b>; but a new mod you scroll past is easy to miss.</p>
+  <div class="cols">
+    <div>
+      <p class="cap">Main list</p>
+      <div class="frame">
+        <div class="tb">
+          <div class="seg"><button class="on">All <span class="n">1204</span></button><button>Active <span class="n">318</span></button><button>Inactive <span class="n">886</span></button><button>New <span class="n">3</span></button></div>
+          <span class="spacer"></span>
+          <span class="chip">By phase</span>
+        </div>
+        <div class="list">
+          <div class="hdr">
+            <span class="h idx">#</span><span class="h">Mod</span><span class="h">Package id</span><span class="h load">Load</span><span class="h vers">Versions</span>
+            <span class="badges"><span class="h b">◆<i>Changed</i></span><span class="h b">↑<i>Update</i></span><span class="h b">!<i>Errors</i></span><span class="h b">▲<i>Warning</i></span><span class="h b">•<i>Notes</i></span><span class="h b">📌<i>Pinned</i></span></span>
+          </div>
+          <div class="ph"><span class="dot" style="background:var(--violet)"></span><span class="n">Libraries</span><span class="c">14</span><span class="note">frameworks other mods build on</span></div>
+          <div class="row"><span class="idx">31</span><span class="name"><b>Harmony</b><span>brrainz</span></span><span class="pkg">brrainz.harmony</span><span class="load"><span class="band g">light</span></span><span class="vers"><span>1.5 1.6</span></span><span class="badges"><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+          <div class="row new"><span class="idx">32</span><span class="name"><b>Vanilla Expanded Framework</b><span>Oskar Potocki</span></span><span class="pkg">oskarpotocki.vanillafactionsexpanded.core</span><span class="load"><span class="band a">heavy</span></span><span class="vers"><span>1.6</span></span><span class="badges"><span class="b"><span class="newdot"></span></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+          <div class="row"><span class="idx">33</span><span class="name"><b>HugsLib</b><span>UnlimitedHugs</span></span><span class="pkg">unlimitedhugs.hugslib</span><span class="load"><span class="band g">light</span></span><span class="vers"><span>1.5 1.6</span></span><span class="badges"><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+          <div class="ph"><span class="dot" style="background:var(--blue)"></span><span class="n">Content</span><span class="c">742</span><span class="note">the mods you play for</span></div>
+          <div class="row"><span class="idx">58</span><span class="name"><b>Alpha Animals</b><span>Sarg Bjornson</span></span><span class="pkg">sarg.alphaanimals</span><span class="load"><span class="band">medium</span></span><span class="vers"><span>1.6</span></span><span class="badges"><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+          <div class="row new"><span class="idx">59</span><span class="name"><b>Rimworld of Magic</b><span>Torann</span></span><span class="pkg">torann.arimworldofmagic</span><span class="load"><span class="band a">heavy</span></span><span class="vers"><span>1.6</span></span><span class="badges"><span class="b"><span class="newdot"></span></span><span class="b"></span><span class="b"><svg class="ic" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="#f0554d" stroke-width="2"/><path d="M8 5v4" stroke="#f0554d" stroke-width="2" stroke-linecap="round"/></svg></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+          <div class="row"><span class="idx">60</span><span class="name"><b>Dubs Bad Hygiene</b><span>Dubwise</span></span><span class="pkg">dubwise.dubsbadhygiene</span><span class="load"><span class="band">medium</span></span><span class="vers"><span>1.5 1.6</span></span><span class="badges"><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="cap">The New tab, clicked</p>
+      <div class="frame">
+        <div class="list">
+          <div class="hdr" style="grid-template-columns:26px minmax(110px,1fr) 138px"><span class="h idx">#</span><span class="h">Mod</span><span class="badges"><span class="h b">◆</span><span class="h b">↑</span><span class="h b">!</span><span class="h b">▲</span><span class="h b">•</span><span class="h b">📌</span></span></div>
+          <div class="row" style="grid-template-columns:26px minmax(110px,1fr) 138px"><span class="idx">32</span><span class="name"><b>Vanilla Expanded Fram…</b><span>today, 14:02</span></span><span class="badges"><span class="b"><span class="newdot" style="width:7px;height:7px;border-radius:50%;background:var(--green);display:block"></span></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+          <div class="row" style="grid-template-columns:26px minmax(110px,1fr) 138px"><span class="idx">59</span><span class="name"><b>Rimworld of Magic</b><span>today, 14:02</span></span><span class="badges"><span class="b"><span class="newdot" style="width:7px;height:7px;border-radius:50%;background:var(--green);display:block"></span></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+          <div class="row" style="grid-template-columns:26px minmax(110px,1fr) 138px"><span class="idx">—</span><span class="name"><b>Toolmetrics</b><span>yesterday, 20:47</span></span><span class="badges"><span class="b"><span class="newdot" style="width:7px;height:7px;border-radius:50%;background:var(--green);display:block"></span></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+        </div>
+      </div>
+      <p class="cap" style="margin-top:14px">What changes</p>
+      <div class="frame"><div class="mini">
+        <div class="t">Arriving in Libraries</div>
+        <div class="mv newdotonly"><span class="d"></span><span class="n">Vanilla Expanded Framework</span><span class="to">→ #32</span></div>
+        <div class="mv"><span class="d" style="background:var(--violet)"></span><span class="n">Fluffy Breakdowns</span><span class="to">→ #37</span></div>
+      </div></div>
+      <div class="legend"><span><i>Green dot</i> in the Changed slot = new</span><span>sortable by when it arrived</span></div>
+    </div>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

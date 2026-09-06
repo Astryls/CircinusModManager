@@ -5,6 +5,7 @@
 //! the code is original and MIT licensed.
 
 pub mod about;
+pub mod arrivals;
 pub mod cache;
 pub mod changes;
 pub mod clr;

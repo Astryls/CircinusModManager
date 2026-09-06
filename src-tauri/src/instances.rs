@@ -84,6 +84,12 @@ pub fn baseline_key(id: &str) -> String {
     format!("mod_baseline:{id}")
 }
 
+/// When each mod folder was first seen, per instance, for the baseline's reason: a shared record
+/// would call the other instance's whole library new the first time you opened it.
+pub fn arrivals_key(id: &str) -> String {
+    format!("mod_arrivals:{id}")
+}
+
 /// A file-system- and JSON-safe id from a name, with a short suffix so two instances may share
 /// a name without sharing a folder.
 fn make_id(name: &str, taken: &[Instance]) -> String {

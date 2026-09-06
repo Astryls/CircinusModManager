@@ -172,7 +172,7 @@
                 <span class="n num">{g.moves.length}</span>
               </button>
               {#each opened.has(key) ? g.moves : g.moves.slice(0, SHOWN) as m (m.uid)}
-                <button class="mv" class:sel={store.selected.includes(m.uid)} class:dim={!holds(hover, m)}
+                <button class="mv" class:sel={store.selected.includes(m.uid)} class:fresh={store.isNew(m.uid)} class:dim={!holds(hover, m)}
                   onclick={() => store.select(m.uid)} title={m.reason}>
                   <span class="num">#{m.from + 1}</span>
                   <span class="dot c-{phaseOf(m.fromPhase).color}"></span>
@@ -223,7 +223,7 @@
                 <span class="n num">{g.moves.length}</span>
               </button>
               {#each opened.has(key) ? g.moves : g.moves.slice(0, SHOWN) as m (m.uid)}
-                <button class="mv" class:sel={store.selected.includes(m.uid)} class:dim={!holds(hover, m)}
+                <button class="mv" class:sel={store.selected.includes(m.uid)} class:fresh={store.isNew(m.uid)} class:dim={!holds(hover, m)}
                   onclick={() => store.select(m.uid)} title={m.reason}>
                   <span class="num">#{m.to + 1}</span>
                   <span class="dot c-{phaseOf(m.toPhase).color}"></span>
@@ -296,4 +296,7 @@
   .board .hint { grid-row: 3; grid-column: 1 / -1; margin: 0; padding: 0 4px; font-size: 11.5px; color: var(--text-3); line-height: 1.4; }
   .empty { font-size: 13px; color: var(--text-3); padding: 14px; margin: 0; }
   @media (max-width: 1240px) { .pair { grid-template-columns: minmax(0, 1fr) 78px minmax(0, 1fr); } .ghead .where { display: none; } }
+  /* The same green edge the list uses, so a mod that arrived and a mod that moved read the
+     same way wherever you are looking at them. */
+  .mv.fresh { box-shadow: inset -2px 0 0 var(--green); background: var(--green-soft); }
 </style>

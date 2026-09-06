@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { store, type Pane } from "$lib/store.svelte";
+  import { store, type Pane, type SortKey } from "$lib/store.svelte";
   import { I } from "$lib/icons";
   import { describe, explainLoad } from "$lib/describe";
   import { BAND_LABEL, LOAD_BAND_LABEL, describeChange, severityOf, type Issue, type ModInfo } from "$lib/types";
@@ -134,6 +134,12 @@
       for (const m of store.visibleInactive) out.push({ kind: "row", key: m.uid, mod: m, inactive: true });
       return out;
     }
+    // The New tab is the new mods and nothing else: no phase sections, because what you want
+    // from it is when each one arrived, not where it will load.
+    if (pane === null && store.tab === "new") {
+      for (const m of store.visibleNew) out.push({ kind: "row", key: m.uid, mod: m, inactive: !store.activeSet.has(m.uid) });
+      return out;
+    }
     if (pane !== null || store.tab !== "inactive") {
       if (store.byPhase) {
         for (const sec of sections) {
@@ -214,11 +220,32 @@
     }
   });
 
+  // ---- sorting ----
+  /** The heading of a sortable column: what it says, whether it is the one in force, and which
+   *  way round. Panes do not sort: they are two halves of one comparison and sorting one of
+   *  them alone would compare two different orders. */
+  const canSort = $derived(pane === null);
+  const arrowFor = (key: SortKey) => (store.sortKey === key ? (store.sortDir === 1 ? "\u2191" : "\u2193") : "");
+
   // ---- the badge columns ----
   /** Issues of one severity, and the text for the column's tooltip. */
   function bySeverity(issues: Issue[], sev: "error" | "warning" | "note", m: ModInfo): { n: number; text: string } {
     const list = issues.filter((i) => severityOf(i) === sev);
     return { n: list.length, text: list.map((i) => describe(i, store.byUid, m.uid)).join("\n") };
+  }
+
+  /** When a mod arrived, in words, or undefined for one that was already here. Relative for the
+   *  first day because "3 hours ago" is what you want to know about something that just landed,
+   *  and a date after that because "9 days ago" is not how anyone remembers a Tuesday. */
+  function whenItCame(uid: string): string | undefined {
+    const at = store.firstSeenByUid.get(uid);
+    if (!at) return undefined;
+    const secs = Math.floor(Date.now() / 1000) - at;
+    const ago = (n: number, unit: string) => `arrived ${n} ${unit}${n === 1 ? "" : "s"} ago`;
+    if (secs < 90) return "arrived just now";
+    if (secs < 3600) return ago(Math.round(secs / 60), "minute");
+    if (secs < 86400) return ago(Math.round(secs / 3600), "hour");
+    return `arrived ${new Date(at * 1000).toLocaleDateString()}`;
   }
 
   // ---- interaction ----
@@ -266,6 +293,11 @@
 
   function pointerDown(e: PointerEvent, m: ModInfo) {
     if (e.button !== 0 || (e.target as HTMLElement).closest("button, a, input, select")) return;
+    // Not while the list is sorted by something other than the load order. Dropping a row
+    // between two others writes a position in ModsConfig.xml, and between two others *of a list
+    // sorted by name* is not a position anybody chose: what you saw above and below the gap is
+    // not what would end up there. The Sorted chip in the toolbar is one click away.
+    if (store.sorted) return;
     press = { x: e.clientX, y: e.clientY, uid: m.uid, pointerId: e.pointerId };
   }
   function pointerMove(e: PointerEvent) {
@@ -406,14 +438,14 @@
   <div class="hdr" role="presentation" onpointermove={colMove} onpointerup={colUp} onpointercancel={colUp}>
     <!-- Nothing inactive has a place in the order, so its pane numbers nothing and says so. -->
     <span class="h idx">{pane === "inactive" ? "" : "#"}</span>
-    <span class="h name">Mod<span class="grab" role="separator" aria-orientation="vertical" title="Drag to change the width; double-click for the default" onpointerdown={(e) => colDown(e, "name")} ondblclick={() => colReset("name")}></span></span>
-    {#if showPkg}<span class="h pkg">Package id<span class="grab" role="separator" aria-orientation="vertical" title="Drag to change the width; double-click for the default" onpointerdown={(e) => colDown(e, "pkg")} ondblclick={() => colReset("pkg")}></span></span>{/if}
+    <span class="h name" class:by={store.sortKey === "name"}>{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("name")} title="Sort by name">Mod{#if store.sortKey === "name"}<i class="dir">{arrowFor("name")}</i>{/if}</button>{:else}Mod{/if}<span class="grab" role="separator" aria-orientation="vertical" title="Drag to change the width; double-click for the default" onpointerdown={(e) => colDown(e, "name")} ondblclick={() => colReset("name")}></span></span>
+    {#if showPkg}<span class="h pkg" class:by={store.sortKey === "pkg"}>{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("pkg")} title="Sort by package id">Package id{#if store.sortKey === "pkg"}<i class="dir">{arrowFor("pkg")}</i>{/if}</button>{:else}Package id{/if}<span class="grab" role="separator" aria-orientation="vertical" title="Drag to change the width; double-click for the default" onpointerdown={(e) => colDown(e, "pkg")} ondblclick={() => colReset("pkg")}></span></span>{/if}
     {#if nameW != null}<span class="fill"></span>{/if}
-    {#if has.has("cost")}<span class="h wt" title="Share of frame time, from circinus.sh or your own runs">Cost</span>{/if}
-    {#if has.has("load")}<span class="h load" title="Expected share of the list's loading time, estimated from what the folder holds: Defs XML, patch operations and how far they search, PNG textures without DDS, assemblies. A ranking, not a stopwatch.">Load</span>{/if}
-    {#if has.has("versions")}<span class="h vers" title="Game versions the mod says it supports">Versions</span>{/if}
-    {#if has.has("phase")}<span class="h phz" title="Where HALO files the mod: the game, a library, content, a patch, a texture pack, a late loader, a performance mod">Phase</span>{/if}
-    {#if has.has("group")}<span class="h g" title="The group the mod is in">Group</span>{/if}
+    {#if has.has("cost")}<span class="h wt" class:by={store.sortKey === "cost"} title="Share of frame time, from circinus.sh or your own runs">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("cost")}>Cost{#if store.sortKey === "cost"}<i class="dir">{arrowFor("cost")}</i>{/if}</button>{:else}Cost{/if}</span>{/if}
+    {#if has.has("load")}<span class="h load" class:by={store.sortKey === "load"} title="Expected share of the list's loading time, estimated from what the folder holds: Defs XML, patch operations and how far they search, PNG textures without DDS, assemblies. A ranking, not a stopwatch.">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("load")}>Load{#if store.sortKey === "load"}<i class="dir">{arrowFor("load")}</i>{/if}</button>{:else}Load{/if}</span>{/if}
+    {#if has.has("versions")}<span class="h vers" class:by={store.sortKey === "versions"} title="Game versions the mod says it supports">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("versions")}>Versions{#if store.sortKey === "versions"}<i class="dir">{arrowFor("versions")}</i>{/if}</button>{:else}Versions{/if}</span>{/if}
+    {#if has.has("phase")}<span class="h phz" class:by={store.sortKey === "phase"} title="Where HALO files the mod: the game, a library, content, a patch, a texture pack, a late loader, a performance mod">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("phase")}>Phase{#if store.sortKey === "phase"}<i class="dir">{arrowFor("phase")}</i>{/if}</button>{:else}Phase{/if}</span>{/if}
+    {#if has.has("group")}<span class="h g" class:by={store.sortKey === "group"} title="The group the mod is in">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("group")}>Group{#if store.sortKey === "group"}<i class="dir">{arrowFor("group")}</i>{/if}</button>{:else}Group{/if}</span>{/if}
     <span class="badges">
       <span class="h b" title="Changed since you last opened Circinus: new, or updated on disk">{@html I.change}<i>Changed</i></span>
       <span class="h b" title="A newer version is on the Workshop">{@html I.up}<i>Update</i></span>
@@ -445,11 +477,14 @@
         {@const note = bySeverity(issues, "note", m)}
         {@const invalid = m.invalid && it.inactive ? m.invalid : ""}
         {@const ld = it.inactive ? undefined : store.loadOf(m.uid)}
+        {@const isNew = store.isNew(m.uid)}
+        {@const arrived = whenItCame(m.uid)}
         <div
           class="row"
           class:off={it.inactive}
           class:sel={store.selected.includes(m.uid)}
           class:moved={pane !== null && delta != null}
+          class:fresh={isNew}
           class:drop-before={store.drop?.pane === pane && store.drop.uid === m.uid && !store.drop.after}
           class:drop-after={store.drop?.pane === pane && store.drop.uid === m.uid && store.drop.after}
           style="transform: translateY({y}px)"
@@ -464,7 +499,7 @@
           onpointerdown={(e) => pointerDown(e, m)}
         >
           <span class="idx num"><span class="grip">{@html I.grip}</span>{it.inactive ? "" : (indexOf.get(m.uid) ?? 0) + 1}</span>
-          <span class="name"><b>{m.name ?? m.uid}</b><span>{m.invalid ?? (m.authors ?? []).join(", ")}</span></span>
+          <span class="name"><b>{m.name ?? m.uid}{#if isNew}<i class="newtag">New</i>{/if}</b><span>{arrived ?? m.invalid ?? (m.authors ?? []).join(", ")}</span></span>
           {#if showPkg}<span class="pkg">{m.packageId}</span>{/if}
           {#if nameW != null}<span class="fill"></span>{/if}
           {#if has.has("cost")}
@@ -475,7 +510,7 @@
           {#if has.has("phase")}<span class="phz">{#if pl}{@const ph = store.phaseInfo(pl.phase)}<em class="tag" title="{ph.name} · {pl.reason}">{ph.name}</em>{/if}</span>{/if}
           {#if has.has("group")}<span class="g">{#if grp}<em class="tag" title="{grp.name}{grp.auto && !store.snap?.user.modGroups[m.uid] ? ' (by the group’s own rule)' : ''}">{grp.name}</em>{/if}</span>{/if}
           <span class="badges">
-            <span class="b">{#if chg}<span class="flag chg" title="Changed since you last opened Circinus: {describeChange(chg)}">{@html chg.kind === "added" ? I.plus : I.change}</span>{/if}</span>
+            <span class="b">{#if chg}<span class="flag chg" title="Changed since you last opened Circinus: {describeChange(chg)}">{@html chg.kind === "added" ? I.plus : I.change}</span>{:else if isNew}<span class="newdot" title={arrived ? `New: first seen ${arrived}` : "New"}></span>{/if}</span>
             <span class="b">{#if upd}<span class="flag" title="A newer version is on the Workshop, updated {new Date(upd.remoteUpdated * 1000).toLocaleDateString()}">{@html I.up}</span>{/if}</span>
             <span class="b">{#if err.n || invalid}<span class="flag" title={[invalid, err.text].filter(Boolean).join("\n")}>{@html I.error}{#if err.n + (invalid ? 1 : 0) > 1}<em class="num">{err.n + (invalid ? 1 : 0)}</em>{/if}</span>{/if}</span>
             <span class="b">{#if warn.n}<span class="flag" title={warn.text}>{@html I.warn}{#if warn.n > 1}<em class="num">{warn.n}</em>{/if}</span>{/if}</span>
@@ -570,4 +605,21 @@
   .delta.down { color: var(--amber); }
   .delta.up { color: var(--blue); }
   .empty { padding: 40px; text-align: center; color: var(--text-3); }
+  /* A mod that arrived since you last looked. Green rather than amber, and a right-hand edge
+     rather than a left one, because amber on the left already means "HALO would move this" and
+     in a split pane both can be true of the same row. */
+  .row.fresh { background: var(--green-soft); box-shadow: inset -2px 0 0 var(--green); }
+  .row.fresh:hover { background: rgba(63, 196, 106, 0.2); }
+  .row.fresh.sel { background: rgba(63, 196, 106, 0.26); }
+  .newtag { font-style: normal; margin-left: 7px; font-size: 9px; font-weight: 800; letter-spacing: 0.08em; color: var(--green); background: var(--green-soft); padding: 1px 5px; border-radius: var(--r-pill); vertical-align: 1px; }
+  /* In a pane the name is barely wide enough for the name; the edge and the dot say it instead. */
+  .list.pane .newtag { display: none; }
+  .newdot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+  /* The heading of the column the list is sorted by, and which way. */
+  /* The heading is still the grid cell; the button inside it is the thing you press, so the
+     columns keep lining up and the resize handle keeps its corner. */
+  .sortbtn { font: inherit; color: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sortbtn:hover { color: var(--text-2); }
+  .hdr .h.by, .hdr .h.by .sortbtn { color: var(--amber); }
+  .dir { font-style: normal; margin-left: 3px; }
 </style>

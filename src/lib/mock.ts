@@ -111,6 +111,11 @@ if (typeof location !== "undefined" && location.search.includes("abovecore")) {
 }
 const phaseOfSeed: Record<string, Phase> = Object.fromEntries(SEED.map((s) => [uidOf(s[2]), s[5]]));
 const byUid = new Map(mods.map((m) => [m.uid, m]));
+/** Mods that arrived while Circinus was watching: ?new=3 (the default) for a handful, ?new=0 for
+ *  none. Spread over the last few days so the New tab has something to sort by, and always a
+ *  mixture of active and inactive, since a mod dropped in a folder is not in the list yet. */
+const firstSeen: Record<string, number> = {};
+const newUids: string[] = [];
 /** Mods sitting in the wrong phase to begin with: what the list has, against what HALO knows. */
 const misfiled: Record<string, Phase> = {};
 // ?big=1100&jumble=40 — a list the size of a real modded install, with a given number of mods out
@@ -270,6 +275,25 @@ function issues(order: string[]): Issue[] {
   return out;
 }
 
+// Mods that arrived while Circinus was watching. Runs after the generators above so it can pick
+// from the whole library, not just the seeds.
+{
+  const want = typeof location !== "undefined" ? Number(location.search.match(/[?&]new=(\d+)/)?.[1] ?? 3) : 3;
+  const day = 86400;
+  const nowSec = Math.floor(Date.now() / 1000);
+  // Never the game's own content: RimWorld did not arrive last Tuesday.
+  const candidates = mods.filter((m) => m.source !== "ludeon");
+  for (let k = 0; k < Math.min(want, candidates.length); k++) {
+    // Spread over hours and days both, so sorting by arrival has something to say and the
+    // newest is not simply the first one in the file.
+    const m = candidates[(k * 37 + 11) % candidates.length];
+    if (firstSeen[m.uid]) continue;
+    firstSeen[m.uid] = nowSec - (k % 2 === 0 ? 3600 * (k + 1) : day * (k + 1));
+    newUids.push(m.uid);
+  }
+  newUids.sort((a, b) => firstSeen[b] - firstSeen[a]);
+}
+
 function snapshot(): Snapshot {
   return {
     locations: settings.locations,
@@ -299,7 +323,9 @@ function snapshot(): Snapshot {
     listChange: acknowledged ? null : { added: ["voult.betterpawncontrol"], removed: ["some.missing.mod"], reordered: true, moves: [{ packageId: "krkr.rocketman", from: 41, to: 12 }, { packageId: "jaxe.rimhud", from: 9, to: 30 }] },
     changesSince: 1_756_900_000,
     dds: ddsIndex,
-    listReset: resetSimulated ? { previousCount: 44, restoreFrom: savedLists[0] } : null
+    listReset: resetSimulated ? { previousCount: 44, restoreFrom: savedLists[0] } : null,
+    firstSeen,
+    newUids
   };
 }
 

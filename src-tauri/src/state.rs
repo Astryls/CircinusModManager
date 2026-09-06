@@ -2,6 +2,7 @@
 //! No Tauri types here so it stays testable.
 
 use crate::instances::{self, Instance};
+use circinus_core::arrivals::Arrivals;
 use circinus_core::cache::Cache;
 use circinus_core::changes::{self, Baseline, ListChange, ModChange};
 use circinus_core::dds;
@@ -320,6 +321,13 @@ pub struct Snapshot {
     pub list_change: Option<ListChange>,
     /// Unix seconds of the baseline the changes are measured from (0 = first run).
     pub changes_since: i64,
+    /// uid → unix seconds Circinus first saw that folder. Only mods that arrived after the
+    /// record was started are in here; the ones that were already installed the first time we
+    /// looked have no arrival date to show, which is different from having arrived long ago.
+    pub first_seen: HashMap<String, i64>,
+    /// The mods still worth marking new, most recent first. Worked out here rather than in the
+    /// UI so the list, the tab and the count cannot disagree about what new means.
+    pub new_uids: Vec<String>,
     /// uid → what Circinus has converted for it.
     pub dds: HashMap<String, DdsSummary>,
     /// Set when ModsConfig.xml holds only official content although a real list was there
@@ -387,6 +395,10 @@ pub struct App {
     pub updates_checked_at: i64,
     /// What the previous session last saw; `changes` is the diff against it.
     pub baseline: Option<Baseline>,
+    /// When each mod folder was first seen, and which of those are still marked new. Unlike the
+    /// baseline this is not retaken every scan, which is the whole point: a mark on a row has to
+    /// outlive the rescan that the eight second folder poll runs a moment later.
+    pub arrivals: Arrivals,
     pub changes: Vec<ModChange>,
     pub list_change: Option<ListChange>,
     /// Steam's `timeupdated` per installed Workshop item, read with every scan.
@@ -463,6 +475,7 @@ impl App {
             settings.launch = instance.launch.clone();
         }
         let baseline: Option<Baseline> = cache.get(&instances::baseline_key(&instance.id)).unwrap_or(None);
+        let arrivals: Arrivals = cache.get(&instances::arrivals_key(&instance.id)).unwrap_or(None).unwrap_or_default();
         let current_list: Option<String> = cache.get(&instances::current_list_key(&instance.id)).unwrap_or(None).flatten();
         let mut app = App {
             data_dir,
@@ -489,6 +502,7 @@ impl App {
             updates: Vec::new(),
             updates_checked_at: 0,
             baseline,
+            arrivals,
             changes: Vec::new(),
             list_change: None,
             workshop_updated: HashMap::new(),
@@ -510,6 +524,7 @@ impl App {
     pub fn adopt_instance_state(&mut self) {
         self.current_list = self.cache.get::<Option<String>>(&instances::current_list_key(&self.instance.id)).unwrap_or(None).flatten();
         self.baseline = self.cache.get(&instances::baseline_key(&self.instance.id)).unwrap_or(None);
+        self.arrivals = self.cache.get(&instances::arrivals_key(&self.instance.id)).unwrap_or(None).unwrap_or_default();
     }
 
     /// Rebuild the per-mod summary from the manifest table.
@@ -611,6 +626,7 @@ impl App {
         self.recompile();
         self.read_mods_config();
         self.refresh_changes();
+        self.note_arrivals();
         self.store_baseline();
         let shallow: Vec<ModInfo> = self.mods.iter().filter(|m| self.shallow.contains(&m.uid)).cloned().collect();
         Ok(shallow)
@@ -655,6 +671,28 @@ impl App {
         }
         if self.baseline.is_none() && self.shallow.is_empty() {
             self.baseline = Some(b);
+        }
+    }
+
+    /// Note which folders are here, so an arrival is remembered rather than inferred.
+    ///
+    /// Only written when something actually changed. The folder poll rescans every eight seconds
+    /// whenever Steam touches a directory, and a record rewritten that often for no reason is a
+    /// write amplifier on an sqlite file the user did not ask us to churn.
+    fn note_arrivals(&mut self) {
+        if !self.arrivals.observe(self.mods.iter().map(|m| m.uid.clone()), now()) {
+            return;
+        }
+        if let Err(e) = self.cache.set(&instances::arrivals_key(&self.instance.id), &self.arrivals) {
+            tracing::warn!("could not store when the mods arrived: {e}");
+        }
+    }
+
+    /// The user has seen what is new: stop marking it.
+    pub fn mark_new_seen(&mut self) {
+        self.arrivals.clear(now());
+        if let Err(e) = self.cache.set(&instances::arrivals_key(&self.instance.id), &self.arrivals) {
+            tracing::warn!("could not store when the mods arrived: {e}");
         }
     }
 
@@ -812,6 +850,8 @@ impl App {
             updates: self.updates.clone(),
             updates_checked_at: self.updates_checked_at,
             changes: self.changes.clone(),
+            first_seen: self.arrivals.seen.iter().filter(|(_, &t)| t > 0).map(|(u, &t)| (u.clone(), t)).collect(),
+            new_uids: self.arrivals.new_uids(now()),
             list_change: self.list_change.clone(),
             changes_since: self.baseline.as_ref().map(|b| b.taken_at).unwrap_or(0),
             dds: self.dds_index.clone(),

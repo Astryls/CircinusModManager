@@ -62,6 +62,7 @@ export const api = {
   subscribeItems: (ids: number[]) => invoke<SubscribeOutcome>("subscribe_items", { ids }),
   unsubscribeItems: (ids: number[]) => invoke<SubscribeOutcome>("unsubscribe_items", { ids }),
   acknowledgeChanges: () => invoke<Snapshot>("acknowledge_changes"),
+  markNewSeen: () => invoke<Snapshot>("mark_new_seen"),
   // list history
   savedLists: () => invoke<SavedList[]>("saved_lists"),
   restoreList: (path: string, save: boolean) => invoke<RestoreResult>("restore_list", { path, save }),

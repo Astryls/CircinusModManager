@@ -7,7 +7,11 @@ import { EMPTY_HALO, GROUP_COLORS, loadBand, PHASES, primaryUid, severityOf, typ
 
 export type View = "order" | "library" | "downloads" | "textures" | "defs" | "patches" | "analyzer" | "halo" | "settings";
 
-export type Tab = "active" | "inactive" | "all";
+export type Tab = "active" | "inactive" | "all" | "new";
+
+/** What the list is ordered by. `order` is the load order, which is the only one that is real:
+ *  every other value sorts the view without touching what the game will read. */
+export type SortKey = "order" | "name" | "pkg" | "versions" | "load" | "cost" | "phase" | "group" | "arrived";
 /** Which list one pane of a side-by-side view shows. `null` is the ordinary single list, where
  *  the tabs decide what is in it. */
 export type Pane = "inactive" | "active";
@@ -198,6 +202,15 @@ class Store {
   updateByUid = $derived(new Map((this.snap?.updates ?? []).map((u) => [u.uid, u])));
   changes = $derived(this.snap?.changes ?? []);
   changeByUid = $derived(new Map(this.changes.map((c) => [c.uid, c])));
+  /** When each mod first appeared, for the ones that appeared while Circinus was watching. A mod
+   *  that was already installed the first time we looked has no arrival date, which is not the
+   *  same as having arrived a long time ago. */
+  firstSeenByUid = $derived(new Map(Object.entries(this.snap?.firstSeen ?? {})));
+  /** The mods still worth marking new, most recent first. The backend decides what counts, so
+   *  the mark on a row, the count on the tab and the list behind it cannot disagree. */
+  newUids = $derived(this.snap?.newUids ?? []);
+  newSet = $derived(new Set(this.newUids));
+  isNew = (uid: string) => this.newSet.has(uid);
   listChange = $derived(this.snap?.listChange ?? null);
   changeCounts = $derived.by(() => {
     const n = (k: ModChange["kind"]) => this.changes.filter((c) => c.kind === k).length;
@@ -296,9 +309,82 @@ class Store {
     for (const m of this.mods) for (const k of Object.keys(out) as (keyof typeof out)[]) if (this.passesShowOnly(m.uid, k)) out[k]++;
     return out;
   });
-  visibleActive = $derived(this.active.map((u) => this.byUid.get(u)!).filter((m) => m && this.matches(m)));
+  // ---- sorting ----
+  /** What the list is ordered by, and which way. `order` means the load order, and it is the
+   *  default because it is the only ordering that is true of anything outside the window. */
+  sortKey = $state<SortKey>("order");
+  sortDir = $state<1 | -1>(1);
+  /** Whether the list is showing something other than the order the game will load. */
+  sorted = $derived(this.sortKey !== "order");
+  /** Click a column: sort by it, or turn it round, or go back to the load order. Three states
+   *  rather than two, because a sort has to be escapable from the thing that started it. */
+  sortBy(k: SortKey) {
+    if (this.sortKey !== k) {
+      this.sortKey = k;
+      // Words read best A to Z; a measure reads best largest first, since that is the one you
+      // are looking for.
+      this.sortDir = k === "name" || k === "pkg" ? 1 : -1;
+      return;
+    }
+    if (this.sortDir === (k === "name" || k === "pkg" ? 1 : -1)) this.sortDir = this.sortDir === 1 ? -1 : 1;
+    else this.clearSort();
+  }
+  clearSort() {
+    this.sortKey = "order";
+    this.sortDir = 1;
+  }
+  /** "1.6" as a number that sorts, so 1.10 comes after 1.9 rather than before it. */
+  private versionRank(v: string): number {
+    const [maj, min] = v.split(".").map((n) => Number(n) || 0);
+    return (maj ?? 0) * 1000 + (min ?? 0);
+  }
+  /** The value a mod sorts on. Undefined sorts last whichever way round the column is, because
+   *  "no answer" is not a small answer. */
+  private sortValue(m: ModInfo): string | number | undefined {
+    switch (this.sortKey) {
+      case "name": return (m.name ?? "").toLowerCase();
+      case "pkg": return (m.packageId ?? "").toLowerCase();
+      // The newest game version the mod claims. A list sorted by "versions" is being asked
+      // which mods are furthest behind, and the highest number is what answers that.
+      case "versions": return (m.supportedVersions ?? []).map((v) => this.versionRank(v)).reduce((a, b) => Math.max(a, b), -1);
+      case "load": return this.loadOf(m.uid)?.ms;
+      // A null share is a mod circinus.sh has no measurement for, which sorts with the ones
+      // that have no weight at all rather than as a zero.
+      case "cost": return this.weightOf(m)?.share ?? undefined;
+      case "phase": return PHASES.findIndex((p) => p.id === (this.placement(m.uid)?.phase ?? "content"));
+      case "group": return this.groupOf(m.uid)?.name?.toLowerCase();
+      case "arrived": return this.firstSeenByUid.get(m.uid);
+      default: return undefined;
+    }
+  }
+  /** Order a list of mods by the current sort, leaving it alone when there is none. Sorting the
+   *  mods rather than the sections is what makes "by phase" sort within each section and the
+   *  plain load order sort as one table: the sections are built by filtering this list, and a
+   *  filter keeps the order it was given. */
+  private applySort(mods: ModInfo[]): ModInfo[] {
+    if (!this.sorted) return mods;
+    const dir = this.sortDir;
+    return [...mods].sort((a, b) => {
+      const x = this.sortValue(a);
+      const y = this.sortValue(b);
+      if (x === undefined && y === undefined) return (a.name ?? "").localeCompare(b.name ?? "");
+      if (x === undefined) return 1;
+      if (y === undefined) return -1;
+      const c = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y));
+      // Name breaks every tie, so the order does not wander between renders when a column has
+      // the same value for hundreds of mods, which most of them do.
+      return c * dir || (a.name ?? "").localeCompare(b.name ?? "");
+    });
+  }
+
+  visibleActive = $derived(this.applySort(this.active.map((u) => this.byUid.get(u)!).filter((m) => m && this.matches(m))));
   inactive = $derived(this.mods.filter((m) => !this.activeSet.has(m.uid)).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "")));
-  visibleInactive = $derived(this.inactive.filter((m) => this.matches(m)));
+  visibleInactive = $derived(this.applySort(this.inactive.filter((m) => this.matches(m))));
+  /** The mods that arrived recently, newest first unless the user has sorted them otherwise. */
+  visibleNew = $derived.by(() => {
+    const rows = this.newUids.map((u) => this.byUid.get(u)).filter((m): m is ModInfo => !!m && this.matches(m));
+    return this.sorted ? this.applySort(rows) : rows;
+  });
   /** Groups with their own place in the load order, in the order they follow one another. */
   sectionGroups = $derived((this.snap?.user.groups ?? []).filter((g) => g.section && g.phase));
   /** An order laid out for the list: each phase's ordinary members, then the groups placed after
@@ -953,6 +1039,15 @@ class Store {
     return this.run("Clearing…", async () => {
       this.apply(await api.acknowledgeChanges());
       this.showChanges = false;
+    });
+  }
+  /** Stop marking the new mods. Leaves the New tab in place with the arrival dates still on it,
+   *  because "I have seen these" and "I no longer want to know when they came" are not the same
+   *  thing, and the second is not what anyone means by clicking it. */
+  markNewSeen() {
+    return this.run("Clearing…", async () => {
+      this.apply(await api.markNewSeen());
+      if (this.tab === "new") this.tab = "all";
     });
   }
   /** Put an archived list back; with `save`, write it to ModsConfig.xml straight away. */

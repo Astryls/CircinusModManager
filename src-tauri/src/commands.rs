@@ -766,6 +766,18 @@ pub async fn acknowledge_changes(state: State<'_, Shared>) -> CmdResult<Snapshot
     .await
 }
 
+/// The user has seen which mods are new: stop marking them. Separate from acknowledging changes
+/// because they answer different questions -- what happened while you were away, against which
+/// mods you have not looked at yet -- and clearing one should not quietly clear the other.
+#[tauri::command]
+pub async fn mark_new_seen(state: State<'_, Shared>) -> CmdResult<Snapshot> {
+    with_app(&state, |app| {
+        app.mark_new_seen();
+        Ok(app.snapshot())
+    })
+    .await
+}
+
 /// Queue everything listed in ModsConfig.xml that is not installed (resolved via the Steam DB).
 #[tauri::command]
 pub async fn downloads_add_missing(dl: Dl<'_>, state: State<'_, Shared>) -> CmdResult<(AddResult, Vec<String>)> {

@@ -3,11 +3,14 @@
   import { I } from "$lib/icons";
   import { SOURCE_LABEL, type Source } from "$lib/types";
 
-  const tabs: { id: Tab; label: string; count: () => number }[] = [
-    { id: "active", label: "Active", count: () => store.active.length },
-    { id: "inactive", label: "Inactive", count: () => store.inactive.length },
-    { id: "all", label: "All", count: () => store.mods.length }
-  ];
+  // New is only there when there is something in it: a tab that always reads zero is a tab
+  // nobody presses, and it costs the other three the width it takes.
+  const tabs = $derived.by((): { id: Tab; label: string; count: number }[] => [
+    { id: "active", label: "Active", count: store.active.length },
+    { id: "inactive", label: "Inactive", count: store.inactive.length },
+    { id: "all", label: "All", count: store.mods.length },
+    ...(store.newUids.length ? [{ id: "new" as Tab, label: "New", count: store.newUids.length }] : [])
+  ]);
   const previewCount = $derived(store.preview?.moves.length ?? 0);
   const counts = $derived(store.showOnlyCounts);
   const choices = $derived.by((): { id: ShowOnly; label: string; n?: number; icon?: string }[] => [
@@ -55,8 +58,16 @@
   {#if !store.splitMode}
     <!-- Side by side, the panes decide what is shown and these would decide nothing. -->
     <div class="seg" role="tablist">
-      {#each tabs as t}<button role="tab" class:on={store.tab === t.id} aria-selected={store.tab === t.id} onclick={() => (store.tab = t.id)}>{t.label} <span class="num">{t.count()}</span></button>{/each}
+      {#each tabs as t}<button role="tab" class:on={store.tab === t.id} aria-selected={store.tab === t.id} onclick={() => (store.tab = t.id)}>{t.label} <span class="num">{t.count}</span></button>{/each}
     </div>
+  {/if}
+  {#if !store.splitMode && store.tab === "new"}
+    <button class="btn sm" onclick={() => store.markNewSeen()} title="Stop marking these as new. The dates they arrived stay.">Seen them</button>
+  {/if}
+  {#if !store.splitMode && store.sorted}
+    <!-- A sorted list is not the load order, and the way back has to be visible from the list
+         rather than remembered as "click the same heading twice more". -->
+    <button class="btn sm sortoff" onclick={() => store.clearSort()} title="Back to the load order">{@html I.close}<span class="lbl">Sorted</span></button>
   {/if}
   {#if store.splitMode === "library" || (!store.splitMode && store.tab !== "inactive")}
     <div class="seg arr" role="radiogroup" aria-label="Arrangement">
@@ -151,4 +162,6 @@
   .menu .chip { height: 24px; font-size: 11.5px; padding: 0 8px; }
   .menu .switch.sm { font-size: 12.5px; padding: 2px 6px; }
   .menu .clear { margin: 8px 4px 0; }
+  .btn.sortoff { color: var(--amber); }
+  .btn.sortoff :global(svg) { width: 13px; height: 13px; }
 </style>

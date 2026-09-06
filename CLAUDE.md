@@ -60,6 +60,17 @@ without one manual reinstall for everyone, since an app carries the public key i
   each phase beside what arrives in each, with one weighted arrow per journey — chosen from five
   mockups, because a row-by-row comparison of a thousand-mod list is unreadable however it is
   drawn (`src/lib/moves.ts`, `MovesView.svelte`).
+- New mods: `arrivals` records when Circinus first saw each folder, durably and per instance,
+  because `changes` retakes its baseline on every scan and a mark on a row has to outlive the
+  rescan the eight second folder poll runs a moment later. The first record stamps everything 0
+  ("already here"), so a first run announces nothing; a mark fades after 14 days or when the user
+  says they have seen it. The list marks them green on the *right* edge, since amber on the left
+  already means HALO would move this and one row can be both. There is a New tab, shown only when
+  something is in it.
+- Sorting: any column heading orders the list; the load order is the default and the only real
+  one. Sorting `visibleActive` rather than the sections is what makes "by phase" sort within each
+  section for free, since `layout` builds sections by filtering. Dragging is refused while
+  sorted — a drop between two rows of a list sorted by name writes a position nobody chose.
 - `defs`: builds the document the game builds — every active mod's Defs merged in load order,
   every PatchOperation applied in load order, then Name/ParentName inheritance — with the origin
   of every node recorded, so "who wins this value" has an answer. `defs::xpath` is XPath 1.0 as

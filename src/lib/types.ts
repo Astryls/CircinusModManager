@@ -340,6 +340,11 @@ export interface Snapshot {
   listChange: ListChange | null;
   /** Unix seconds of the baseline the changes are measured from (0 = first run). */
   changesSince: number;
+  /** uid → unix seconds Circinus first saw that folder, for the ones that arrived while it was
+   *  watching. A mod already installed the first time we looked is absent. */
+  firstSeen: Record<string, number>;
+  /** The mods still worth marking new, most recent first. */
+  newUids: string[];
   /** uid → what Circinus has converted for it. */
   dds: Record<string, DdsSummary>;
   /** RimWorld failed to load and wrote a Core-only list; what to put back. */

@@ -229,6 +229,7 @@ pub fn run() {
             subscribe::subscribe_items,
             subscribe::unsubscribe_items,
             commands::acknowledge_changes,
+            commands::mark_new_seen,
             commands::dds_state,
             commands::dds_overview,
             commands::dds_start,
