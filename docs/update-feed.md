@@ -213,7 +213,33 @@ Things to know about that table:
   send an unsigned bundle at all.
 - Files are named by Tauri from the product name and version; spaces in them are real spaces.
 
-## 5. Pushing a build
+## 5. Cutting a release
+
+```sh
+node tools/release.mjs 0.2.0            # the whole thing
+node tools/release.mjs 0.2.0 --dry-run  # say what would happen, change nothing
+node tools/release.mjs --local          # build this machine's platform only, and push that
+```
+
+**A Windows installer can only be made on Windows, a `.dmg` and its `.app.tar.gz` only on macOS,
+an AppImage only on Linux.** No one machine can produce the set, so cutting a release means
+pushing a tag and letting three machines build it. `tools/release.mjs 0.2.0` does that: it writes
+the version into the three files that carry it (`package.json`, `src-tauri/tauri.conf.json`, the
+workspace `Cargo.toml`), runs `cargo test`, `npm run check`, the front-end build and the push
+test, commits, makes an **annotated** tag whose message becomes the release notes, and pushes.
+From there `.github/workflows/release.yml` builds the three platforms and one job uploads and
+publishes all four files. If the GitHub CLI is installed the script follows the run and finishes
+by reading `latest.json` to say what an installed copy will actually be offered.
+
+It refuses to re-cut a tag that exists, or to cut a version that is not newer than the last one.
+Both would be published over people who already have that number.
+
+`--local` is the exception: build the platform you are sitting at and push only that slot, for a
+fix that affects one platform. It needs `TAURI_SIGNING_PRIVATE_KEY` set, because without it the
+build writes installers with no `.sig` beside them and every one of them is stored, listed, and
+never offered.
+
+## 6. Pushing a build
 
 `tools/push-build.mjs` is the whole interface. The release workflow runs it on a tag, and it can
 be run by hand against a local build:
@@ -254,11 +280,12 @@ the number is written, once), or when a file is empty or over the site's 600 MB 
 `node tools/loadtest/push-build.cjs` runs the script against a stub of the site with fake
 bundles and checks the whole sequence, including each of those refusals.
 
-## 6. Where the app side lives
+## 7. Where the app side lives
 
 - `src-tauri/tauri.conf.json` — the version (written once, here), the two endpoints in order,
   the public key, `bundle.createUpdaterArtifacts`.
-- `tools/push-build.mjs` — the release push, and `tools/loadtest/push-build.cjs` its test.
+- `tools/release.mjs` — cutting a release; `tools/push-build.mjs` — the push itself, with
+  `tools/loadtest/push-build.cjs` as its test.
 - `.github/workflows/release.yml` — builds three platforms on a tag, pushes them, drafts a
   GitHub release as a copy.
 - `src-tauri/src/updater.rs` — the `update_check` and `update_install` commands, the quiet

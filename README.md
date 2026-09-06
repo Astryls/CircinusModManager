@@ -159,6 +159,14 @@ Auto-update, once **https://circinus.sh/modmanager** is serving builds (a separa
 
 The columns then stop being the two orders and become **what leaves** and **what arrives**: on the left a card per phase mods are leaving, on the right a card per phase they land in, and between them one arrow per journey, weighted by how many mods make it and carrying the count. That is the shape of the change in one look — three loaders pulled to the top, four libraries up behind them, three performance mods pushed to the end — which no row-by-row view says out loud. Each card lists its mods with the number they have and the number they would have, ten at a time with the rest a click away, and each row's tooltip is HALO's own reason for filing it there. Hovering an arrow or a phase dims everything not making that journey; clicking one keeps only those moves; the search box narrows the cards with everything else; clicking a mod selects it, so the panel can explain it. The sentence above says how many mods move and how many only change number, which is the question the old two-list view could not answer.
 
+## Making a release
+
+```sh
+node tools/release.mjs 0.2.0
+```
+
+That writes the version into the three files that carry it, runs the tests, tags it and pushes. The tag is what builds the Windows installer, the Mac disk image and update bundle, and the Linux AppImage, on three machines, and uploads all four files to circinus.sh - a Windows installer can only be built on Windows, so no single machine can make the set. `--local` builds and pushes only the platform you are on, for a one-platform fix; `--dry-run` says what would happen. `docs/update-feed.md` has the whole of it, including what the site refuses and why.
+
 ## Getting help
 
 The sidebar ends with **Help on Discord**, and Settings has a *Help and about* card with the same link beside circinus.sh: <https://discord.gg/JvsdeBw897>. A mod sorted somewhere odd is worth reporting there with the mod's name and where you expected it instead.

@@ -11,7 +11,9 @@
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "tauri": "tauri",
-    "release": "tauri build"
+    "release": "tauri build",
+    "release:cut": "node tools/release.mjs",
+    "release:push": "node tools/push-build.mjs"
   },
   "dependencies": {
     "@fontsource-variable/figtree": "^5.3.0",
