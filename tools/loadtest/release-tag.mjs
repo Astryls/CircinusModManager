@@ -12,7 +12,7 @@
 // So this cuts a real release in a throwaway repository with every git identity taken away, and
 // then asks git what it recorded. Everything here runs in about a second and needs no network.
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, copyFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -84,6 +84,28 @@ try {
   ok("and says why", /already exists/.test(`${again.stdout}${again.stderr}`), true);
   const back = spawnSync(process.execPath, [path.join(work, "tools", "release.mjs"), "0.9.0", "--tag-only"], { cwd: work, encoding: "utf8", env: NOBODY });
   ok("going backwards is refused", back.status, 1);
+
+  // Reached through a symlink, which is not a curiosity: macOS puts every temporary directory
+  // under /var/folders, a symlink to /private/var/folders, and Windows can name the same
+  // directory RUNNER~1. A script that decides whether it was run by comparing the path it was
+  // given against the path it resolved to then decides it was imported, does nothing at all,
+  // and exits 0 -- which reads exactly like a release that worked.
+  console.log("\nReached through a symlink");
+  const linked = path.join(root, "linked");
+  let madeLink = true;
+  try {
+    symlinkSync(work, linked, "junction");
+  } catch {
+    madeLink = false;
+  }
+  if (!madeLink) {
+    console.log("  skipped  this machine does not allow making one");
+  } else {
+    const viaLink = spawnSync(process.execPath, [path.join(linked, "tools", "release.mjs"), "1.0.0", "--tag-only"], { cwd: linked, encoding: "utf8", env: NOBODY });
+    // Refusing 1.0.0 as already cut is proof that it ran at all. Exiting 0 in silence is the bug.
+    ok("it runs rather than quietly deciding it was imported", viaLink.status, 1);
+    ok("and it is the version guard that stopped it", /already exists/.test(`${viaLink.stdout}${viaLink.stderr}`), true);
+  }
 } finally {
   rmSync(root, { recursive: true, force: true });
 }

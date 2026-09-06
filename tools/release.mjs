@@ -25,6 +25,7 @@
 // set, so "build all three and push them" means pushing a tag and letting three machines do it.
 // `--local` is the exception, for a fix that only affects the platform you are sitting at.
 import { readFile, writeFile } from "node:fs/promises";
+import { realpathSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -321,6 +322,31 @@ const main = async () => {
 // not get tagged the first time, and a rule that decides how a command line is built deserves a
 // test that does not involve cutting a release to find out.
 export { quote, forShell, newer };
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+
+/**
+ * Is this file the one that was run, rather than one something imported?
+ *
+ * Comparing the two paths as strings is not enough, and getting it wrong is quiet in the worst
+ * way: the script does nothing and exits 0, which reads as a release that worked. `import.meta.url`
+ * is the real path; `process.argv[1]` is whatever was typed. On macOS the system temporary
+ * directory is /var/folders/..., a symlink to /private/var/folders/..., so the two disagree for
+ * any script run from there; Windows can hand back an 8.3 short name like RUNNER~1 for the same
+ * directory, and its paths do not care about case. So resolve both and compare what the
+ * filesystem says they are.
+ */
+function isTheScriptBeingRun() {
+  if (!process.argv[1]) return false;
+  const real = (p) => {
+    try {
+      return realpathSync.native(p);
+    } catch {
+      return path.resolve(p);
+    }
+  };
+  const norm = (p) => (process.platform === "win32" ? real(p).toLowerCase() : real(p));
+  return norm(process.argv[1]) === norm(fileURLToPath(import.meta.url));
+}
+
+if (isTheScriptBeingRun()) {
   main().catch((e) => die(e?.stack ?? String(e)));
 }
