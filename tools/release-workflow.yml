@@ -134,10 +134,16 @@ jobs:
       # cargo writes to `target/` there and nothing was ever written to `src-tauri/target`. With
       # the cache aimed at a directory cargo does not use, every run recompiled every dependency
       # from nothing.
+      #
+      # And saved even when the job fails, which is not the default. Every failure this release
+      # has had came after the compiling was done -- a missing bundle, an empty certificate, a
+      # directory nobody wrote to -- so throwing the compile away on the way out meant each fix
+      # paid the full cost again to reach the same place.
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: . -> target
           key: ${{ matrix.target }}
+          cache-on-failure: true
 
       - run: npm ci
 
