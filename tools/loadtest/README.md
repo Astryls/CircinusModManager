@@ -21,3 +21,5 @@ Playwright is needed for the browser (`npm i -D playwright && npx playwright ins
 ## Screenshots of the mock UI
 
 `shots.cjs`, `shots2.cjs` and `shots3.cjs` (Textures view) drive the built UI against the browser mock (`npx vite preview --port 4173`) and save the main views; `shots2` opens `/?nosteamcmd` for the first-run state. Run them with Playwright on `NODE_PATH`, e.g. `NODE_PATH=$(npm root -g) node tools/loadtest/shots.cjs out/`.
+
+`shots26.cjs` covers the two side-by-side views — Inactive | Active and Current | HALO. It asserts rather than prints, and exits non-zero on the first thing that is wrong: `npx vite preview --port 4180 --strictPort` then `NODE_PATH=$(npm root -g) node tools/loadtest/shots26.cjs out/`.

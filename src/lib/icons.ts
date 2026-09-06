@@ -25,6 +25,7 @@ const circleBadge = (c: string[], inner: string) => svg(`<circle cx="12" cy="12"
 export const I = {
   // navigation
   list: svg(`<rect x="4.5" y="3.5" width="15" height="18" rx="2" ${fo(PAP)}/><rect x="9" y="1.8" width="6" height="3.4" rx="1.2" ${fo(GRY)}/><path d="M8 10h8M8 13.5h8M8 17h4.5" fill="none" stroke="#5c9ded" stroke-width="1.8"/>`),
+  split: svg(`<rect x="2.5" y="4" width="8.5" height="16" rx="1.6" ${fo(GRY)}/><rect x="13" y="4" width="8.5" height="16" rx="1.6" ${fo(BLU)}/>`),
   library: svg(`<rect x="2.5" y="5" width="5.5" height="16" rx="1.2" ${fo(BLU)}/><rect x="9.25" y="3" width="5.5" height="18" rx="1.2" ${fo(GRN)}/><rect x="16" y="6.5" width="5.5" height="14.5" rx="1.2" ${fo(AMB)}/>`),
   download: svg(`<path d="M2.5 13.5h5l1.6 3h5.8l1.6-3h5V19a2 2 0 0 1-2 2h-15a2 2 0 0 1-2-2z" ${fo(GRY)}/><path d="M9.8 2.5h4.4v6.2H17L12 14 7 8.7h2.8z" ${fo(BLU)}/>`),
   cloud: svg(`<path d="M7 18.5a4.2 4.2 0 0 1-.4-8.4A5.6 5.6 0 0 1 17.4 8.6 4 4 0 0 1 17.5 18.5z" ${fo(SKY)}/><path d="M10.6 11h2.8v3.6h2.2L12 18.4 8.4 14.6h2.2z" ${fo(BLU)}/>`),

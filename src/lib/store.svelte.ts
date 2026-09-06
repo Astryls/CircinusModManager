@@ -8,6 +8,12 @@ import { EMPTY_HALO, GROUP_COLORS, loadBand, PHASES, primaryUid, severityOf, typ
 export type View = "order" | "library" | "downloads" | "textures" | "defs" | "patches" | "analyzer" | "halo" | "settings";
 
 export type Tab = "active" | "inactive" | "all";
+/** Which list one pane of a side-by-side view shows. `null` is the ordinary single list, where
+ *  the tabs decide what is in it. */
+export type Pane = "inactive" | "active" | "proposed";
+/** The two comparisons: your library (inactive beside active) and the order you have now beside
+ *  the one HALO proposes. */
+export type Split = "library" | "halo";
 /** What the list is narrowed to: mods with errors, warnings, HALO notes, conflicts, changes, or moves. */
 export type ShowOnly = "attention" | "error" | "warning" | "note" | "conflict" | "collision" | "heavy" | "slow" | "changed" | "moved" | null;
 
@@ -31,6 +37,8 @@ class Store {
   onlyCurrentVersion = $state(false);
   showOnly = $state<ShowOnly>(null);
   selected = $state<string[]>([]);
+  /** Off, or the two lists shown side by side. */
+  split = $state<Split | null>(null);
   preview = $state<SortResult | null>(null);
   importPreview = $state<ImportPreview | null>(null);
   collectionPreview = $state<CollectionPreview | null>(null);
@@ -55,8 +63,13 @@ class Store {
   patchReport = $state<PatchReport | null>(null);
   /** Notices closed for this session (they come back next launch if still true). */
   dismissed = $state<string[]>([]);
-  /** uid → the list should scroll to it on the next render. */
-  scrollRequest = $state<string | null>(null);
+  /** The list should scroll to a mod on the next render: which mod, which pane is being asked
+   *  (`null` is the ordinary single list), and whether the row takes focus when it arrives. */
+  scrollRequest = $state<{ uid: string; pane: Pane | null; focus: boolean } | null>(null);
+  /** The drag in flight, shared so one pane can draw a drop line for mods picked up in the other. */
+  drag = $state<{ uids: string[]; from: Pane | null } | null>(null);
+  /** Where a drag would land: which pane, and either a row to drop beside or the end of the list. */
+  drop = $state<{ pane: Pane | null; uid?: string; after?: boolean; end?: boolean } | null>(null);
   /** The right-click menu, when open: where, and for which mods. */
   menu = $state<{ x: number; y: number; uids: string[] } | null>(null);
   /** The collection panel, when open: which followed collection. */
@@ -288,20 +301,33 @@ class Store {
   visibleInactive = $derived(this.inactive.filter((m) => this.matches(m)));
   /** Groups with their own place in the load order, in the order they follow one another. */
   sectionGroups = $derived((this.snap?.user.groups ?? []).filter((g) => g.section && g.phase));
-  /** The load order as shown: each phase's ordinary members, then the groups placed after it. */
-  sections = $derived.by(() => {
+  /** An order laid out for the list: each phase's ordinary members, then the groups placed after
+   *  it. Used for the order you have and, with HALO's placements, for the one it proposes. */
+  private layout(mods: ModInfo[], where: Map<string, Placement>) {
     const out: { phase: (typeof PHASES)[number]; group?: Group; mods: ModInfo[] }[] = [];
     for (const p of PHASES) {
-      const inPhase = this.visibleActive.filter((m) => (this.placementByUid.get(m.uid)?.phase ?? "content") === p.id);
-      const plain = inPhase.filter((m) => !this.placementByUid.get(m.uid)?.section);
+      const inPhase = mods.filter((m) => (where.get(m.uid)?.phase ?? "content") === p.id);
+      const plain = inPhase.filter((m) => !where.get(m.uid)?.section);
       if (plain.length) out.push({ phase: p, mods: plain });
       for (const g of this.sectionGroups.filter((g) => g.phase === p.id)) {
-        const mods = inPhase.filter((m) => this.placementByUid.get(m.uid)?.section === g.id);
+        const mods = inPhase.filter((m) => where.get(m.uid)?.section === g.id);
         if (mods.length) out.push({ phase: p, group: g, mods });
       }
     }
     return out;
-  });
+  }
+  /** The load order as shown: each phase's ordinary members, then the groups placed after it. */
+  sections = $derived(this.layout(this.visibleActive, this.placementByUid));
+  /** Where HALO would file each mod while a preview is up. */
+  proposedPlacementByUid = $derived(new Map((this.preview?.placements ?? []).map((p) => [p.uid, p])));
+  /** The order HALO proposes, as mods, narrowed by the same search and filters. */
+  visibleProposed = $derived((this.preview?.order ?? []).map((u) => this.byUid.get(u)!).filter((m) => m && this.matches(m)));
+  /** The same sections, for the order HALO proposes. */
+  proposedSections = $derived(this.preview ? this.layout(this.visibleProposed, this.proposedPlacementByUid) : []);
+  /** Where each mod would sit in HALO's order, for the numbers in the proposed pane. */
+  proposedIndexOf = $derived(new Map((this.preview?.order ?? []).map((u, i) => [u, i])));
+  /** The split actually in effect: the HALO comparison needs a preview to compare against. */
+  splitMode = $derived<Split | null>(this.split === "halo" && !this.preview ? null : this.split);
   selectedMod = $derived(this.selected.length ? this.byUid.get(this.selected[this.selected.length - 1]) : undefined);
 
   // ---- lifecycle ----
@@ -657,7 +683,7 @@ class Store {
   private apply(s: Snapshot | undefined) {
     if (s) {
       this.snap = s;
-      this.preview = null;
+      this.clearPreview();
     }
   }
 
@@ -726,7 +752,7 @@ class Store {
     return this.run("Applying HALO order…", async () => {
       const r = await api.halo(true);
       this.snap = await api.snapshot();
-      this.preview = null;
+      this.clearPreview();
       this.say(r.moves.length ? `Moved ${r.moves.length} mod${r.moves.length === 1 ? "" : "s"}` : "Already in HALO order");
     });
   }
@@ -743,9 +769,25 @@ class Store {
       this.importPreview = await api.importList(path, text);
     });
   }
-  scrollTo(uid: string) {
-    this.select(uid);
-    this.scrollRequest = uid;
+  /** Which pane holds a mod, so a scroll request reaches the list that can actually show it. */
+  paneFor(uid: string): Pane | null {
+    if (this.splitMode === "library") return this.activeSet.has(uid) ? "active" : "inactive";
+    if (this.splitMode === "halo") return "active";
+    return null;
+  }
+  /** Bring a mod into view. The mirror click in a comparison asks the *other* pane and leaves both
+   *  the selection and the keyboard where they were. */
+  scrollTo(uid: string, opts: { pane?: Pane | null; select?: boolean; focus?: boolean } = {}) {
+    // The HALO comparison holds active mods only. Asked for one that is not in it, leave it
+    // rather than scroll a list that has no such row.
+    if (opts.pane === undefined && this.split === "halo" && !this.activeSet.has(uid)) this.split = null;
+    if (opts.select !== false) this.select(uid);
+    this.scrollRequest = { uid, pane: opts.pane !== undefined ? opts.pane : this.paneFor(uid), focus: opts.focus !== false };
+  }
+  /** Leaving a preview behind, applied or discarded: the comparison has nothing left to compare. */
+  clearPreview() {
+    this.preview = null;
+    if (this.split === "halo") this.split = null;
   }
   /** Bring a mod into view wherever it is: the load order view, the tab it lives in, and any
    *  filter that would hide it lifted. */
@@ -754,6 +796,8 @@ class Store {
     if (!m) return;
     this.view = "order";
     const inactive = !this.activeSet.has(uid);
+    // The HALO comparison shows active mods only, so an inactive mod has to leave it behind.
+    if (inactive && this.split === "halo") this.split = null;
     if (inactive && this.tab === "active") this.tab = "inactive";
     if (!inactive && this.tab === "inactive") this.tab = "active";
     // Lift only the filters that hide it, one at a time.
@@ -925,7 +969,7 @@ class Store {
     return this.run(save ? "Restoring and saving…" : "Restoring…", async () => {
       const r = await api.restoreList(path, save);
       this.snap = r.snapshot;
-      this.preview = null;
+      this.clearPreview();
       this.showImport = false;
       this.say(`${r.restored} mods back in the list${r.missing.length ? `, ${r.missing.length} not installed` : ""}${save ? " · ModsConfig.xml saved" : " · press Save to write it"}`, r.missing.length ? "warn" : "ok");
       return r;
@@ -944,7 +988,7 @@ class Store {
     return this.run("Loading list…", async () => {
       const r = await api.loadNamedList(name);
       this.snap = r.snapshot;
-      this.preview = null;
+      this.clearPreview();
       this.say(`${r.restored} mods in the list${r.missing.length ? `, ${r.missing.length} not installed` : ""} · press Save to write ModsConfig.xml`, r.missing.length ? "warn" : "ok");
       return r;
     });
@@ -982,7 +1026,7 @@ class Store {
       const inst = await api.instanceSwitch(id, discard);
       this.snap = await api.snapshot();
       this.selected = [];
-      this.preview = null;
+      this.clearPreview();
       await this.refreshInstances();
       this.say(`${inst.name}: reading its mods`);
       return inst;

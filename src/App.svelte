@@ -27,6 +27,27 @@
     store.load();
   });
 
+  // A pane still has to hold a row worth reading: the number, a mod name of 180px, the six badges
+  // and the Move column come to 440px, so two of them and the gap between need 892. Measured
+  // against the centre column rather than the window, because the inspector is what takes the
+  // room: at 1440 it is still there and one pane fits, at 1180 it is gone and two do.
+  const TWO_UP = 892;
+  let centre = $state(1200);
+  let only = $state(0);
+  const twoUp = $derived(centre >= TWO_UP);
+  const panes = $derived.by(() => {
+    const n = store.preview?.moves.length ?? 0;
+    if (store.splitMode === "library") return [
+      { pane: "inactive" as const, title: "Inactive", count: `${store.visibleInactive.length}`, note: "the mods you are not using" },
+      { pane: "active" as const, title: "Active", count: `${store.visibleActive.length}`, note: "your active list" }
+    ];
+    if (store.splitMode === "halo") return [
+      { pane: "active" as const, title: "Current", count: `${store.visibleActive.length}`, note: "the order you have now" },
+      { pane: "proposed" as const, title: "HALO proposes", count: `${n} move${n === 1 ? "" : "s"}`, note: "the order HALO proposes" }
+    ];
+    return [];
+  });
+
   function onKey(e: KeyboardEvent) {
     const tag = (e.target as HTMLElement)?.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
@@ -41,7 +62,7 @@
     else if (e.key === "Delete" || e.key === "Backspace") {
       const sel = store.selected.filter((u) => store.activeSet.has(u));
       if (sel.length) { e.preventDefault(); store.deactivate(sel); }
-    } else if (e.key === "Escape") { if (store.showInstances) store.showInstances = false; else if (store.showChanges) store.showChanges = false; else { store.selected = []; store.preview = null; } }
+    } else if (e.key === "Escape") { if (store.showInstances) store.showInstances = false; else if (store.showChanges) store.showChanges = false; else { store.selected = []; store.clearPreview(); } }
   }
 </script>
 
@@ -66,11 +87,27 @@
   {:else}
     <div class="frame">
       <Panel name="Sidebar"><Rail /></Panel>
-      <main class="center">
+      <main class="center" bind:clientWidth={centre}>
         <Panel name="Summary"><Stats /></Panel>
         <Panel name="Attention banner"><Banner /></Panel>
         <Panel name="Toolbar"><Toolbar /></Panel>
-        <Panel name="Mod list"><ModList /></Panel>
+        {#if panes.length}
+          <div class="panes" class:one={!twoUp}>
+            {#each twoUp ? panes : [panes[only]] as p (p.pane)}
+              <Panel name={p.title}>
+                <section class="pane">
+                  <div class="phead"><span class="t">{p.title}</span><span class="sep">·</span><span class="n num">{p.count}</span></div>
+                  <ModList pane={p.pane} />
+                </section>
+              </Panel>
+            {/each}
+          </div>
+          {#if !twoUp}
+            <div class="narrow">Not enough width for two panels, so this is {panes[only].note} on its own. <button onclick={() => (only = only ? 0 : 1)}>Show {panes[only ? 0 : 1].note}</button></div>
+          {/if}
+        {:else}
+          <Panel name="Mod list"><ModList /></Panel>
+        {/if}
       </main>
       <Panel name="Inspector"><Inspector /></Panel>
       <div class="foot">
@@ -100,6 +137,16 @@
   .frame.two { grid-template-columns: 236px minmax(0, 1fr); }
   .frame > :global(*) { min-width: 0; min-height: 0; }
   .center { display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; }
+  .panes { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .panes.one { grid-template-columns: minmax(0, 1fr); }
+  .panes > :global(*) { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .pane { display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; flex: 1; }
+  .phead { display: flex; align-items: baseline; gap: 6px; padding: 0 4px; white-space: nowrap; overflow: hidden; }
+  .phead .t { font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-2); }
+  .phead .sep, .phead .n { font-size: 11.5px; font-weight: 600; color: var(--text-3); }
+  .narrow { font-size: 11.5px; color: var(--text-3); padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .narrow button { color: var(--text-2); font-size: 11.5px; font-weight: 600; text-decoration: underline; }
+  .narrow button:hover { color: var(--text); }
   .foot { grid-column: 1 / -1; font-size: 11.5px; color: var(--text-3); text-align: center; padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: -4px; }
   .loading { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(11, 11, 13, 0.7); backdrop-filter: blur(4px); z-index: 50; color: var(--text-2); font-weight: 600; }
   .loading > * { grid-area: 1 / 1; }

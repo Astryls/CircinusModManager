@@ -1,9 +1,15 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { store } from "$lib/store.svelte";
+  import { store, type Pane } from "$lib/store.svelte";
   import { I } from "$lib/icons";
   import { describe, explainLoad } from "$lib/describe";
   import { BAND_LABEL, LOAD_BAND_LABEL, describeChange, severityOf, type Issue, type ModInfo } from "$lib/types";
+
+  // One list, shown four ways. Without `pane` this is the whole list and the tabs decide what is
+  // in it; with one it is half of a side-by-side view and shows only its own half.
+  let { pane = null }: { pane?: Pane | null } = $props();
+  /** HALO's proposal is something to read, not something to rearrange. */
+  const readOnly = $derived(pane === "proposed");
 
   // ---- virtualization: only the rows in view exist in the DOM ----
   const ROW = 40;
@@ -20,13 +26,16 @@
 
   // ---- columns: Mod and Package id can be dragged; the rest are fixed ----
   const NAME_MIN = 120;
+  /** Half the width, so a pane holds a column only while the name stays worth reading. */
+  const PANE_NAME_MIN = 180;
   const PKG_MIN = 60;
   const PKG_DEFAULT = 120;
   /** A width being dragged right now, ahead of the saved one. */
   let live = $state<{ key: "name" | "pkg"; px: number } | null>(null);
-  const nameW = $derived(live?.key === "name" ? live.px : store.columns.name);
+  const savedNameW = $derived(live?.key === "name" ? live.px : store.columns.name);
   const pkgW = $derived(live?.key === "pkg" ? live.px : (store.columns.pkg ?? PKG_DEFAULT));
-  const showMove = $derived(!!store.preview);
+  /** An inactive mod has no place in the order, so nothing HALO could move it by. */
+  const showMove = $derived(!!store.preview && pane !== "inactive");
   /** The optional columns, in the order they appear. Cost follows its own setting (it needs
       figures Circinus only has once weights are loaded); the rest are the user's to choose. */
   const on = $derived(new Set(store.listColumns));
@@ -37,14 +46,38 @@
     { key: "phase", w: 106, show: on.has("phase") },
     { key: "group", w: 106, show: on.has("group") }
   ]);
-  const shown = $derived(optional.filter((c) => c.show));
-  const BADGES = 232;
+  const wanted = $derived(optional.filter((c) => c.show));
+  /** A pane carries six badges in the space, and without their words: the strip above it says
+      what the list is, so the row only has to be readable. */
+  const BADGES = $derived(pane === null ? 232 : 138);
+  const minName = $derived(pane === null ? NAME_MIN : PANE_NAME_MIN);
+  /** What a row costs before any optional column: the number, the badges, the move, the gaps. */
+  const baseW = $derived(34 + BADGES + (showMove ? 40 + 6 : 0) + 3 * 6);
+  /** The one list shows every column the user asked for. A pane is half as wide, so it keeps them
+      from the left and drops the rest rather than squeeze the names past reading. */
+  const shown = $derived.by(() => {
+    if (pane === null) return wanted;
+    const budget = listW - 24 - baseW - minName;
+    const keep: typeof wanted = [];
+    let used = 0;
+    for (const c of wanted) {
+      if (used + c.w + 6 > budget) break;
+      used += c.w + 6;
+      keep.push(c);
+    }
+    return keep;
+  });
   /** Width of everything that is neither the name nor the package id, gaps included. */
-  const fixedW = $derived(34 + shown.reduce((n, c) => n + c.w + 6, 0) + BADGES + (showMove ? 40 + 6 : 0) + 3 * 6);
+  const fixedW = $derived(baseW + shown.reduce((n, c) => n + c.w + 6, 0));
   /** Narrow lists drop the package id column rather than squeeze the names below their minimum. */
-  const showPkg = $derived(listW - 24 - fixedW - NAME_MIN >= (store.columns.pkg ?? PKG_DEFAULT) + 6);
+  const showPkg = $derived(listW - 24 - fixedW - minName >= (store.columns.pkg ?? PKG_DEFAULT) + 6);
+  /** The optional columns this list is actually drawing. */
+  const has = $derived(new Set(shown.map((c) => c.key)));
+  /** A width dragged in the wide single list would not fit a pane; there the name takes what is
+      left instead of pushing the row past its edge. */
+  const nameW = $derived(savedNameW == null || pane === null ? savedNameW : Math.max(minName, Math.min(savedNameW, listW - 24 - fixedW - (showPkg ? pkgW + 6 : 0))));
   const template = $derived.by(() => {
-    const cols = ["34px", nameW != null ? `${nameW}px` : `minmax(${NAME_MIN}px, 1fr)`];
+    const cols = ["34px", nameW != null ? `${nameW}px` : `minmax(${minName}px, 1fr)`];
     if (showPkg) cols.push(`${pkgW}px`);
     if (nameW != null) cols.push("minmax(0, 1fr)");
     for (const c of shown) cols.push(`${c.w}px`);
@@ -91,27 +124,33 @@
     live = null;
     store.setColumn(key, null);
   }
-  let dragUids = $state<string[]>([]);
-  let dropAt = $state<{ uid: string; after: boolean } | null>(null);
-  let dropEnd = $state(false);
 
+  /** The order this list shows: yours, or the one HALO proposes. */
+  const sections = $derived(pane === "proposed" ? store.proposedSections : store.sections);
+  const ordered = $derived(pane === "proposed" ? store.visibleProposed : store.visibleActive);
+  const indexOf = $derived(pane === "proposed" ? store.proposedIndexOf : store.indexOf);
+  const placementOf = $derived(pane === "proposed" ? (uid: string) => store.proposedPlacementByUid.get(uid) : (uid: string) => store.placement(uid));
   const items = $derived.by((): Item[] => {
     const out: Item[] = [];
-    if (store.tab !== "inactive") {
+    if (pane === "inactive") {
+      // Its own pane says what it is in the strip above it, so the list needs no header.
+      for (const m of store.visibleInactive) out.push({ kind: "row", key: m.uid, mod: m, inactive: true });
+      return out;
+    }
+    if (pane !== null || store.tab !== "inactive") {
       if (store.byPhase) {
-        for (const sec of store.sections) {
+        for (const sec of sections) {
           if (sec.group) out.push({ kind: "header", key: `h:${sec.phase.id}:${sec.group.id}`, name: sec.group.name, color: sec.group.color, note: `Your group, after ${sec.phase.name.toLowerCase()}`, count: sec.mods.length });
           else out.push({ kind: "header", key: `h:${sec.phase.id}`, name: sec.phase.name, color: sec.phase.color, note: sec.phase.note, count: sec.mods.length });
           for (const m of sec.mods) out.push({ kind: "row", key: m.uid, mod: m, inactive: false });
         }
       } else {
         // The plain load order, exactly as ModsConfig.xml has it.
-        const va = store.visibleActive;
-        if (store.tab === "all") out.push({ kind: "header", key: "h:active", name: "Active", color: "blue", note: "In load order, as ModsConfig.xml has it", count: va.length });
-        for (const m of va) out.push({ kind: "row", key: m.uid, mod: m, inactive: false });
+        if (pane === null && store.tab === "all") out.push({ kind: "header", key: "h:active", name: "Active", color: "blue", note: "In load order, as ModsConfig.xml has it", count: ordered.length });
+        for (const m of ordered) out.push({ kind: "row", key: m.uid, mod: m, inactive: false });
       }
     }
-    if (store.tab !== "active") {
+    if (pane === null && store.tab !== "active") {
       const vi = store.visibleInactive;
       out.push({ kind: "header", key: "h:inactive", name: "Inactive", color: "", note: "Installed, not in ModsConfig.xml", count: vi.length });
       for (const m of vi) out.push({ kind: "row", key: m.uid, mod: m, inactive: true });
@@ -168,12 +207,13 @@
       scroller.scrollTop = Math.max(0, y + TOP - viewport / 2);
       scrollTop = scroller.scrollTop;
     }
-    if (focus) tick().then(() => (document.querySelector(`[data-uid="${CSS.escape(uid)}"]`) as HTMLElement | null)?.focus());
+    // Scoped to this list: side by side, the same mod has a row in the other pane too.
+    if (focus) tick().then(() => (scroller?.querySelector(`[data-uid="${CSS.escape(uid)}"]`) as HTMLElement | null)?.focus());
   }
   $effect(() => {
-    const uid = store.scrollRequest;
-    if (uid) {
-      tick().then(() => { scrollToUid(uid, true); store.scrollRequest = null; });
+    const req = store.scrollRequest;
+    if (req && req.pane === pane) {
+      tick().then(() => { scrollToUid(req.uid, req.focus); store.scrollRequest = null; });
     }
   });
 
@@ -190,15 +230,20 @@
   }
   function click(e: MouseEvent, m: ModInfo) {
     store.select(m.uid, { toggle: e.ctrlKey || e.metaKey, range: e.shiftKey, list: visibleList() });
+    // Side by side with HALO, a click asks "and where is it in the other one?" — so the other pane
+    // goes to the same mod, without taking the selection or the keyboard away from this one.
+    if (store.splitMode === "halo") store.scrollTo(m.uid, { pane: pane === "proposed" ? "active" : "proposed", select: false, focus: false });
   }
   /** Right click: the menu for the selection when the row is part of it, else for that row alone. */
   function contextMenu(e: MouseEvent, m: ModInfo) {
     e.preventDefault();
     e.stopPropagation();
+    if (readOnly) return;
     if (!store.selected.includes(m.uid)) store.select(m.uid);
     store.menu = { x: e.clientX, y: e.clientY, uids: store.selected.includes(m.uid) ? [...store.selected] : [m.uid] };
   }
   function toggle(m: ModInfo) {
+    if (readOnly) return;
     if (store.activeSet.has(m.uid)) store.deactivate([m.uid]);
     else store.activate([m.uid]);
   }
@@ -220,11 +265,15 @@
   let dragging = $state(false);
   let dragCount = $state(0);
   let ghost = $state({ x: 0, y: 0 });
-  let suppressClick = false;
+  /** When the last drag ended, so the click it leaves behind can be told from a real one. */
+  let droppedAt = 0;
   let autoScroll = 0;
+  /** The list the pointer is over, which is not always the one the drag started in. */
+  let dropScroller: HTMLElement | null = null;
+  let autoTarget: HTMLElement | null = null;
 
   function pointerDown(e: PointerEvent, m: ModInfo) {
-    if (e.button !== 0 || (e.target as HTMLElement).closest("button, a, input, select")) return;
+    if (readOnly || e.button !== 0 || (e.target as HTMLElement).closest("button, a, input, select")) return;
     press = { x: e.clientX, y: e.clientY, uid: m.uid, pointerId: e.pointerId };
   }
   function pointerMove(e: PointerEvent) {
@@ -233,43 +282,60 @@
       if (Math.hypot(e.clientX - press.x, e.clientY - press.y) < 6) return;
       // Drag whatever is selected when the pressed row is part of it, else just that row.
       if (!store.selected.includes(press.uid)) store.select(press.uid);
-      dragUids = store.selected.filter((u) => store.byUid.has(u));
-      dragCount = dragUids.length;
+      const uids = store.selected.filter((u) => store.byUid.has(u));
+      store.drag = { uids, from: pane };
+      dragCount = uids.length;
       dragging = true;
-      suppressClick = true;
       document.body.style.cursor = "grabbing";
     }
     ghost = { x: e.clientX, y: e.clientY };
     updateDrop(e.clientX, e.clientY);
     edgeScroll(e.clientY);
   }
+  /** Where the pointer would drop, in whichever list it is over. */
   function updateDrop(x: number, y: number) {
-    if (!scroller) return;
     const el = document.elementFromPoint(x, y) as HTMLElement | null;
+    const list = el?.closest(".list") as HTMLElement | null;
+    dropScroller = list;
+    const target = list?.dataset.pane ?? "";
+    // HALO's proposal is read-only, so nothing can be dropped into it.
+    if (!list || target === "proposed") { store.drop = null; return; }
+    const to: Pane | null = target === "single" || target === "" ? null : (target as Pane);
+    // The inactive pane takes anything active: dropping there switches a mod off, and there is no
+    // position to pick, so the whole pane lights up rather than a line between two rows.
+    if (to === "inactive") {
+      store.drop = store.drag?.uids.some((u) => store.activeSet.has(u)) ? { pane: "inactive" } : null;
+      return;
+    }
     const row = el?.closest(".row[data-uid]") as HTMLElement | null;
     if (row) {
       const uid = row.dataset.uid ?? "";
-      if (!store.activeSet.has(uid)) { dropAt = null; dropEnd = false; return; }
+      if (!store.activeSet.has(uid)) { store.drop = null; return; }
       const r = row.getBoundingClientRect();
-      dropAt = { uid, after: y > r.top + r.height / 2 };
-      dropEnd = false;
+      store.drop = { pane: to, uid, after: y > r.top + r.height / 2 };
       return;
     }
-    const box = scroller.getBoundingClientRect();
+    // Past the last row: the end of the order. Measured from the spacer, so it works in a pane the
+    // drag did not start in, whose scroll position this component does not know.
+    const spacer = list.querySelector(".spacer") as HTMLElement | null;
+    const bottom = spacer?.getBoundingClientRect().bottom ?? 0;
+    const box = list.getBoundingClientRect();
     const inside = x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
-    dropAt = null;
-    dropEnd = inside && store.tab !== "inactive" && y > box.top + TOP + (offsets[items.length] ?? 0) - scrollTop;
+    store.drop = inside && (to === "active" || store.tab !== "inactive") && y > bottom ? { pane: to, end: true } : null;
   }
-  /** Scroll the list while the pointer sits near its top or bottom edge. */
+  /** Scroll the list under the pointer while it sits near that list's top or bottom edge. Off the
+   *  lists entirely, the one the drag came from is the one that moves. */
   function edgeScroll(y: number) {
-    if (!scroller) return;
-    const box = scroller.getBoundingClientRect();
+    const el = dropScroller ?? scroller;
+    if (!el) { autoScroll = 0; return; }
+    autoTarget = el;
+    const box = el.getBoundingClientRect();
     const zone = 48;
     autoScroll = y < box.top + zone ? -Math.ceil((box.top + zone - y) / 6) : y > box.bottom - zone ? Math.ceil((y - (box.bottom - zone)) / 6) : 0;
     if (autoScroll && !scrollTimer) scrollTimer = setInterval(() => {
-      if (!scroller || !autoScroll) return;
-      scroller.scrollTop += autoScroll;
-      scrollTop = scroller.scrollTop;
+      if (!autoTarget || !autoScroll) return;
+      autoTarget.scrollTop += autoScroll;
+      if (autoTarget === scroller && scroller) scrollTop = scroller.scrollTop;
       updateDrop(ghost.x, ghost.y);
     }, 16);
     if (!autoScroll && scrollTimer) { clearInterval(scrollTimer); scrollTimer = 0; }
@@ -283,47 +349,80 @@
     document.body.style.cursor = "";
     if (!wasDragging) return;
     dragging = false;
+    droppedAt = performance.now();
     updateDrop(e.clientX, e.clientY);
-    const uids = dragUids, target = dropAt, end = dropEnd;
-    dragUids = []; dropAt = null; dropEnd = false;
-    if (!uids.length) return;
+    const uids = store.drag?.uids ?? [], target = store.drop;
+    store.drag = null; store.drop = null; dropScroller = null;
+    if (!uids.length || !target) return;
+    // Dropped on the inactive pane: switch the active ones off, there being no place to put them.
+    if (target.pane === "inactive") {
+      const on = uids.filter((u) => store.activeSet.has(u));
+      if (on.length) await store.deactivate(on);
+      return;
+    }
     let index = store.active.length;
-    if (target) {
+    if (target.uid) {
       const i = store.indexOf.get(target.uid);
       if (i == null) return;
       index = i + (target.after ? 1 : 0);
-    } else if (!end) return;
+    } else if (!target.end) return;
     const fresh = uids.filter((u) => !store.activeSet.has(u));
     const moving = uids.filter((u) => store.activeSet.has(u));
     if (moving.length) await store.moveTo(moving, index);
     if (fresh.length) await store.activate(fresh, moving.length ? undefined : index);
   }
   function pointerCancel() {
+    if (!press && !dragging) return;
     press = null;
     dragging = false;
-    dragUids = []; dropAt = null; dropEnd = false;
+    store.drag = null; store.drop = null; dropScroller = null;
     if (scrollTimer) { clearInterval(scrollTimer); scrollTimer = 0; }
     document.body.style.cursor = "";
   }
   function rowClick(e: MouseEvent, m: ModInfo) {
-    if (suppressClick) { suppressClick = false; return; }
+    // The browser fires a click on the row a drag started from, and that one click is not a click.
+    // Read as a moment rather than a flag, so a drag that ends in the other pane cannot leave a
+    // later, real click in this one swallowed.
+    if (performance.now() - droppedAt < 120) return;
     click(e, m);
   }
+  const emptyText = $derived(
+    pane === "inactive" ? "Every installed mod is active." :
+    pane === "proposed" ? "Nothing in HALO's order matches the search or filters." :
+    pane === "active" ? "No active mod matches the search or filters." :
+    store.active.length || store.tab !== "active" ? "No mod matches the search or filters." : "No active mods. Import a list, or activate mods from the Inactive tab."
+  );
 </script>
 
 <svelte:window onpointermove={pointerMove} onpointerup={pointerUp} onpointercancel={pointerCancel} onblur={pointerCancel} />
 
-<div class="card list" class:dragging bind:this={scroller} bind:clientHeight={viewport} bind:clientWidth={listW} onscroll={onScroll} role="listbox" aria-label="Load order" aria-multiselectable="true" tabindex="-1" style="--cols: {template}">
+<div
+  class="card list"
+  class:dragging
+  class:pane={pane !== null}
+  class:take={pane === "inactive" && store.drop?.pane === "inactive"}
+  data-pane={pane ?? "single"}
+  bind:this={scroller}
+  bind:clientHeight={viewport}
+  bind:clientWidth={listW}
+  onscroll={onScroll}
+  role="listbox"
+  aria-label={pane === "inactive" ? "Inactive mods" : pane === "proposed" ? "The order HALO proposes" : "Load order"}
+  aria-multiselectable="true"
+  tabindex="-1"
+  style="--cols: {template}"
+>
   <div class="hdr" role="presentation" onpointermove={colMove} onpointerup={colUp} onpointercancel={colUp}>
-    <span class="h idx">#</span>
+    <!-- Nothing inactive has a place in the order, so its pane numbers nothing and says so. -->
+    <span class="h idx">{pane === "inactive" ? "" : "#"}</span>
     <span class="h name">Mod<span class="grab" role="separator" aria-orientation="vertical" title="Drag to change the width; double-click for the default" onpointerdown={(e) => colDown(e, "name")} ondblclick={() => colReset("name")}></span></span>
     {#if showPkg}<span class="h pkg">Package id<span class="grab" role="separator" aria-orientation="vertical" title="Drag to change the width; double-click for the default" onpointerdown={(e) => colDown(e, "pkg")} ondblclick={() => colReset("pkg")}></span></span>{/if}
     {#if nameW != null}<span class="fill"></span>{/if}
-    {#if store.showWeight}<span class="h wt" title="Share of frame time, from circinus.sh or your own runs">Cost</span>{/if}
-    {#if on.has("load")}<span class="h load" title="Expected share of the list's loading time, estimated from what the folder holds: Defs XML, patch operations and how far they search, PNG textures without DDS, assemblies. A ranking, not a stopwatch.">Load</span>{/if}
-    {#if on.has("versions")}<span class="h vers" title="Game versions the mod says it supports">Versions</span>{/if}
-    {#if on.has("phase")}<span class="h phz" title="Where HALO files the mod: the game, a library, content, a patch, a texture pack, a late loader, a performance mod">Phase</span>{/if}
-    {#if on.has("group")}<span class="h g" title="The group the mod is in">Group</span>{/if}
+    {#if has.has("cost")}<span class="h wt" title="Share of frame time, from circinus.sh or your own runs">Cost</span>{/if}
+    {#if has.has("load")}<span class="h load" title="Expected share of the list's loading time, estimated from what the folder holds: Defs XML, patch operations and how far they search, PNG textures without DDS, assemblies. A ranking, not a stopwatch.">Load</span>{/if}
+    {#if has.has("versions")}<span class="h vers" title="Game versions the mod says it supports">Versions</span>{/if}
+    {#if has.has("phase")}<span class="h phz" title="Where HALO files the mod: the game, a library, content, a patch, a texture pack, a late loader, a performance mod">Phase</span>{/if}
+    {#if has.has("group")}<span class="h g" title="The group the mod is in">Group</span>{/if}
     <span class="badges">
       <span class="h b" title="Changed since you last opened Circinus: new, or updated on disk">{@html I.change}<i>Changed</i></span>
       <span class="h b" title="A newer version is on the Workshop">{@html I.up}<i>Update</i></span>
@@ -348,7 +447,7 @@
         {@const w = store.weightOf(m)}
         {@const upd = store.updateByUid.get(m.uid)}
         {@const chg = store.changeByUid.get(m.uid)}
-        {@const pl = it.inactive ? undefined : store.placement(m.uid)}
+        {@const pl = it.inactive ? undefined : placementOf(m.uid)}
         {@const grp = store.groupOf(m.uid)}
         {@const err = bySeverity(issues, "error", m)}
         {@const warn = bySeverity(issues, "warning", m)}
@@ -359,8 +458,9 @@
           class="row"
           class:off={it.inactive}
           class:sel={store.selected.includes(m.uid)}
-          class:drop-before={dropAt?.uid === m.uid && !dropAt.after}
-          class:drop-after={dropAt?.uid === m.uid && dropAt.after}
+          class:moved={pane !== null && delta != null}
+          class:drop-before={store.drop?.pane === pane && store.drop.uid === m.uid && !store.drop.after}
+          class:drop-after={store.drop?.pane === pane && store.drop.uid === m.uid && store.drop.after}
           style="transform: translateY({y}px)"
           data-uid={m.uid}
           role="option"
@@ -372,17 +472,17 @@
           onkeydown={(e) => key(e, m)}
           onpointerdown={(e) => pointerDown(e, m)}
         >
-          <span class="idx num"><span class="grip">{@html I.grip}</span>{it.inactive ? "" : (store.indexOf.get(m.uid) ?? 0) + 1}</span>
+          <span class="idx num">{#if !readOnly}<span class="grip">{@html I.grip}</span>{/if}{it.inactive ? "" : (indexOf.get(m.uid) ?? 0) + 1}</span>
           <span class="name"><b>{m.name ?? m.uid}</b><span>{m.invalid ?? (m.authors ?? []).join(", ")}</span></span>
           {#if showPkg}<span class="pkg">{m.packageId}</span>{/if}
           {#if nameW != null}<span class="fill"></span>{/if}
-          {#if store.showWeight}
+          {#if has.has("cost")}
             <span class="wt">{#if w && w.share != null}<span class="band {w.band}" title="Performance cost: {w.share.toFixed(2)} % of frame time, {BAND_LABEL[w.band].toLowerCase()}. {w.measured ?? '?'} runs measured, from {w.origin === 'local' ? 'your runs' : 'circinus.sh'}">{w.share.toFixed(1)} %</span>{:else if w}<span class="band {w.band}" title="Performance cost: {BAND_LABEL[w.band].toLowerCase()}">{w.band === "negligible" ? "<0.1 %" : "n/a"}</span>{/if}</span>
           {/if}
-          {#if on.has("load")}<span class="load">{#if ld && m.contents.load}<span class="band {ld.band}" title="Expected share of loading time: {ld.share >= 0.0005 ? (ld.share * 100).toFixed(ld.share < 0.01 ? 2 : 1) : 'under 0.05'} % ({LOAD_BAND_LABEL[ld.band].toLowerCase()}), about {ld.ms >= 1000 ? `${(ld.ms / 1000).toFixed(1)} s` : `${ld.ms} ms`} of an estimated {store.loadTotalSeconds >= 60 ? `${(store.loadTotalSeconds / 60).toFixed(1)} min` : `${store.loadTotalSeconds.toFixed(0)} s`} for the list.&#10;{explainLoad(m).join('\n')}&#10;&#10;Estimated from the folder; a ranking, not a stopwatch.">{ld.share >= 0.001 ? `${(ld.share * 100).toFixed(ld.share < 0.01 ? 2 : 1)} %` : "<0.1 %"}</span>{:else if !it.inactive && m.contents.load == null}<span class="band unknown" title="Not read yet: the folder is still being inspected">…</span>{/if}</span>{/if}
-          {#if on.has("versions")}<span class="vers">{#each versions as v}<span class:off={!(m.supportedVersions ?? []).includes(v)}>{v}</span>{/each}</span>{/if}
-          {#if on.has("phase")}<span class="phz">{#if pl}{@const ph = store.phaseInfo(pl.phase)}<em class="tag" title="{ph.name} · {pl.reason}">{ph.name}</em>{/if}</span>{/if}
-          {#if on.has("group")}<span class="g">{#if grp}<em class="tag" title="{grp.name}{grp.auto && !store.snap?.user.modGroups[m.uid] ? ' (by the group’s own rule)' : ''}">{grp.name}</em>{/if}</span>{/if}
+          {#if has.has("load")}<span class="load">{#if ld && m.contents.load}<span class="band {ld.band}" title="Expected share of loading time: {ld.share >= 0.0005 ? (ld.share * 100).toFixed(ld.share < 0.01 ? 2 : 1) : 'under 0.05'} % ({LOAD_BAND_LABEL[ld.band].toLowerCase()}), about {ld.ms >= 1000 ? `${(ld.ms / 1000).toFixed(1)} s` : `${ld.ms} ms`} of an estimated {store.loadTotalSeconds >= 60 ? `${(store.loadTotalSeconds / 60).toFixed(1)} min` : `${store.loadTotalSeconds.toFixed(0)} s`} for the list.&#10;{explainLoad(m).join('\n')}&#10;&#10;Estimated from the folder; a ranking, not a stopwatch.">{ld.share >= 0.001 ? `${(ld.share * 100).toFixed(ld.share < 0.01 ? 2 : 1)} %` : "<0.1 %"}</span>{:else if !it.inactive && m.contents.load == null}<span class="band unknown" title="Not read yet: the folder is still being inspected">…</span>{/if}</span>{/if}
+          {#if has.has("versions")}<span class="vers">{#each versions as v}<span class:off={!(m.supportedVersions ?? []).includes(v)}>{v}</span>{/each}</span>{/if}
+          {#if has.has("phase")}<span class="phz">{#if pl}{@const ph = store.phaseInfo(pl.phase)}<em class="tag" title="{ph.name} · {pl.reason}">{ph.name}</em>{/if}</span>{/if}
+          {#if has.has("group")}<span class="g">{#if grp}<em class="tag" title="{grp.name}{grp.auto && !store.snap?.user.modGroups[m.uid] ? ' (by the group’s own rule)' : ''}">{grp.name}</em>{/if}</span>{/if}
           <span class="badges">
             <span class="b">{#if chg}<span class="flag chg" title="Changed since you last opened Circinus: {describeChange(chg)}">{@html chg.kind === "added" ? I.plus : I.change}</span>{/if}</span>
             <span class="b">{#if upd}<span class="flag" title="A newer version is on the Workshop, updated {new Date(upd.remoteUpdated * 1000).toLocaleDateString()}">{@html I.up}</span>{/if}</span>
@@ -395,13 +495,13 @@
         </div>
       {/if}
     {/each}
-    {#if dropEnd}<div class="drop-line" style="transform: translateY({total}px)"></div>{/if}
+    {#if store.drop?.pane === pane && store.drop.end}<div class="drop-line" style="transform: translateY({total}px)"></div>{/if}
   </div>
   {#if dragging}
-    <div class="ghost" style="left: {ghost.x + 14}px; top: {ghost.y + 10}px">{dragCount === 1 ? store.byUid.get(dragUids[0])?.name ?? "1 mod" : `${dragCount} mods`}</div>
+    <div class="ghost" style="left: {ghost.x + 14}px; top: {ghost.y + 10}px">{dragCount === 1 ? store.byUid.get(store.drag?.uids[0] ?? "")?.name ?? "1 mod" : `${dragCount} mods`}</div>
   {/if}
   {#if !items.length}
-    <div class="empty">{store.active.length || store.tab !== "active" ? "No mod matches the search or filters." : "No active mods. Import a list, or activate mods from the Inactive tab."}</div>
+    <div class="empty">{emptyText}</div>
   {/if}
 </div>
 
@@ -409,6 +509,9 @@
   .list { flex: 1; min-height: 0; overflow: hidden auto; padding: 0 6px 10px; position: relative; }
   .list.dragging { cursor: grabbing; }
   .list.dragging .row { cursor: grabbing; }
+  /* Dropping into the inactive pane switches mods off; there is no position to choose, so the
+     pane itself is the target rather than a line between two rows. */
+  .list.take { box-shadow: var(--shadow-card), inset 0 0 0 2px var(--amber); }
   .ghost { position: fixed; z-index: 30; pointer-events: none; background: var(--surface-4); color: var(--text); font-size: 12.5px; font-weight: 600; padding: 6px 10px; border-radius: 8px; box-shadow: var(--shadow-float); max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .spacer { position: relative; }
   /* One grid for the column header and every row, so the columns line up; the template is
@@ -437,6 +540,8 @@
   .row.sel { background: var(--surface-3); }
   .row.off { opacity: 0.72; }
   .row.off.sel, .row.off:hover { opacity: 1; }
+  /* Side by side, the mods HALO would move are the ones worth finding in the other pane. */
+  .row.moved { box-shadow: inset 2px 0 0 var(--amber); }
   .row.drop-before::before, .row.drop-after::after { content: ""; position: absolute; left: 8px; right: 8px; height: 2px; background: var(--amber); border-radius: 1px; }
   .row.drop-before::before { top: -1px; }
   .row.drop-after::after { bottom: -1px; }
@@ -463,6 +568,9 @@
   .badges { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0; align-items: center; min-width: 0; }
   .hdr .b { font-size: 8.5px; }
   .hdr .b i { display: block; max-width: 100%; overflow: hidden; text-overflow: clip; }
+  /* A pane is half as wide: the badge words would not fit, and the icons say the same thing. */
+  .list.pane .hdr .b i { display: none; }
+  .list.pane .ph .note { display: none; }
   .badges .b { display: grid; place-items: center; height: 24px; }
   .flag { display: inline-flex; align-items: center; gap: 1px; height: 20px; padding: 0 2px; border-radius: 6px; }
   .flag :global(svg) { width: 15px; height: 15px; flex: none; }

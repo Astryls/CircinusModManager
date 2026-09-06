@@ -52,15 +52,21 @@
 <svelte:window onclick={onWindowClick} onkeydown={(e) => e.key === "Escape" && (open = false)} />
 
 <div class="toolbar">
-  <div class="seg" role="tablist">
-    {#each tabs as t}<button role="tab" class:on={store.tab === t.id} aria-selected={store.tab === t.id} onclick={() => (store.tab = t.id)}>{t.label} <span class="num">{t.count()}</span></button>{/each}
-  </div>
-  {#if store.tab !== "inactive"}
+  {#if !store.splitMode}
+    <!-- Side by side, the panes decide what is shown and these would decide nothing. -->
+    <div class="seg" role="tablist">
+      {#each tabs as t}<button role="tab" class:on={store.tab === t.id} aria-selected={store.tab === t.id} onclick={() => (store.tab = t.id)}>{t.label} <span class="num">{t.count()}</span></button>{/each}
+    </div>
+  {/if}
+  {#if store.splitMode || store.tab !== "inactive"}
     <div class="seg arr" role="radiogroup" aria-label="Arrangement">
       <button role="radio" class:on={!store.byPhase} aria-checked={!store.byPhase} title="The list exactly as ModsConfig.xml has it, top to bottom" onclick={() => store.byPhase && store.setByPhase(false)}>Load order</button>
       <button role="radio" class:on={store.byPhase} aria-checked={store.byPhase} title="The same mods, gathered under the phase HALO files them in" onclick={() => !store.byPhase && store.setByPhase(true)}>By phase</button>
     </div>
   {/if}
+  <button class="btn split" class:on={store.splitMode === "library"} aria-pressed={store.splitMode === "library"} onclick={() => (store.split = store.split === "library" ? null : "library")} title="Show inactive and active mods in two panels, and drag between them">
+    {@html I.split}<span class="split-lbl">Inactive | Active</span>
+  </button>
   <div class="filter" bind:this={menu}>
     <button class="btn" class:on={narrowing > 0} onclick={() => (open = !open)} aria-haspopup="menu" aria-expanded={open} title="Narrow the list to mods with errors, warnings, conflicts, HALO notes or changes">
       {@html I.search}<span class="lbl">Show: {currentLabel}</span>{#if narrowing > 1}<span class="cnt">+{narrowing - 1}</span>{/if}
@@ -93,8 +99,11 @@
   <button class="btn" onclick={() => store.rescan(false)} title="Read the mod folders again">{@html I.refresh}<span class="opt-lbl">Refresh</span></button>
   {#if store.preview}
     <span class="pair">
+      <button class="btn split" class:on={store.splitMode === "halo"} aria-pressed={store.splitMode === "halo"} onclick={() => (store.split = store.split === "halo" ? null : "halo")} title="Show the order you have now beside the one HALO proposes">
+        {@html I.split}<span class="split-lbl">Current | HALO</span>
+      </button>
       <button class="btn primary" onclick={() => store.haloApply()} title="Apply the {previewCount} move{previewCount === 1 ? '' : 's'} HALO proposes">{@html I.check}Apply<span class="opt-lbl"> {previewCount} move{previewCount === 1 ? "" : "s"}</span></button>
-      <button class="btn" onclick={() => (store.preview = null)} title="Discard the preview; nothing moves" aria-label="Discard the preview">{@html I.close}<span class="opt-lbl">Discard</span></button>
+      <button class="btn" onclick={() => store.clearPreview()} title="Discard the preview; nothing moves" aria-label="Discard the preview">{@html I.close}<span class="opt-lbl">Discard</span></button>
     </span>
   {:else}
     <button class="btn primary" onclick={() => store.haloPreview()} title="Preview the load order HALO would use, then apply it or discard it">{@html I.halo}Sort with HALO</button>
@@ -112,9 +121,12 @@
   .seg.arr button { font-size: 12px; padding: 0 10px; }
   .filter > .btn .lbl { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pair { display: inline-flex; gap: 6px; flex: none; }
-  /* Narrower toolbars: the secondary buttons keep their icons and tooltips, the tabs their names. */
+  .btn.split.on { background: var(--amber-soft); color: var(--amber); }
+  /* Narrower toolbars: the secondary buttons keep their icons and tooltips, the tabs their names.
+     The two panel toggles hold on to their words longest, since the words are what they promise. */
   @container (max-width: 1080px) { .opt-lbl { display: none; } }
   @container (max-width: 900px) { .seg .num { display: none; } .filter > .btn .lbl { max-width: 90px; } }
+  @container (max-width: 860px) { .btn.split .split-lbl { display: none; } }
   @container (max-width: 760px) { .seg.arr button { padding: 0 8px; } .filter > .btn .lbl { display: none; } }
   .filter { position: relative; }
   .filter > .btn.on { background: var(--amber-soft); color: var(--amber); }
