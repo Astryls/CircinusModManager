@@ -75,7 +75,9 @@
   {/if}
   <label class="fld"><span>Sort members as</span>
     <select class="sel" value={sortAs} onchange={(e) => setSortAs(e.currentTarget.value)}>
-      <option value="">Not by group</option>
+      <!-- The "do nothing" answer, worded like its sibling above rather than as a negation: a
+           player looking for "none" did not recognise "Not by group" as the option they wanted. -->
+      <option value="">Nothing: HALO decides for each mod</option>
       {#each PHASES as p}<option value={p.id}>HALO: {p.name}</option>{/each}
       <option value="section">Own section</option>
     </select>

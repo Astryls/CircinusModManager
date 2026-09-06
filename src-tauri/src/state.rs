@@ -208,6 +208,11 @@ pub struct UserData {
     /// The default groups have been given their automatic members once (an upgrade step; the
     /// user may switch them back to hand-picked afterwards and that sticks).
     pub auto_groups_adopted: bool,
+    /// The starting groups have been offered once. Without this, "no groups" and "never had any"
+    /// are the same state, and deleting every group brings them all back on the next launch --
+    /// which is what happened. Set the first time the app opens, whether or not the groups were
+    /// needed, so from then on an empty list means an empty list.
+    pub groups_seeded: bool,
     /// The user's edits to HALO's classification, from the HALO page.
     pub halo: HaloRules,
 }
@@ -451,8 +456,17 @@ impl App {
             }
         };
         let mut user: UserData = cache.get("user")?.unwrap_or_default();
-        if user.groups.is_empty() {
-            user.groups = default_groups();
+        // Groups to start from, once. An install that already has some has clearly been opened
+        // before, so it is marked as seeded without being given anything: only a genuinely fresh
+        // one gets the defaults, and deleting them afterwards is a decision that sticks.
+        if !user.groups_seeded {
+            if user.groups.is_empty() {
+                user.groups = default_groups();
+            }
+            user.groups_seeded = true;
+            if let Err(e) = cache.set("user", &user) {
+                tracing::warn!("could not store the user data: {e}");
+            }
         }
         if !user.auto_groups_adopted {
             adopt_auto_groups(&mut user);
@@ -1298,6 +1312,34 @@ mod tests {
         assert!(app.dirty);
         let core = app.mods.iter().find(|m| m.source == Source::Ludeon).unwrap().uid.clone();
         assert!(app.delete_mod(&core).is_err(), "official content stays");
+    }
+
+    /// Groups you delete stay deleted. They came back on every launch, because "no groups" and
+    /// "never had any" were the same state and an empty list was read as the second.
+    #[test]
+    fn deleting_every_group_is_a_decision_that_sticks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let data = tmp.path().join("data");
+        let mut app = App::open_at(data.clone(), Some(Settings::default())).unwrap();
+        assert_eq!(app.user.groups.len(), 5, "a fresh install is given somewhere to start");
+
+        app.user.groups.clear();
+        app.persist().unwrap();
+        let again = App::open_at(data.clone(), Some(Settings::default())).unwrap();
+        assert!(again.user.groups.is_empty(), "the groups came back after being deleted");
+
+        // And once more, since a bug like this is usually a thing that happens every launch
+        // rather than only the next one.
+        let third = App::open_at(data.clone(), Some(Settings::default())).unwrap();
+        assert!(third.user.groups.is_empty());
+
+        // Deleting some of them is not deleting all of them.
+        let mut app4 = App::open_at(tmp.path().join("other"), Some(Settings::default())).unwrap();
+        app4.user.groups.retain(|g| g.id == "core");
+        app4.persist().unwrap();
+        let back = App::open_at(tmp.path().join("other"), Some(Settings::default())).unwrap();
+        assert_eq!(back.user.groups.len(), 1, "the four that were deleted came back");
+        assert_eq!(back.user.groups[0].id, "core");
     }
 
     /// Fresh data gets the self-filling default groups; an existing install adopts them once,
