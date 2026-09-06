@@ -83,7 +83,6 @@ pub struct Patches {
 fn now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
-/// The message every command gives when the sidecar is not on this machine. The view explains
 impl Patches {
     pub fn new(handle: AppHandle, app: Shared) -> Arc<Patches> {
         Arc::new(Patches { state: Mutex::new(PatchJob { phase: "idle".into(), ..PatchJob::default() }), cancel: AtomicBool::new(false), handle, app, last: Mutex::new(None) })
