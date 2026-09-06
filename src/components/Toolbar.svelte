@@ -28,6 +28,7 @@
   ]);
   const sources: Source[] = ["workshop", "local", "steamcmd", "git", "ludeon"];
   const columns = [
+    { key: "time", label: "Time", hint: "Seconds this mod is expected to add to the game's loading time" },
     { key: "load", label: "Load", hint: "Expected share of the list's loading time" },
     { key: "versions", label: "Versions", hint: "Game versions the mod says it supports" },
     { key: "phase", label: "Phase", hint: "Where HALO files the mod — already the sections when the list is arranged by phase" },

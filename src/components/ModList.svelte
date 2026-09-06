@@ -38,6 +38,7 @@
       figures Circinus only has once weights are loaded); the rest are the user's to choose. */
   const on = $derived(new Set(store.listColumns));
   const optional = $derived([
+    { key: "time", w: 62, show: on.has("time") },
     { key: "cost", w: 64, show: store.showWeight },
     { key: "load", w: 58, show: on.has("load") },
     { key: "versions", w: 64, show: on.has("versions") },
@@ -232,6 +233,16 @@
   function bySeverity(issues: Issue[], sev: "error" | "warning" | "note", m: ModInfo): { n: number; text: string } {
     const list = issues.filter((i) => severityOf(i) === sev);
     return { n: list.length, text: list.map((i) => describe(i, store.byUid, m.uid)).join("\n") };
+  }
+
+  /** An estimate in milliseconds, said in seconds at a precision the estimate can support.
+   *  Three decimal places on a number that came from counting XML nodes would be a lie about
+   *  how well it is known; "under 0.05 s" is the honest floor. */
+  function secs(ms: number): string {
+    if (ms >= 9950) return `${(ms / 1000).toFixed(0)} s`;
+    if (ms >= 950) return `${(ms / 1000).toFixed(1)} s`;
+    if (ms >= 50) return `${(ms / 1000).toFixed(2)} s`;
+    return "<0.05 s";
   }
 
   /** When a mod arrived, in words, or undefined for one that was already here. Relative for the
@@ -441,6 +452,7 @@
     <span class="h name" class:by={store.sortKey === "name"}>{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("name")} title="Sort by name">Mod{#if store.sortKey === "name"}<i class="dir">{arrowFor("name")}</i>{/if}</button>{:else}Mod{/if}<span class="grab" role="separator" aria-orientation="vertical" title="Drag to change the width; double-click for the default" onpointerdown={(e) => colDown(e, "name")} ondblclick={() => colReset("name")}></span></span>
     {#if showPkg}<span class="h pkg" class:by={store.sortKey === "pkg"}>{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("pkg")} title="Sort by package id">Package id{#if store.sortKey === "pkg"}<i class="dir">{arrowFor("pkg")}</i>{/if}</button>{:else}Package id{/if}<span class="grab" role="separator" aria-orientation="vertical" title="Drag to change the width; double-click for the default" onpointerdown={(e) => colDown(e, "pkg")} ondblclick={() => colReset("pkg")}></span></span>{/if}
     {#if nameW != null}<span class="fill"></span>{/if}
+    {#if has.has("time")}<span class="h tm" class:by={store.sortKey === "time"} title="How much of the game's loading time this mod is expected to add, in seconds. Estimated from what the folder holds, not measured with a stopwatch: use it to rank mods against each other rather than to predict the clock.">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("time")}>Time{#if store.sortKey === "time"}<i class="dir">{arrowFor("time")}</i>{/if}</button>{:else}Time{/if}</span>{/if}
     {#if has.has("cost")}<span class="h wt" class:by={store.sortKey === "cost"} title="Share of frame time, from circinus.sh or your own runs">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("cost")}>Cost{#if store.sortKey === "cost"}<i class="dir">{arrowFor("cost")}</i>{/if}</button>{:else}Cost{/if}</span>{/if}
     {#if has.has("load")}<span class="h load" class:by={store.sortKey === "load"} title="Expected share of the list's loading time, estimated from what the folder holds: Defs XML, patch operations and how far they search, PNG textures without DDS, assemblies. A ranking, not a stopwatch.">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("load")}>Load{#if store.sortKey === "load"}<i class="dir">{arrowFor("load")}</i>{/if}</button>{:else}Load{/if}</span>{/if}
     {#if has.has("versions")}<span class="h vers" class:by={store.sortKey === "versions"} title="Game versions the mod says it supports">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("versions")}>Versions{#if store.sortKey === "versions"}<i class="dir">{arrowFor("versions")}</i>{/if}</button>{:else}Versions{/if}</span>{/if}
@@ -477,6 +489,7 @@
         {@const note = bySeverity(issues, "note", m)}
         {@const invalid = m.invalid && it.inactive ? m.invalid : ""}
         {@const ld = it.inactive ? undefined : store.loadOf(m.uid)}
+        {@const tm = m.contents.load ? store.loadOf(m.uid)?.ms : undefined}
         {@const isNew = store.isNew(m.uid)}
         {@const arrived = whenItCame(m.uid)}
         <div
@@ -502,6 +515,7 @@
           <span class="name"><b>{m.name ?? m.uid}{#if isNew}<i class="newtag">New</i>{/if}</b><span>{arrived ?? m.invalid ?? (m.authors ?? []).join(", ")}</span></span>
           {#if showPkg}<span class="pkg">{m.packageId}</span>{/if}
           {#if nameW != null}<span class="fill"></span>{/if}
+          {#if has.has("time")}<span class="tm num">{#if tm != null}<span title="About {secs(tm)} of the game's loading time, of an estimated {store.loadTotalSeconds >= 60 ? `${(store.loadTotalSeconds / 60).toFixed(1)} min` : `${store.loadTotalSeconds.toFixed(0)} s`} for the whole list.&#10;{explainLoad(m).join('\n')}&#10;&#10;Estimated from the folder; a ranking, not a stopwatch.">{secs(tm)}</span>{:else if m.contents.load == null}<span class="unread" title="Not read yet: the folder is still being inspected">…</span>{/if}</span>{/if}
           {#if has.has("cost")}
             <span class="wt">{#if w && w.share != null}<span class="band {w.band}" title="Performance cost: {w.share.toFixed(2)} % of frame time, {BAND_LABEL[w.band].toLowerCase()}. {w.measured ?? '?'} runs measured, from {w.origin === 'local' ? 'your runs' : 'circinus.sh'}">{w.share.toFixed(1)} %</span>{:else if w}<span class="band {w.band}" title="Performance cost: {BAND_LABEL[w.band].toLowerCase()}">{w.band === "negligible" ? "<0.1 %" : "n/a"}</span>{/if}</span>
           {/if}
@@ -545,7 +559,7 @@
   .hdr, .row { display: grid; grid-template-columns: var(--cols); align-items: center; gap: 6px; padding: 0 8px 0 4px; }
   .hdr { position: sticky; top: 0; z-index: 4; height: 34px; background: var(--surface); border-bottom: 1px solid var(--surface-3); margin: 0 -6px; padding-left: 10px; padding-right: 14px; }
   .hdr .h { font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; position: relative; }
-  .hdr .idx, .hdr .vers, .hdr .delta, .hdr .wt, .hdr .load { text-align: right; }
+  .hdr .idx, .hdr .vers, .hdr .delta, .hdr .wt, .hdr .load, .hdr .tm { text-align: right; }
   .hdr .phz, .hdr .g { text-align: left; }
   .hdr .h.name, .hdr .h.pkg { overflow: visible; }
   .hdr .grab { position: absolute; top: -8px; bottom: -8px; right: -6px; width: 11px; cursor: col-resize; touch-action: none; z-index: 1; }
@@ -622,4 +636,9 @@
   .sortbtn:hover { color: var(--text-2); }
   .hdr .h.by, .hdr .h.by .sortbtn { color: var(--amber); }
   .dir { font-style: normal; margin-left: 3px; }
-</style>
+  /* Seconds, in the same monospace as the other figures so the decimal points line up down the
+     column. No colour band: Load sits beside it saying the same thing as a share, and colouring
+     both would be one fact drawn twice. */
+  .row .tm { text-align: right; font-family: var(--mono); font-size: 11.5px; color: var(--text-2); }
+  .row .tm .unread { color: var(--text-4); }
+</style>\n

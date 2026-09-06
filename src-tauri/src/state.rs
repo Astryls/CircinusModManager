@@ -49,11 +49,11 @@ pub struct Settings {
 }
 
 /// The current `settings_version`: 2 made "by phase" the default view and hid the phase and
-/// group columns; 3 added the update check on start.
-pub const SETTINGS_VERSION: u32 = 3;
+/// group columns; 3 added the update check on start; 4 added the Time column.
+pub const SETTINGS_VERSION: u32 = 4;
 
 pub fn default_list_columns() -> Vec<String> {
-    vec!["load".into(), "versions".into()]
+    vec!["time".into(), "load".into(), "versions".into()]
 }
 
 impl Default for Settings {
@@ -77,6 +77,12 @@ impl Settings {
             // A build from before auto-update existed had nothing to say about it; the new
             // default is on, and the toggle in Settings is one click for anyone who wants it off.
             self.check_for_updates = true;
+        }
+        if self.settings_version < 4 && !self.list_columns.iter().any(|c| c == "time") {
+            // A new column is added to what is already shown rather than replacing it: someone
+            // who turned Versions off meant that, and a new default is not a reason to undo it.
+            // Show -> Columns turns this one off again in one click.
+            self.list_columns.insert(0, "time".into());
         }
         self.settings_version = SETTINGS_VERSION;
         true

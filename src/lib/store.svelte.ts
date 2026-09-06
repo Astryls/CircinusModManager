@@ -11,7 +11,7 @@ export type Tab = "active" | "inactive" | "all" | "new";
 
 /** What the list is ordered by. `order` is the load order, which is the only one that is real:
  *  every other value sorts the view without touching what the game will read. */
-export type SortKey = "order" | "name" | "pkg" | "versions" | "load" | "cost" | "phase" | "group" | "arrived";
+export type SortKey = "order" | "name" | "pkg" | "versions" | "time" | "load" | "cost" | "phase" | "group" | "arrived";
 /** Which list one pane of a side-by-side view shows. `null` is the ordinary single list, where
  *  the tabs decide what is in it. */
 export type Pane = "inactive" | "active";
@@ -161,7 +161,7 @@ class Store {
   /** Column widths the user dragged, CSS px, by key; absent = the default. */
   columns = $derived(this.snap?.settings.columns ?? {});
   /** The optional list columns that are on. */
-  listColumns = $derived(this.snap?.settings.listColumns ?? ["load", "versions"]);
+  listColumns = $derived(this.snap?.settings.listColumns ?? ["time", "load", "versions"]);
   /** Each active mod's estimated share of the list's loading time, from the folder figures. */
   loadShares = $derived.by(() => {
     const out = new Map<string, { share: number; band: LoadBand; ms: number }>();
@@ -347,6 +347,10 @@ class Store {
       // The newest game version the mod claims. A list sorted by "versions" is being asked
       // which mods are furthest behind, and the highest number is what answers that.
       case "versions": return (m.supportedVersions ?? []).map((v) => this.versionRank(v)).reduce((a, b) => Math.max(a, b), -1);
+      // Time and Load are the same measurement, one in seconds and one as a share of the list,
+      // so they sort identically. Both are here rather than one aliasing the other, because a
+      // column that quietly sorts by a different column is a surprise waiting to happen.
+      case "time": return this.loadOf(m.uid)?.ms;
       case "load": return this.loadOf(m.uid)?.ms;
       // A null share is a mod circinus.sh has no measurement for, which sorts with the ones
       // that have no weight at all rather than as a zero.
@@ -1397,7 +1401,9 @@ class Store {
   }
   /** Show or hide one of the optional list columns. */
   setListColumn(key: string, on: boolean) {
-    const order = ["load", "versions", "phase", "group"];
+    // The order the columns appear in, whatever order they were switched on in. Time is first
+    // because it sits left of Cost, and Cost is not in here: it follows showWeight.
+    const order = ["time", "load", "versions", "phase", "group"];
     const set = new Set(this.listColumns);
     on ? set.add(key) : set.delete(key);
     return this.updateSettings({ listColumns: order.filter((k) => set.has(k)) });

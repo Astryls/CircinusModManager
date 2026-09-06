@@ -192,7 +192,7 @@ let settings: Settings = {
   alphabeticalWithinPhase: false,
   updateDatabasesOnStart: false,
   listByPhase: typeof location === "undefined" || !location.search.includes("plain"),
-  listColumns: ["load", "versions"],
+  listColumns: ["time", "load", "versions"],
   settingsVersion: 3,
   dds: { alphaFormat: "bc7", quality: "balanced", mipmaps: true, threads: 0, auto: false },
   launch: { method: "auto", executable: null, args: "", saveFirst: true },

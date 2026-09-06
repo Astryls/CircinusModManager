@@ -226,6 +226,33 @@ const ALIGNED = () => {
   await page.waitForTimeout(200);
   ok('the chip puts the load order back', (await byName()).join('|') === before.join('|'));
 
+  // ---------------------------------------------------------------- the Time column
+  await go('?big=400&new=4');
+  const headOrder = await page.evaluate(HEADS);
+  ok('Time is a column', headOrder.includes('Time'), headOrder.join(', '));
+  ok('and it sits to the left of Cost', headOrder.indexOf('Time') < headOrder.indexOf('Cost'), headOrder.join(', '));
+  const times = await page.$$eval('.list .row .tm', (e) => e.map((x) => x.textContent.trim()).filter(Boolean));
+  ok('every row says a number of seconds', times.length > 0 && times.every((t) => /^(<0\.05 s|\d+(\.\d+)? s|…)$/.test(t)), times.slice(0, 5).join(' | '));
+  // Right-aligned and monospaced, so the decimal points line up down the column: a measure you
+  // read by scanning is unreadable when the digits wander.
+  const tmStyle = await page.$eval('.list .row .tm', (e) => ({ align: getComputedStyle(e).textAlign, font: getComputedStyle(e).fontFamily }));
+  ok('the figures line up', tmStyle.align === 'right', tmStyle.align);
+  ok('and are monospaced', /mono|JetBrains|Consolas|ui-monospace/i.test(tmStyle.font), tmStyle.font);
+  // Time and Load are one measurement said two ways, so they must agree about which mod is
+  // heaviest. A column that disagrees with the one beside it is worse than no column.
+  const byTime = async () => (await page.evaluate(ROWS)).map((r) => r.uid);
+  await page.click('.hdr .sortbtn:has-text("Time")');
+  await page.waitForTimeout(200);
+  const timeOrder = await byTime();
+  await page.click('.hdr .sortbtn:has-text("Load")');
+  await page.waitForTimeout(200);
+  ok('sorting by Time and by Load agree', (await byTime()).join('|') === timeOrder.join('|'), 'they are the same estimate, in seconds and as a share');
+  await page.click('.btn.sortoff');
+  await page.waitForTimeout(200);
+  let al = await page.evaluate(ALIGNED);
+  ok('the new column did not break the grid', al.problems.length === 0, al.problems.join('; '));
+  await page.screenshot({ path: `${OUT}/time-column.png` });
+
   // ---------------------------------------------------------------- the split pane
   await page.click('.btn.split');
   await page.waitForTimeout(350);

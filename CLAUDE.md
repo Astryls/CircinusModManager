@@ -67,6 +67,11 @@ without one manual reinstall for everyone, since an app carries the public key i
   says they have seen it. The list marks them green on the *right* edge, since amber on the left
   already means HALO would move this and one row can be both. There is a New tab, shown only when
   something is in it.
+- The list's measures: **Time** is the seconds a mod is expected to add to loading, **Load** the
+  same estimate as a share of the list, **Cost** its frame-time share from circinus.sh. Time and
+  Load come from one number (`contents.load.scoreMs`) so they always agree; only Load is
+  coloured, since colouring both would draw one fact twice. All three are estimates from what the
+  folder holds, and every tooltip says so.
 - Sorting: any column heading orders the list; the load order is the default and the only real
   one. Sorting `visibleActive` rather than the sections is what makes "by phase" sort within each
   section for free, since `layout` builds sections by filtering. Dragging is refused while
