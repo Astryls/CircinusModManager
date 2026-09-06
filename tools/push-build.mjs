@@ -8,7 +8,7 @@
 //   --version   the version to publish. Defaults to the one in src-tauri/tauri.conf.json, which
 //               is the only place it is written down.
 //   --dir       where the built files are. Every bundle directory under it is searched, so both
-//               a local `src-tauri/target/release/bundle` and a directory of downloaded CI
+//               a local bundle directory (asked of cargo) and a directory of downloaded CI
 //               artifacts work.
 //   --notes     release notes. Defaults to the annotated tag's message, then to one sentence.
 //   --force     publish without all three platforms. For a single-platform fix, not for a
@@ -80,6 +80,17 @@ function findFor(files, slot) {
   return hits[0] ?? null;
 }
 
+/** Where `cargo` puts its output, asked of cargo. */
+async function bundleDir() {
+  try {
+    const meta = JSON.parse(execFileSync("cargo", ["metadata", "--format-version", "1", "--no-deps"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }));
+    if (meta.target_directory) return path.join(meta.target_directory, "release", "bundle");
+  } catch {
+    /* no cargo on this machine, or not a cargo project: fall through */
+  }
+  return "src-tauri/target/release/bundle";
+}
+
 /** The site rejects em dashes, and notes go on a page people read: keep them plain. */
 function plain(text) {
   return text
@@ -134,7 +145,11 @@ const main = async () => {
   if (version !== conf.version) {
     die(`Asked to publish ${version}, but this checkout builds ${conf.version} (src-tauri/tauri.conf.json).\nChange the version there and rebuild, or push the tag that matches.`);
   }
-  const dir = flag("dir") ?? "src-tauri/target/release/bundle";
+  // Where cargo writes depends on whether src-tauri is its own workspace or a member of the one
+  // at the repository root, and it is a member: that puts the bundles at the root, not under
+  // src-tauri. Ask cargo instead of choosing, and keep the old place as a fallback so a checkout
+  // that is arranged differently still works.
+  const dir = flag("dir") ?? (await bundleDir());
   const files = await walk(dir);
   if (!files.length) die(`Nothing to upload: no files under ${dir}.`);
 

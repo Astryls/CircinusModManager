@@ -41,7 +41,8 @@
       "nsis",
       "msi",
       "dmg",
-      "app"
+      "app",
+      "appimage"
     ],
     "createUpdaterArtifacts": true,
     "icon": [
