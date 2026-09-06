@@ -51,7 +51,10 @@ the repo, meant for the `TAURI_SIGNING_PRIVATE_KEY` secret; only the public key 
   lets a user switch built-in rules off or send them to another phase. *What changes* compares the
   order you have with the one HALO proposes as a diff rather than as two lists: the longest run of
   mods that keep their relative order is the backbone, and only the mods lifted out of it are
-  moves. The rest is drift, and saying so is the point (`src/lib/moves.ts`, `MovesView.svelte`).
+  moves. The rest is drift, and saying so is the point. Those moves are then shown as what leaves
+  each phase beside what arrives in each, with one weighted arrow per journey — chosen from five
+  mockups, because a row-by-row comparison of a thousand-mod list is unreadable however it is
+  drawn (`src/lib/moves.ts`, `MovesView.svelte`).
 - `defs`: builds the document the game builds — every active mod's Defs merged in load order,
   every PatchOperation applied in load order, then Name/ParentName inheritance — with the origin
   of every node recorded, so "who wins this value" has an answer. `defs::xpath` is XPath 1.0 as

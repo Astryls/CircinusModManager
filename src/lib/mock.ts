@@ -111,6 +111,8 @@ if (typeof location !== "undefined" && location.search.includes("abovecore")) {
 }
 const phaseOfSeed: Record<string, Phase> = Object.fromEntries(SEED.map((s) => [uidOf(s[2]), s[5]]));
 const byUid = new Map(mods.map((m) => [m.uid, m]));
+/** Mods sitting in the wrong phase to begin with: what the list has, against what HALO knows. */
+const misfiled: Record<string, Phase> = {};
 // ?big=1100&jumble=40 — a list the size of a real modded install, with a given number of mods out
 // of the place HALO would put them. Forty mods prove nothing about a view meant for a thousand.
 if (typeof location !== "undefined" && /[?&]big=(\d+)/.test(location.search)) {
@@ -126,9 +128,14 @@ if (typeof location !== "undefined" && /[?&]big=(\d+)/.test(location.search)) {
     byUid.set(m.uid, m);
     phaseOfSeed[m.uid] = fill[Math.floor(rnd() * fill.length)];
   }
-  // Start from the order HALO would settle on, then pull mods out of it: what is left is drift,
-  // and drift is exactly what buries the real moves on a list this long.
-  const rank = (uid: string) => PHASES.findIndex((p) => p.id === (phaseOfSeed[uid] ?? "content"));
+  // A library or a loader filed as ordinary content is the commonest thing HALO fixes, so some of
+  // the list starts in the wrong phase: those mods change phase as well as number.
+  const misfile = Number(location.search.match(/[?&]misfile=(\d+)/)?.[1] ?? Math.round(want / 60));
+  const wrong = mods.filter((m) => m.source !== "ludeon" && (phaseOfSeed[m.uid] ?? "content") !== "content");
+  for (let k = 0; k < Math.min(misfile, wrong.length); k++) misfiled[wrong[Math.floor(rnd() * wrong.length)].uid] = "content";
+  // The list starts in the order the phases it *says* it has would give, then mods are pulled out
+  // of it: what is left is drift, and drift is what buries the real moves on a list this long.
+  const rank = (uid: string) => PHASES.findIndex((p) => p.id === (misfiled[uid] ?? phaseOfSeed[uid] ?? "content"));
   const list = mods.map((m) => m.uid).map((uid, i) => ({ uid, i })).sort((a, b) => rank(a.uid) - rank(b.uid) || a.i - b.i).map((x) => x.uid);
   for (let k = 0; k < jumble; k++) {
     const from = Math.floor(rnd() * list.length);
@@ -208,7 +215,7 @@ const weights: Record<string, Weight> = Object.fromEntries(
   })
 );
 
-function placements(order: string[]): Placement[] {
+function placements(order: string[], halo = false): Placement[] {
   const reason: Record<Phase, string> = { core: "The game itself", prepatch: "Changes the game before other mods load", framework: "A library many mods use", content: "Adds content", patch: "Only patches, so it loads after what it changes", texture: "Only textures", late: "A rule says: load near the bottom", optimization: "Speeds up other mods, so it has to load after them" };
   return order.map((uid) => {
     const g = user.groups.find((g) => g.id === user.modGroups[uid]);
@@ -220,6 +227,8 @@ function placements(order: string[]): Placement[] {
       const byName = user.halo?.namePhases.find((n) => n.needle.trim() && m.name.toLowerCase().includes(n.needle.trim().toLowerCase()));
       if (byName) return { uid, phase: byName.phase, reason: `Your HALO rule: name contains "${byName.needle.trim()}"` };
     }
+    // Where it sits now can differ from where it belongs: that difference is what HALO corrects.
+    if (!halo && !user.phaseOverrides[uid] && !g?.phase && misfiled[uid]) return { uid, phase: misfiled[uid], reason: "Where it sits in your list" };
     const phase = user.phaseOverrides[uid] ?? g?.phase ?? phaseOfSeed[uid] ?? "content";
     return { uid, phase, reason: user.phaseOverrides[uid] ? "Set by you" : reason[phase] };
   });
@@ -574,7 +583,7 @@ function changes(): ModChange[] {
 }
 
 function haloSort(): SortResult {
-  const rank = (uid: string) => PHASES.findIndex((p) => p.id === placements([uid])[0].phase);
+  const rank = (uid: string) => PHASES.findIndex((p) => p.id === placements([uid], true)[0].phase);
   const order = [...active].map((uid, i) => ({ uid, i })).sort((a, b) => rank(a.uid) - rank(b.uid) || a.i - b.i).map((x) => x.uid);
   // honour the two community rules in the seed
   const bpc = uidOf("voult.betterpawncontrol"), vef = uidOf("oskarpotocki.vanillafactionsexpanded.core");
@@ -582,7 +591,7 @@ function haloSort(): SortResult {
   const rm = uidOf("krkr.rocketman");
   if (order.includes(rm)) { order.splice(order.indexOf(rm), 1); order.push(rm); }
   const moves: [string, number, number][] = order.map((uid, to) => [uid, active.indexOf(uid), to] as [string, number, number]).filter(([, from, to]) => from !== to);
-  return { order, placements: placements(order), moves, issues: issues(order) };
+  return { order, placements: placements(order, true), moves, issues: issues(order) };
 }
 
 const queue = {
