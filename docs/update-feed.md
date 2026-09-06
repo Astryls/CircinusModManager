@@ -213,6 +213,31 @@ Things to know about that table:
   send an unsigned bundle at all.
 - Files are named by Tauri from the product name and version; spaces in them are real spaces.
 
+## Building for machines you do not have
+
+Nobody needs to own a Mac or a Linux box. `.github/workflows/release.yml` runs on GitHub's
+machines: `windows-latest`, `macos-latest` (Apple Silicon, which is the only Mac the site takes)
+and `ubuntu-22.04`. The tag is the only thing you push; three machines build, and one job uploads
+all four files.
+
+Before the first tag, run the workflow by hand from the **Actions** tab. It builds all three and
+attaches them as artifacts, publishing nothing. That is the cheapest way to find out that a
+platform does not build.
+
+Each build then opens its own bundle once, since nobody here can run it: the AppImage is
+extracted, the Mac tarball is unpacked and its binary checked for `arm64` (an Intel binary is
+refused at upload, twenty minutes later, and this catches it at the build), and the Windows
+installer's size is printed. None of them launches the app, which would want a display.
+
+Two things that owning a Mac would otherwise tell you:
+
+- **Gatekeeper.** Without an Apple Developer certificate the `.dmg` builds and works, but macOS
+  says the developer cannot be verified and the first launch needs right-click → Open. The
+  workflow signs and notarizes when `APPLE_*` secrets are set and builds unsigned when they are
+  not. Updates are unaffected: the updater checks the minisign signature, not Apple's.
+- **Actually using it.** A build that compiles is not a build that works. The Discord is the
+  place to hand a first Mac or Linux build to someone who has one.
+
 ## 5. Cutting a release
 
 ```sh

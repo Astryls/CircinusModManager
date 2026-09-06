@@ -1,7 +1,10 @@
-# Build the installers players download.
+# Build the installers players download, on GitHub's machines. Nobody needs to own a Mac or a
+# Linux box: `macos-latest` is Apple Silicon and `ubuntu-22.04` is Linux, and the three jobs
+# below are what makes the set that circinus.sh takes.
 #
-# Push a tag (`v0.2.0`) to make a draft release, or run it by hand from the Actions tab to get
-# the installers as artifacts without publishing anything.
+# Push a tag (`v0.2.0`) to build, push to circinus.sh and draft a GitHub release; or run it by
+# hand from the Actions tab to get all three as artifacts, publishing nothing. Do that first,
+# before the first tag: it is the cheapest way to find out that a platform does not build.
 
 name: Release
 
@@ -100,6 +103,40 @@ jobs:
             echo "signed: $f"
           done
           if [ "$n" = 0 ]; then echo "no updater artifacts were built"; exit 1; fi
+
+      # A build for a platform you do not own is still worth opening once. These do not run the
+      # app, which would want a display, but they prove the bundle is a bundle and that the Mac
+      # binary is the architecture the site accepts. A wrong-architecture Mac build is otherwise
+      # found at the upload, after everything else has already taken twenty minutes.
+      - name: Open the bundle once
+        shell: bash
+        run: |
+          set -e
+          root=src-tauri/target/release/bundle
+          case "${{ runner.os }}" in
+            Linux)
+              app=$(readlink -f "$(ls "$root"/appimage/*.AppImage | head -1)")
+              chmod +x "$app"
+              cd "$(mktemp -d)"
+              "$app" --appimage-extract >/dev/null
+              echo "the AppImage extracts cleanly: $(basename "$app")"
+              ;;
+            macOS)
+              tarball=$(ls "$root"/macos/*.app.tar.gz | head -1)
+              d=$(mktemp -d)
+              tar -xzf "$tarball" -C "$d"
+              bin=$(find "$d" -type f -perm +111 -path '*/Contents/MacOS/*' | head -1)
+              [ -n "$bin" ] || { echo "nothing executable inside the app bundle"; exit 1; }
+              file "$bin"
+              file "$bin" | grep -q arm64 || { echo "not an Apple Silicon binary, which the site refuses"; exit 1; }
+              app=$(dirname "$(dirname "$(dirname "$bin")")")
+              codesign -dv "$app" 2>&1 | head -3 || echo "not code signed: macOS will warn on first open until an Apple certificate is set"
+              ;;
+            Windows)
+              exe=$(ls "$root"/nsis/*-setup.exe | head -1)
+              echo "the installer is $(wc -c < "$exe") bytes: $(basename "$exe")"
+              ;;
+          esac
 
       # Everything the site needs for a release upload: the installers people download, the
       # macOS .app.tar.gz the updater installs, and a .sig for each (see docs/update-feed.md).
