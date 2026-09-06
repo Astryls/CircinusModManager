@@ -192,6 +192,7 @@ jobs:
         run: |
           npm run check
           node tools/loadtest/release-args.mjs
+          node tools/loadtest/release-tag.mjs
 
       # Apple code signing is optional and these are passed on only when there is a certificate
       # to pass. Setting them unconditionally is what broke the first 1.0.0: a GitHub secret that

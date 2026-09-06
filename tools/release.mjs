@@ -74,6 +74,15 @@ function run(cmd, cmdArgs, { allowFail = false, quiet = false } = {}) {
 const capture = (cmd, cmdArgs) => spawnSync(cmd, forShell(cmd, cmdArgs), { cwd: ROOT, encoding: "utf8", shell: shelled(cmd) });
 const have = (cmd) => capture(process.platform === "win32" ? "where" : "which", [cmd]).status === 0;
 
+/**
+ * Who a release is by. Passed to every git command that records a person rather than read from
+ * the machine's config, because the two commands that record one are a commit and an annotated
+ * tag, and giving it to only the commit is a bug that cannot happen on a developer's machine:
+ * git falls back to the global config there and there is always one. A fresh CI runner has no
+ * config, so the commit was made and the tag right after it refused, with the release half done.
+ */
+const AS_CIRCINUS = ["-c", "user.name=Circinus", "-c", "user.email=noreply@circinus.sh"];
+
 /** Semver, only as far as this needs it: is `a` newer than `b`? */
 function newer(a, b) {
   const parts = (v) => v.replace(/^v/, "").split("-")[0].split(".").map(Number);
@@ -213,6 +222,11 @@ async function cut(v) {
     run("npm", ["run", "check"]);
     run("npm", ["run", "build"]);
     run("node", ["tools/loadtest/push-build.cjs"]);
+    // Cuts a whole release in a throwaway repository with no git identity anywhere, which is
+    // what a runner is. Not run under --tag-only, where this script is already partway through
+    // cutting one for real.
+    run("node", ["tools/loadtest/release-tag.mjs"], { quiet: true });
+    say("  tagging works on a machine that has never been told who you are");
   }
   // This one runs either way: it is a check on the release machinery itself rather than on the
   // app, it takes a second, and skipping it would skip the test for the bug that made this flag
@@ -236,12 +250,12 @@ async function cut(v) {
   const pending = capture("git", ["status", "--porcelain"]).stdout.trim();
   if (pending) {
     run("git", ["add", "-A"]);
-    run("git", ["-c", "user.name=Circinus", "-c", "user.email=noreply@circinus.sh", "commit", "-m", `Circinus Mod Manager ${v}`]);
+    run("git", [...AS_CIRCINUS, "commit", "-m", `Circinus Mod Manager ${v}`]);
   } else {
     say(`  nothing to commit: this checkout already says ${v}, so ${tag} goes on the commit that is here`);
   }
   // An annotated tag, because its message is what tools/push-build.mjs sends as the notes.
-  run("git", ["tag", "-a", tag, "-m", notes]);
+  run("git", [...AS_CIRCINUS, "tag", "-a", tag, "-m", notes]);
   run("git", ["push", "origin", branch]);
   run("git", ["push", "origin", tag]);
   if (dry) return say("\nDry run: nothing was changed, committed or pushed.");
