@@ -7,6 +7,12 @@
 //   node tools/release.mjs 0.2.0 --notes "..."   the release notes players will read
 //   node tools/release.mjs --local          build this machine's platform and push only that
 //   node tools/release.mjs --setup          wire this checkout up to release (tools/setup-release.mjs)
+//   node tools/release.mjs 0.2.0 --checks-in-ci   do not run the tests here; let CI run them
+//
+// `--checks-in-ci` is for when this machine cannot get through a test that has nothing to do
+// with the release. CI runs the same tests on Windows, macOS and Linux before it builds
+// anything and publishes nothing unless they pass, so the release is still gated — it just
+// costs a tag instead of a rerun when something is genuinely broken.
 //
 // Why the normal path goes through CI: a Windows installer can only be made on Windows, a .dmg
 // and its .app.tar.gz only on macOS, an AppImage only on Linux. No one machine can produce the
@@ -153,11 +159,24 @@ async function cut(v) {
   say("Version:");
   await setVersion(v);
 
-  say("\nChecks:");
-  run("cargo", ["test", "--workspace"]);
-  run("npm", ["run", "check"]);
-  run("npm", ["run", "build"]);
-  run("node", ["tools/loadtest/push-build.cjs"]);
+  // The same `cargo test --workspace` and `npm run check` run in CI on all three platforms
+  // before anything is built, and nothing is published unless all three pass. Running them here
+  // first is worth the minutes because a failure found now costs a rerun and a failure found
+  // there costs a version number. But when the only thing failing is this machine's platform,
+  // waiting on it means the release cannot happen at all, and CI is the better judge anyway:
+  // it runs the same tests on three machines instead of one.
+  if (has("checks-in-ci")) {
+    say("\nChecks: skipped here at your asking. CI runs cargo test and npm run check on all three");
+    say("platforms before it builds anything, and publishes nothing unless they pass. If they fail");
+    say(`there, ${tag} is spent: no build goes out under it and the next attempt needs a new number.`);
+    run("npm", ["run", "build"]);
+  } else {
+    say("\nChecks:");
+    run("cargo", ["test", "--workspace"]);
+    run("npm", ["run", "check"]);
+    run("npm", ["run", "build"]);
+    run("node", ["tools/loadtest/push-build.cjs"]);
+  }
 
   // The tag's message becomes the release notes: what the download page shows and what the app
   // puts in the update banner. Left to itself that is the version number, which tells a player
