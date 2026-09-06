@@ -138,18 +138,25 @@ mod tests {
         assert!(out.status.success(), "mklink {} {}: {}{}", native(link), native(target), String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
     }
 
+    /// A path built for comparing against one the code produced. On Windows "a/b" and "a\\b" are
+    /// the same path but not the same string, and what comes back from the filesystem carries
+    /// the platform's own separator; anything asserted against it has to be built the same way.
+    fn at(base: &std::path::Path, rel: &str) -> std::path::PathBuf {
+        rel.split('/').fold(base.to_path_buf(), |p, part| p.join(part))
+    }
+
     #[test]
     fn walks_through_links_and_stops_loops() {
         let tmp = tempfile::tempdir().unwrap();
-        let work = tmp.path().join("work/mymod");
+        let work = at(tmp.path(), "work/mymod");
         write(&work.join("About/About.xml"), "<ModMetaData/>");
         write(&work.join("Defs/A.xml"), "<Defs/>");
-        let shared = tmp.path().join("shared/Textures/Things/Wall.png");
+        let shared = at(tmp.path(), "shared/Textures/Things/Wall.png");
         write(&shared, "png");
         link_dir(&tmp.path().join("shared/Textures"), &work.join("Textures"));
         // a link back up to the mod itself: must not recurse forever
         link_dir(&work, &work.join("Defs/loop"));
-        let link = tmp.path().join("Mods/mymod");
+        let link = at(tmp.path(), "Mods/mymod");
         fs::create_dir_all(link.parent().unwrap()).unwrap();
         link_dir(&work, &link);
 

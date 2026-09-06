@@ -564,13 +564,20 @@ mod tests {
         assert!(out.status.success(), "mklink {} {}: {}{}", native(link), native(target), String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
     }
 
+    /// A path built for comparing against one the code produced. On Windows "a/b" and "a\\b" are
+    /// the same path but not the same string, and what comes back from the filesystem carries
+    /// the platform's own separator; anything asserted against it has to be built the same way.
+    fn at(base: &std::path::Path, rel: &str) -> std::path::PathBuf {
+        rel.split('/').fold(base.to_path_buf(), |p, part| p.join(part))
+    }
+
     /// Modmixer and Circinus Dev Tools keep a mod in a workspace and put a link named after a
     /// hash in the Mods folder. RimWorld loads the mod through the link; so must the scan.
     #[test]
     fn linked_mod_folders_are_found_and_read_through() {
         let tmp = tempfile::tempdir().unwrap();
         let loc = fixture_game(tmp.path());
-        let work = tmp.path().join("workspace/Mods/6eb6cb0b799f");
+        let work = at(tmp.path(), "workspace/Mods/6eb6cb0b799f");
         write(
             &work.join("About/About.xml"),
             "<ModMetaData><packageId>example.linked</packageId><name>Linked Mod</name><supportedVersions><li>1.6</li></supportedVersions></ModMetaData>",
@@ -582,7 +589,7 @@ mod tests {
         // textures shared through a link inside the mod as well
         write(&tmp.path().join("shared/Textures/Things/Wall.png"), "png");
         link_dir(&tmp.path().join("shared/Textures"), &work.join("Textures"));
-        let link = tmp.path().join("Mods/6eb6cb0b799f");
+        let link = at(tmp.path(), "Mods/6eb6cb0b799f");
         link_dir(&work, &link);
         // a link to nowhere must not break the scan, only be reported
         link_dir(&tmp.path().join("gone"), &tmp.path().join("Mods/deadbeef0000"));
