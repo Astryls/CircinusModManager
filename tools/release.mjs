@@ -195,7 +195,11 @@ async function cut(v) {
   if (capture("git", ["rev-parse", "-q", "--verify", `refs/tags/${tag}`]).status === 0) {
     die(`${tag} already exists. Releases are not re-cut: a version people may already have must not be replaced, because two machines reporting the same number would be running different builds. Use ${v.replace(/(\d+)$/, (n) => Number(n) + 1)}.`);
   }
-  const last = capture("git", ["describe", "--tags", "--abbrev=0"]).stdout.trim();
+  // The highest version ever tagged, not the nearest tag in this branch's ancestry. `git
+  // describe` answers the second, and the release commit is deliberately not on main (see the
+  // push below), so describe finds nothing and the guard against going backwards would never
+  // fire again. Sorting the tags themselves does not care what is an ancestor of what.
+  const last = capture("git", ["tag", "--list", "v*", "--sort=-version:refname"]).stdout.trim().split("\n")[0].trim();
   if (last && !newer(v, last) && !v.includes("-")) {
     die(`${v} is not newer than ${last}. latest.json names one version and every installed copy compares it to its own; a lower number leaves every app saying it is up to date forever, and it never sees the next real release either.`);
   }
@@ -257,8 +261,23 @@ async function cut(v) {
   }
   // An annotated tag, because its message is what tools/push-build.mjs sends as the notes.
   run("git", [...AS_CIRCINUS, "tag", "-a", tag, "-m", notes]);
-  run("git", ["push", "origin", branch]);
-  run("git", ["push", "origin", tag]);
+  // The release commit belongs to the tag, not to main.
+  //
+  // Pushing it to main as well seems tidier and is not. The history is written in a container
+  // that cannot push, and carried to the machine that can; a commit made by CI and pushed to
+  // main is one that neither of those has, so the next attempt to carry work across finds two
+  // histories that have both moved and refuses -- correctly, and every single release. Nothing
+  // needs it on main: the tag is the record that a version happened, pushing a tag pushes the
+  // commits it needs, and the builds check that commit out by its own hash. What main keeps is
+  // the version it had, which is honest, because the version is chosen when a release is cut
+  // rather than written down in advance.
+  if (inCi) {
+    run("git", ["push", "origin", tag]);
+    say(`  pushed ${tag}; main is left where it was, and the release commit belongs to the tag`);
+  } else {
+    run("git", ["push", "origin", branch]);
+    run("git", ["push", "origin", tag]);
+  }
   if (dry) return say("\nDry run: nothing was changed, committed or pushed.");
   // Inside the workflow there is nothing left to say: the jobs that build and publish are the
   // rest of the run this is part of, and a tag pushed by a workflow deliberately does not start

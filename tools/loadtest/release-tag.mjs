@@ -57,6 +57,7 @@ try {
   git(["-c", "user.name=Somebody", "-c", "user.email=somebody@example.com", "commit", "-qm", "base"]);
   git(["branch", "-M", "main"]);
   git(["push", "-q", "origin", "main"]);
+  const base = git(["rev-parse", "HEAD"]).stdout.trim();
 
   console.log("\nCutting 1.0.0 where git does not know who anybody is");
   const notes = "First public release. HALO orders your mods.";
@@ -75,8 +76,16 @@ try {
   ok("the notes players read survived", git(["tag", "-l", "--format=%(contents)", "v1.0.0"]).stdout.trim(), notes);
 
   console.log("\nWhat reached the remote");
-  ok("main was pushed", git(["rev-parse", "main"]).stdout.trim(), git(["rev-parse", "origin/main"], work).stdout.trim());
+  const head = git(["rev-parse", "HEAD"]).stdout.trim();
   ok("the tag was pushed", git(["ls-remote", "--tags", origin, "v1.0.0"]).stdout.includes("refs/tags/v1.0.0"), true);
+  // What the tag points through to. The build jobs check this commit out by hash, so it has to
+  // have travelled with the tag even though no branch carries it.
+  ok("and the commit it names went with it", git(["ls-remote", origin, "refs/tags/v1.0.0^{}"]).stdout.split(/\s/)[0], head);
+  // And main was left alone. A release commit pushed to main is one that neither the container
+  // writing the history nor the machine carrying it has, so the next sync finds two histories
+  // that have both moved and stops -- once per release, forever.
+  ok("main on the remote did not move", git(["ls-remote", origin, "refs/heads/main"]).stdout.split(/\s/)[0], base);
+  ok("which is not where the release commit is", head === base, false);
 
   console.log("\nAnd it still refuses what it should");
   const again = spawnSync(process.execPath, [path.join(work, "tools", "release.mjs"), "1.0.0", "--tag-only"], { cwd: work, encoding: "utf8", env: NOBODY });
@@ -84,6 +93,20 @@ try {
   ok("and says why", /already exists/.test(`${again.stdout}${again.stderr}`), true);
   const back = spawnSync(process.execPath, [path.join(work, "tools", "release.mjs"), "0.9.0", "--tag-only"], { cwd: work, encoding: "utf8", env: NOBODY });
   ok("going backwards is refused", back.status, 1);
+
+  // Every run starts from a clone of main, and main does not carry the release commit any more.
+  // So the guards have to hold for a checkout where no tag is an ancestor of anything -- which
+  // is what `git describe --tags` answers, and why it is not what decides this.
+  console.log("\nFrom a fresh clone of main, where no tag is in the history");
+  const fresh = path.join(root, "fresh");
+  spawnSync("git", ["clone", "-q", "-b", "main", origin, fresh], { encoding: "utf8", env: NOBODY });
+  ok("the release commit is not on main", spawnSync("git", ["merge-base", "--is-ancestor", head, "HEAD"], { cwd: fresh, env: NOBODY }).status !== 0, true);
+  const freshBack = spawnSync(process.execPath, [path.join(fresh, "tools", "release.mjs"), "0.9.0", "--tag-only"], { cwd: fresh, encoding: "utf8", env: NOBODY });
+  ok("going backwards is still refused", freshBack.status, 1);
+  ok("and it names the version it will not go under", /1\.0\.0/.test(`${freshBack.stdout}${freshBack.stderr}`), true);
+  const freshUp = spawnSync(process.execPath, [path.join(fresh, "tools", "release.mjs"), "1.0.1", "--tag-only", "--notes", "A fix."], { cwd: fresh, encoding: "utf8", env: NOBODY });
+  ok("but the next version is allowed", freshUp.status, 0);
+  if (freshUp.status !== 0) console.log(`${freshUp.stdout}${freshUp.stderr}`.split("\n").map((l) => `          ${l}`).join("\n"));
 
   // Reached through a symlink, which is not a curiosity: macOS puts every temporary directory
   // under /var/folders, a symlink to /private/var/folders, and Windows can name the same
