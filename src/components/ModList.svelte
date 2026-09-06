@@ -5,11 +5,9 @@
   import { describe, explainLoad } from "$lib/describe";
   import { BAND_LABEL, LOAD_BAND_LABEL, describeChange, severityOf, type Issue, type ModInfo } from "$lib/types";
 
-  // One list, shown four ways. Without `pane` this is the whole list and the tabs decide what is
-  // in it; with one it is half of a side-by-side view and shows only its own half.
+  // One list, shown three ways. Without `pane` this is the whole list and the tabs decide what is
+  // in it; with one it is half of the side-by-side library and shows only its own half.
   let { pane = null }: { pane?: Pane | null } = $props();
-  /** HALO's proposal is something to read, not something to rearrange. */
-  const readOnly = $derived(pane === "proposed");
 
   // ---- virtualization: only the rows in view exist in the DOM ----
   const ROW = 40;
@@ -125,11 +123,10 @@
     store.setColumn(key, null);
   }
 
-  /** The order this list shows: yours, or the one HALO proposes. */
-  const sections = $derived(pane === "proposed" ? store.proposedSections : store.sections);
-  const ordered = $derived(pane === "proposed" ? store.visibleProposed : store.visibleActive);
-  const indexOf = $derived(pane === "proposed" ? store.proposedIndexOf : store.indexOf);
-  const placementOf = $derived(pane === "proposed" ? (uid: string) => store.proposedPlacementByUid.get(uid) : (uid: string) => store.placement(uid));
+  const sections = $derived(store.sections);
+  const ordered = $derived(store.visibleActive);
+  const indexOf = $derived(store.indexOf);
+  const placementOf = (uid: string) => store.placement(uid);
   const items = $derived.by((): Item[] => {
     const out: Item[] = [];
     if (pane === "inactive") {
@@ -230,20 +227,15 @@
   }
   function click(e: MouseEvent, m: ModInfo) {
     store.select(m.uid, { toggle: e.ctrlKey || e.metaKey, range: e.shiftKey, list: visibleList() });
-    // Side by side with HALO, a click asks "and where is it in the other one?" — so the other pane
-    // goes to the same mod, without taking the selection or the keyboard away from this one.
-    if (store.splitMode === "halo") store.scrollTo(m.uid, { pane: pane === "proposed" ? "active" : "proposed", select: false, focus: false });
   }
   /** Right click: the menu for the selection when the row is part of it, else for that row alone. */
   function contextMenu(e: MouseEvent, m: ModInfo) {
     e.preventDefault();
     e.stopPropagation();
-    if (readOnly) return;
     if (!store.selected.includes(m.uid)) store.select(m.uid);
     store.menu = { x: e.clientX, y: e.clientY, uids: store.selected.includes(m.uid) ? [...store.selected] : [m.uid] };
   }
   function toggle(m: ModInfo) {
-    if (readOnly) return;
     if (store.activeSet.has(m.uid)) store.deactivate([m.uid]);
     else store.activate([m.uid]);
   }
@@ -273,7 +265,7 @@
   let autoTarget: HTMLElement | null = null;
 
   function pointerDown(e: PointerEvent, m: ModInfo) {
-    if (readOnly || e.button !== 0 || (e.target as HTMLElement).closest("button, a, input, select")) return;
+    if (e.button !== 0 || (e.target as HTMLElement).closest("button, a, input, select")) return;
     press = { x: e.clientX, y: e.clientY, uid: m.uid, pointerId: e.pointerId };
   }
   function pointerMove(e: PointerEvent) {
@@ -299,7 +291,7 @@
     dropScroller = list;
     const target = list?.dataset.pane ?? "";
     // HALO's proposal is read-only, so nothing can be dropped into it.
-    if (!list || target === "proposed") { store.drop = null; return; }
+    if (!list) { store.drop = null; return; }
     const to: Pane | null = target === "single" || target === "" ? null : (target as Pane);
     // The inactive pane takes anything active: dropping there switches a mod off, and there is no
     // position to pick, so the whole pane lights up rather than a line between two rows.
@@ -388,7 +380,6 @@
   }
   const emptyText = $derived(
     pane === "inactive" ? "Every installed mod is active." :
-    pane === "proposed" ? "Nothing in HALO's order matches the search or filters." :
     pane === "active" ? "No active mod matches the search or filters." :
     store.active.length || store.tab !== "active" ? "No mod matches the search or filters." : "No active mods. Import a list, or activate mods from the Inactive tab."
   );
@@ -407,7 +398,7 @@
   bind:clientWidth={listW}
   onscroll={onScroll}
   role="listbox"
-  aria-label={pane === "inactive" ? "Inactive mods" : pane === "proposed" ? "The order HALO proposes" : "Load order"}
+  aria-label={pane === "inactive" ? "Inactive mods" : "Load order"}
   aria-multiselectable="true"
   tabindex="-1"
   style="--cols: {template}"
@@ -472,7 +463,7 @@
           onkeydown={(e) => key(e, m)}
           onpointerdown={(e) => pointerDown(e, m)}
         >
-          <span class="idx num">{#if !readOnly}<span class="grip">{@html I.grip}</span>{/if}{it.inactive ? "" : (indexOf.get(m.uid) ?? 0) + 1}</span>
+          <span class="idx num"><span class="grip">{@html I.grip}</span>{it.inactive ? "" : (indexOf.get(m.uid) ?? 0) + 1}</span>
           <span class="name"><b>{m.name ?? m.uid}</b><span>{m.invalid ?? (m.authors ?? []).join(", ")}</span></span>
           {#if showPkg}<span class="pkg">{m.packageId}</span>{/if}
           {#if nameW != null}<span class="fill"></span>{/if}

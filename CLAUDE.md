@@ -48,7 +48,10 @@ the repo, meant for the `TAURI_SIGNING_PRIVATE_KEY` secret; only the public key 
   Texture ("Texture packs"), Late ("Late loaders"), Optimization ("Performance"). Rules are hard
   DAG edges, phases are soft, the official-content invariant holds (anything with Defs loads
   after Core and the DLC), and a real cycle is explained and cut rather than fatal. The HALO page
-  lets a user switch built-in rules off or send them to another phase.
+  lets a user switch built-in rules off or send them to another phase. *What changes* compares the
+  order you have with the one HALO proposes as a diff rather than as two lists: the longest run of
+  mods that keep their relative order is the backbone, and only the mods lifted out of it are
+  moves. The rest is drift, and saying so is the point (`src/lib/moves.ts`, `MovesView.svelte`).
 - `defs`: builds the document the game builds — every active mod's Defs merged in load order,
   every PatchOperation applied in load order, then Name/ParentName inheritance — with the origin
   of every node recorded, so "who wins this value" has an answer. `defs::xpath` is XPath 1.0 as

@@ -1,4 +1,5 @@
-// Two lists side by side: Inactive | Active, and the order you have beside the one HALO proposes.
+// Two lists side by side: Inactive | Active. (What HALO would change is a board of its own now:
+// see shots27.cjs.)
 // npm run build && npx vite preview --port 4180 --strictPort
 // NODE_PATH=$(npm root -g) node tools/loadtest/shots26.cjs <outdir>
 const { chromium } = require('playwright');
@@ -224,105 +225,9 @@ async function checkGeometry(p, label, widths) {
   await p.waitForTimeout(400);
   ok('Inactive | Active closes again', (await panes(p)).join() === 'single' && (await p.evaluate(() => !!document.querySelector('.seg[role=tablist]'))));
 
-  // ---- Current | HALO ----
-  await p.click('.btn.primary:has-text("Sort with HALO")');
-  await p.waitForTimeout(900);
-  const moves = Number((await p.evaluate(() => document.querySelector('.btn.primary').textContent)).match(/\d+/)[0]);
-  ok('HALO proposes real moves', moves > 0, `${moves} moves`);
-  const bar = await p.$$eval('.toolbar .pair .btn', (els) => els.map((e) => e.textContent.replace(/\s+/g, ' ').trim()));
-  ok('Current | HALO sits with Apply and Discard', bar[0] === 'Current | HALO' && bar[1].startsWith('Apply') && bar[2] === 'Discard', bar.join(' / '));
-  await p.click('.btn.split:has-text("Current | HALO")');
-  await p.waitForTimeout(500);
-  ok('Current | HALO opens two panes', (await panes(p)).join() === 'active,proposed');
-  const hHeads = await heads(p);
-  ok('the headings say what each pane is', hHeads[0] === `Current·${activeAtStart}` && hHeads[1] === `HALO proposes·${moves} moves`, hHeads.join(' | '));
-  // Every mod on show in both panes: the place HALO gives it must be its place now plus the move.
-  const agree = await p.evaluate(() => {
-    const read = (s) => Object.fromEntries([...document.querySelectorAll(`${s} .row`)].map((r) => [r.dataset.uid, { at: Number(r.querySelector('.idx').textContent), by: Number(r.querySelector('.delta').textContent || 0), name: r.querySelector('.name b').textContent }]));
-    const now = read('.list[data-pane=active]'), halo = read('.list[data-pane=proposed]');
-    const both = Object.keys(halo).filter((u) => now[u]);
-    return { n: both.length, wrong: both.filter((u) => halo[u].at !== now[u].at + now[u].by).map((u) => `${halo[u].name}: ${now[u].at}${now[u].by >= 0 ? '+' : ''}${now[u].by} ≠ ${halo[u].at}`) };
-  });
-  ok('the proposed pane puts each mod where its move says', agree.n > 5 && agree.wrong.length === 0, `${agree.n} mods in both panes; ${agree.wrong.slice(0, 3).join('; ')}`);
-  const marked = await p.evaluate(() => ({ cur: document.querySelectorAll('.list[data-pane=active] .row.moved').length, prop: document.querySelectorAll('.list[data-pane=proposed] .row.moved').length }));
-  ok('the mods HALO would move are marked in both panes', marked.cur > 0 && marked.prop > 0, JSON.stringify(marked));
-  console.log('      current pane: ', (await names(p, '.list[data-pane=active]', 4)).join(' | '));
-  console.log('      proposed pane:', (await names(p, '.list[data-pane=proposed]', 4)).join(' | '));
-  await checkGeometry(p, 'halo', [1700, 1440, 1180]);
-  await p.setViewportSize({ width: 1700, height: 1000 });
-  await p.waitForTimeout(400);
-  await p.screenshot({ path: `${out}/m26-halo.png` });
-
-  // the proposed pane is read-only
-  ok('the proposed pane offers no grip to drag by', await p.evaluate(() => document.querySelectorAll('.list[data-pane=proposed] .grip').length === 0 && document.querySelectorAll('.list[data-pane=active] .grip').length > 0));
-  const orderBefore = await names(p, '.list[data-pane=active]', 8);
-  const propRows = await p.$$('.list[data-pane=proposed] .row');
-  const d3 = await drag(p, propRows[0], propRows[4]);
-  ok('a row in the proposed pane cannot be picked up', await p.evaluate(() => !document.querySelector('.row.drop-before, .row.drop-after, .drop-line, .list.take')));
-  await d3.drop();
-  const d4 = await drag(p, await p.$('.list[data-pane=active] .row'), (await p.$$('.list[data-pane=proposed] .row'))[5]);
-  ok('the proposed pane is no drop target for the other pane', await p.evaluate(() => !document.querySelector('.list[data-pane=proposed] .row.drop-before, .list[data-pane=proposed] .row.drop-after, .list[data-pane=proposed] .drop-line')));
-  await d4.drop();
-  ok('the order you have is untouched by either', (await names(p, '.list[data-pane=active]', 8)).join() === orderBefore.join());
-
-  // clicking a moved mod in one pane goes to it in the other
-  for (const [from, to] of [['active', 'proposed'], ['proposed', 'active']]) {
-    // The other pane sent to the bottom, this one to the top: the mod clicked here is far from
-    // where the other pane is looking, so a scroll there is the only way it can come into view.
-    await p.evaluate(([a, b]) => { document.querySelector(a).scrollTop = 4000; document.querySelector(b).scrollTop = 0; }, [`.list[data-pane=${to}]`, `.list[data-pane=${from}]`]);
-    await p.waitForTimeout(350);
-    const was = await p.evaluate((s) => document.querySelector(s).scrollTop, `.list[data-pane=${to}]`);
-    const uid = await p.evaluate((s) => document.querySelector(`${s} .row.moved`).dataset.uid, `.list[data-pane=${from}]`);
-    await p.click(`.list[data-pane=${from}] .row[data-uid="${esc(uid)}"]`);
-    await p.waitForTimeout(450);
-    const r = await p.evaluate(([s, u]) => {
-      const list = document.querySelector(s), row = list.querySelector(`.row[data-uid="${CSS.escape(u)}"]`);
-      if (!row) return { top: list.scrollTop, seen: false };
-      const a = row.getBoundingClientRect(), lb = list.getBoundingClientRect();
-      return { top: list.scrollTop, seen: a.top >= lb.top - 1 && a.bottom <= lb.bottom + 1, sel: row.getAttribute('aria-selected') === 'true', name: row.querySelector('.name b').textContent };
-    }, [`.list[data-pane=${to}]`, uid]);
-    ok(`clicking a moved mod in the ${from} pane scrolls the ${to} pane to it`, r.top !== was && r.seen, `${was} → ${r.top}`);
-    ok(`…and selects it there`, r.sel === true);
-    const shown = await p.evaluate(() => ({ rows: document.querySelectorAll('.row[aria-selected=true]').length, name: document.querySelector('.inspector .hero .t b')?.textContent }));
-    ok('…and the Inspector still shows that one mod', shown.rows === 2 && shown.name === r.name, JSON.stringify(shown));
-  }
-
-  // keyboard stays in the pane last clicked
-  await p.click('.list[data-pane=proposed] .row');
-  await p.waitForTimeout(200);
-  await p.keyboard.press('ArrowDown');
-  await p.waitForTimeout(300);
-  ok('arrow keys move within the pane last clicked', await p.evaluate(() => document.activeElement?.closest('.list')?.dataset.pane === 'proposed'));
-
-  // ---- too narrow for two ----
-  await p.setViewportSize({ width: 1024, height: 1000 });
-  await p.waitForTimeout(450);
-  const narrow = await p.evaluate(() => document.querySelector('.narrow')?.textContent.replace(/\s+/g, ' ').trim());
-  ok('a narrow centre falls back to one pane and says so', (await panes(p)).length === 1 && !!narrow, narrow);
-  console.log('      fallback line:', narrow);
-  const gN = await p.evaluate(GEOMETRY, '.list');
-  ok('the one remaining pane lays out cleanly', gN.problems.length === 0, gN.problems.slice(0, 4).join('; '));
-  await p.screenshot({ path: `${out}/m26-narrow.png` });
-  await p.click('.narrow button');
-  await p.waitForTimeout(400);
-  ok('the fallback can show the other pane', (await panes(p)).join() === 'proposed', (await heads(p)).join());
-  await p.setViewportSize({ width: 1700, height: 1000 });
-  await p.waitForTimeout(450);
-  ok('widening brings both panes back', (await panes(p)).join() === 'active,proposed');
-
-  // ---- leaving the preview closes the comparison ----
-  await p.click('.toolbar .pair .btn:has-text("Discard")');
-  await p.waitForTimeout(450);
-  const after = await p.$$eval('.toolbar .btn', (els) => els.map((e) => e.textContent.replace(/\s+/g, ' ').trim()));
-  ok('discarding the preview closes the comparison', (await panes(p)).join() === 'single' && !after.includes('Current | HALO'), after.join(' / '));
-  await p.click('.btn.primary:has-text("Sort with HALO")');
-  await p.waitForTimeout(900);
-  await p.click('.btn.split:has-text("Current | HALO")');
-  await p.waitForTimeout(450);
-  await p.click('.toolbar .pair .btn.primary');
-  await p.waitForTimeout(1000);
-  ok('applying the preview closes the comparison', (await panes(p)).join() === 'single');
-  ok('the tabs are back', await p.evaluate(() => !!document.querySelector('.seg[role=tablist]')));
+  // The order you have beside the one HALO proposes used to be a second pair of panes here. It
+  // is a board of its own now — two bars and a line per mod actually lifted out of its place —
+  // and shots27.cjs is what checks it.
 
   console.log(errors.length ? errors.join('\n') : 'no console errors');
   ok('no console errors', errors.length === 0);

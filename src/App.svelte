@@ -21,6 +21,7 @@
   import ContextMenu from "./components/ContextMenu.svelte";
   import CollectionDialog from "./components/CollectionDialog.svelte";
   import InstancesDialog from "./components/InstancesDialog.svelte";
+  import MovesView from "./components/MovesView.svelte";
   import Panel from "./components/Panel.svelte";
 
   onMount(() => {
@@ -35,18 +36,10 @@
   let centre = $state(1200);
   let only = $state(0);
   const twoUp = $derived(centre >= TWO_UP);
-  const panes = $derived.by(() => {
-    const n = store.preview?.moves.length ?? 0;
-    if (store.splitMode === "library") return [
-      { pane: "inactive" as const, title: "Inactive", count: `${store.visibleInactive.length}`, note: "the mods you are not using" },
-      { pane: "active" as const, title: "Active", count: `${store.visibleActive.length}`, note: "your active list" }
-    ];
-    if (store.splitMode === "halo") return [
-      { pane: "active" as const, title: "Current", count: `${store.visibleActive.length}`, note: "the order you have now" },
-      { pane: "proposed" as const, title: "HALO proposes", count: `${n} move${n === 1 ? "" : "s"}`, note: "the order HALO proposes" }
-    ];
-    return [];
-  });
+  const panes = $derived(store.splitMode !== "library" ? [] : [
+    { pane: "inactive" as const, title: "Inactive", count: `${store.visibleInactive.length}`, note: "the mods you are not using" },
+    { pane: "active" as const, title: "Active", count: `${store.visibleActive.length}`, note: "your active list" }
+  ]);
 
   function onKey(e: KeyboardEvent) {
     const tag = (e.target as HTMLElement)?.tagName;
@@ -91,7 +84,9 @@
         <Panel name="Summary"><Stats /></Panel>
         <Panel name="Attention banner"><Banner /></Panel>
         <Panel name="Toolbar"><Toolbar /></Panel>
-        {#if panes.length}
+        {#if store.splitMode === "halo"}
+          <Panel name="What HALO would change"><MovesView /></Panel>
+        {:else if panes.length}
           <div class="panes" class:one={!twoUp}>
             {#each twoUp ? panes : [panes[only]] as p (p.pane)}
               <Panel name={p.title}>

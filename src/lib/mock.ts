@@ -110,6 +110,34 @@ if (typeof location !== "undefined" && location.search.includes("abovecore")) {
   active = [dbh, ...active.filter((u) => u !== dbh)];
 }
 const phaseOfSeed: Record<string, Phase> = Object.fromEntries(SEED.map((s) => [uidOf(s[2]), s[5]]));
+const byUid = new Map(mods.map((m) => [m.uid, m]));
+// ?big=1100&jumble=40 — a list the size of a real modded install, with a given number of mods out
+// of the place HALO would put them. Forty mods prove nothing about a view meant for a thousand.
+if (typeof location !== "undefined" && /[?&]big=(\d+)/.test(location.search)) {
+  const want = Number(location.search.match(/[?&]big=(\d+)/)![1]);
+  const jumble = Number(location.search.match(/[?&]jumble=(\d+)/)?.[1] ?? Math.round(want / 40));
+  const fill: Phase[] = ["prepatch", "framework", "content", "content", "content", "content", "patch", "texture", "late", "optimization"];
+  let seed = 7;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  for (let i = mods.length; i < want; i++) {
+    const base = SEED[i % SEED.length];
+    const m = mod([`${base[0]} ${i}`, base[1], `filler.mod${i}`, "", base[4], base[5], base[6], base[7], base[8], base[9]] as Seed);
+    mods.push(m);
+    byUid.set(m.uid, m);
+    phaseOfSeed[m.uid] = fill[Math.floor(rnd() * fill.length)];
+  }
+  // Start from the order HALO would settle on, then pull mods out of it: what is left is drift,
+  // and drift is exactly what buries the real moves on a list this long.
+  const rank = (uid: string) => PHASES.findIndex((p) => p.id === (phaseOfSeed[uid] ?? "content"));
+  const list = mods.map((m) => m.uid).map((uid, i) => ({ uid, i })).sort((a, b) => rank(a.uid) - rank(b.uid) || a.i - b.i).map((x) => x.uid);
+  for (let k = 0; k < jumble; k++) {
+    const from = Math.floor(rnd() * list.length);
+    if (byUid.get(list[from])?.source === "ludeon") continue;
+    const [uid] = list.splice(from, 1);
+    list.splice(Math.floor(rnd() * list.length), 0, uid);
+  }
+  active = list;
+}
 let dirty = false;
 
 let user: UserData = {
@@ -185,7 +213,7 @@ function placements(order: string[]): Placement[] {
   return order.map((uid) => {
     const g = user.groups.find((g) => g.id === user.modGroups[uid]);
     if (!user.phaseOverrides[uid] && g?.section && g.phase) return { uid, phase: g.phase, reason: `In your group ${g.name}, which goes after ${PHASES.find((p) => p.id === g.phase)?.name.toLowerCase()}`, section: g.id };
-    const m = mods.find((m) => m.uid === uid)!;
+    const m = byUid.get(uid)!;
     if (!user.phaseOverrides[uid] && !g?.phase && m.source !== "ludeon") {
       const byId = user.halo?.packagePhases[m.packageId];
       if (byId) return { uid, phase: byId, reason: "Your HALO rule for this package id" };
@@ -202,11 +230,18 @@ function issues(order: string[]): Issue[] {
   const out: Issue[] = [];
   const has = (pkg: string) => idx(pkg) >= 0;
   // Anything with Defs above the last official mod: the list RimWorld will reset.
-  const lastOfficial = Math.max(...order.map((u, i) => (mods.find((m) => m.uid === u)?.source === "ludeon" ? i : -1)));
+  const lastOfficial = Math.max(...order.map((u, i) => (byUid.get(u)?.source === "ludeon" ? i : -1)));
+  // The next official mod below each position, read once from the bottom up rather than searched
+  // for at every row: on a thousand-mod list the search is what costs.
+  const nextOfficial: (string | undefined)[] = new Array(order.length);
+  for (let i = order.length - 1, seen: string | undefined; i >= 0; i--) {
+    nextOfficial[i] = seen;
+    if (byUid.get(order[i])?.source === "ludeon") seen = order[i];
+  }
   for (const [i, u] of order.entries()) {
-    const m = mods.find((x) => x.uid === u);
+    const m = byUid.get(u);
     if (!m || i >= lastOfficial || m.source === "ludeon" || phaseOfSeed[u] === "prepatch" || m.contents.defs === 0) continue;
-    out.push({ kind: "aboveOfficial", uid: u, officialUid: order.slice(i + 1).find((v) => mods.find((x) => x.uid === v)?.source === "ludeon")! });
+    out.push({ kind: "aboveOfficial", uid: u, officialUid: nextOfficial[i]! });
   }
   if (has("voult.betterpawncontrol") && has("oskarpotocki.vanillafactionsexpanded.core") && idx("voult.betterpawncontrol") < idx("oskarpotocki.vanillafactionsexpanded.core"))
     out.push({ kind: "orderViolation", uid: uidOf("voult.betterpawncontrol"), targetUid: uidOf("oskarpotocki.vanillafactionsexpanded.core"), rule: "loadAfter", source: "community", comment: "BPC patches VEF work tabs" });
@@ -539,7 +574,7 @@ function changes(): ModChange[] {
 }
 
 function haloSort(): SortResult {
-  const rank = (uid: string) => PHASES.findIndex((p) => p.id === (placements([uid])[0].phase));
+  const rank = (uid: string) => PHASES.findIndex((p) => p.id === placements([uid])[0].phase);
   const order = [...active].map((uid, i) => ({ uid, i })).sort((a, b) => rank(a.uid) - rank(b.uid) || a.i - b.i).map((x) => x.uid);
   // honour the two community rules in the seed
   const bpc = uidOf("voult.betterpawncontrol"), vef = uidOf("oskarpotocki.vanillafactionsexpanded.core");

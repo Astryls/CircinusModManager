@@ -58,7 +58,7 @@
       {#each tabs as t}<button role="tab" class:on={store.tab === t.id} aria-selected={store.tab === t.id} onclick={() => (store.tab = t.id)}>{t.label} <span class="num">{t.count()}</span></button>{/each}
     </div>
   {/if}
-  {#if store.splitMode || store.tab !== "inactive"}
+  {#if store.splitMode === "library" || (!store.splitMode && store.tab !== "inactive")}
     <div class="seg arr" role="radiogroup" aria-label="Arrangement">
       <button role="radio" class:on={!store.byPhase} aria-checked={!store.byPhase} title="The list exactly as ModsConfig.xml has it, top to bottom" onclick={() => store.byPhase && store.setByPhase(false)}>Load order</button>
       <button role="radio" class:on={store.byPhase} aria-checked={store.byPhase} title="The same mods, gathered under the phase HALO files them in" onclick={() => !store.byPhase && store.setByPhase(true)}>By phase</button>
@@ -99,8 +99,8 @@
   <button class="btn" onclick={() => store.rescan(false)} title="Read the mod folders again">{@html I.refresh}<span class="opt-lbl">Refresh</span></button>
   {#if store.preview}
     <span class="pair">
-      <button class="btn split" class:on={store.splitMode === "halo"} aria-pressed={store.splitMode === "halo"} onclick={() => (store.split = store.split === "halo" ? null : "halo")} title="Show the order you have now beside the one HALO proposes">
-        {@html I.split}<span class="split-lbl">Current | HALO</span>
+      <button class="btn split" class:on={store.splitMode === "halo"} aria-pressed={store.splitMode === "halo"} onclick={() => (store.split = store.split === "halo" ? null : "halo")} title="Show which mods HALO would move, from where to where">
+        {@html I.change}<span class="split-lbl">What changes</span>
       </button>
       <button class="btn primary" onclick={() => store.haloApply()} title="Apply the {previewCount} move{previewCount === 1 ? '' : 's'} HALO proposes">{@html I.check}Apply<span class="opt-lbl"> {previewCount} move{previewCount === 1 ? "" : "s"}</span></button>
       <button class="btn" onclick={() => store.clearPreview()} title="Discard the preview; nothing moves" aria-label="Discard the preview">{@html I.close}<span class="opt-lbl">Discard</span></button>

@@ -10,7 +10,7 @@ export type View = "order" | "library" | "downloads" | "textures" | "defs" | "pa
 export type Tab = "active" | "inactive" | "all";
 /** Which list one pane of a side-by-side view shows. `null` is the ordinary single list, where
  *  the tabs decide what is in it. */
-export type Pane = "inactive" | "active" | "proposed";
+export type Pane = "inactive" | "active";
 /** The two comparisons: your library (inactive beside active) and the order you have now beside
  *  the one HALO proposes. */
 export type Split = "library" | "halo";
@@ -320,12 +320,6 @@ class Store {
   sections = $derived(this.layout(this.visibleActive, this.placementByUid));
   /** Where HALO would file each mod while a preview is up. */
   proposedPlacementByUid = $derived(new Map((this.preview?.placements ?? []).map((p) => [p.uid, p])));
-  /** The order HALO proposes, as mods, narrowed by the same search and filters. */
-  visibleProposed = $derived((this.preview?.order ?? []).map((u) => this.byUid.get(u)!).filter((m) => m && this.matches(m)));
-  /** The same sections, for the order HALO proposes. */
-  proposedSections = $derived(this.preview ? this.layout(this.visibleProposed, this.proposedPlacementByUid) : []);
-  /** Where each mod would sit in HALO's order, for the numbers in the proposed pane. */
-  proposedIndexOf = $derived(new Map((this.preview?.order ?? []).map((u, i) => [u, i])));
   /** The split actually in effect: the HALO comparison needs a preview to compare against. */
   splitMode = $derived<Split | null>(this.split === "halo" && !this.preview ? null : this.split);
   selectedMod = $derived(this.selected.length ? this.byUid.get(this.selected[this.selected.length - 1]) : undefined);
@@ -772,15 +766,12 @@ class Store {
   /** Which pane holds a mod, so a scroll request reaches the list that can actually show it. */
   paneFor(uid: string): Pane | null {
     if (this.splitMode === "library") return this.activeSet.has(uid) ? "active" : "inactive";
-    if (this.splitMode === "halo") return "active";
     return null;
   }
-  /** Bring a mod into view. The mirror click in a comparison asks the *other* pane and leaves both
-   *  the selection and the keyboard where they were. */
+  /** Bring a mod into view, in whichever pane can show it. */
   scrollTo(uid: string, opts: { pane?: Pane | null; select?: boolean; focus?: boolean } = {}) {
-    // The HALO comparison holds active mods only. Asked for one that is not in it, leave it
-    // rather than scroll a list that has no such row.
-    if (opts.pane === undefined && this.split === "halo" && !this.activeSet.has(uid)) this.split = null;
+    // The what-changes board is not a list, so a mod cannot be scrolled to inside it: leave it.
+    if (opts.pane === undefined && this.split === "halo") this.split = null;
     if (opts.select !== false) this.select(uid);
     this.scrollRequest = { uid, pane: opts.pane !== undefined ? opts.pane : this.paneFor(uid), focus: opts.focus !== false };
   }
@@ -796,8 +787,8 @@ class Store {
     if (!m) return;
     this.view = "order";
     const inactive = !this.activeSet.has(uid);
-    // The HALO comparison shows active mods only, so an inactive mod has to leave it behind.
-    if (inactive && this.split === "halo") this.split = null;
+    // The what-changes board is not a list, so revealing a row has to leave it behind.
+    if (this.split === "halo") this.split = null;
     if (inactive && this.tab === "active") this.tab = "inactive";
     if (!inactive && this.tab === "inactive") this.tab = "active";
     // Lift only the filters that hide it, one at a time.

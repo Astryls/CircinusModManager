@@ -151,7 +151,13 @@ Auto-update, once **https://circinus.sh/modmanager** is serving builds (a separa
 
 ## Two lists side by side
 
-**Inactive | Active** (in the toolbar) puts the mods you have beside the mods you use, and you drag between them: into the active pane at the position you drop, out of it to switch a mod off. **Current | HALO** appears once a preview exists and puts the order you have now beside the one HALO proposes, with every mod it would move marked in both. Clicking a moved mod in either pane scrolls the other to it and selects it, so "where did that go" has an answer. The proposal is read-only — applying or discarding it closes the comparison. On a window too narrow for two readable lists it falls back to one pane and says why.
+**Inactive | Active** (in the toolbar) puts the mods you have beside the mods you use, and you drag between them: into the active pane at the position you drop, out of it to switch a mod off. On a window too narrow for two readable lists it falls back to one pane and says why.
+
+## What HALO would change
+
+**What changes** appears once a preview exists. It does not put two lists side by side, because on a real list that hides the answer: lift one mod from #900 to #12 and 888 others have a new number without HALO having decided anything about them. So the two orders are compared the way a diff compares two files. The longest run of mods that keep their order relative to one another is the backbone; everything else is a mod HALO actually lifted out of its place. A thousand-mod list with a thousand new numbers usually holds a few dozen such moves, and those are what the view is about.
+
+The board is the two orders as vertical bars — yours on the left, HALO's on the right, both the same list top to bottom, banded and named by phase — with one line per move running from where the mod sits now to where it would land. Its slope is the move. Under the board each move gets a row: how far it travels and in which direction, the phase it leaves and the phase it lands in, the number it has now and the number it would have, the mods it used to follow and would follow, and HALO's own reason for filing it there. Hovering a line or a row lights both ends; clicking a phase band keeps only the moves that touch that phase; the search box narrows the board with everything else. The sentence above it says how many mods move and how many only change number, which is the question the old two-list view could not answer.
 
 ## The list's columns
 
