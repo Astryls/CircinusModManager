@@ -149,6 +149,10 @@ Play starts RimWorld through Steam (`steam://rungameid/294100`) when the game fo
 
 Auto-update, once **https://circinus.sh/modmanager** is serving builds (a separate effort). The app side is `tauri-plugin-updater` pointed at that feed, a check-on-start setting, a *Check now* button, and an install-and-restart banner.
 
+## Two lists side by side
+
+**Inactive | Active** (in the toolbar) puts the mods you have beside the mods you use, and you drag between them: into the active pane at the position you drop, out of it to switch a mod off. **Current | HALO** appears once a preview exists and puts the order you have now beside the one HALO proposes, with every mod it would move marked in both. Clicking a moved mod in either pane scrolls the other to it and selects it, so "where did that go" has an answer. The proposal is read-only — applying or discarding it closes the comparison. On a window too narrow for two readable lists it falls back to one pane and says why.
+
 ## The list's columns
 
 The list opens **By phase** with the columns most people read: name, package id, Load and Versions (Cost joins them once weights are loaded). Phase and Group are off by default — under *By phase* the sections already say the phase — and Show → Columns turns any of them on or off. The header is one grid with the rows, so a column label always sits over its own column, and the six badge slots (changed, update, errors, warnings, notes, pinned) keep one fixed slot each.
