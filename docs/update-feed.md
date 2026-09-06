@@ -213,6 +213,31 @@ Things to know about that table:
   send an unsigned bundle at all.
 - Files are named by Tauri from the product name and version; spaces in them are real spaces.
 
+## Setting a checkout up to release
+
+```sh
+node tools/setup-release.mjs
+```
+
+Once per checkout. It copies `tools/release-workflow.yml` into `.github/workflows/release.yml`,
+removes what the .NET sidecar left behind, and sets the two repository secrets a release needs:
+`TAURI_SIGNING_PRIVATE_KEY` from the `circinus-updater.key` beside the repo, and
+`CIRCINUS_BUILD_KEY`, which it asks for. Run it again whenever; it only does what is not already
+done and prints what is left.
+
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` is deliberately not created. A secret that does not exist
+already arrives as an empty string, which is what a key with no password wants.
+
+**The workflow lives in two places on purpose.** `tools/release-workflow.yml` is the one to edit;
+`.github/workflows/release.yml` is the copy GitHub reads. Some checkouts cannot have files
+written into `.github/` directly, and a release that never runs because the workflow was never
+copied across is a bad way to find that out, so `node tools/release.mjs` refuses to cut a release
+when the two have drifted apart.
+
+The repository does not need to be public. A private one bills Actions by the minute: at
+GitHub's 2026 rates ($0.006 Linux, $0.010 Windows, $0.062 macOS per minute) a three-platform
+release is about a dollar, less whatever your plan includes.
+
 ## Building for machines you do not have
 
 Nobody needs to own a Mac or a Linux box. `.github/workflows/release.yml` runs on GitHub's

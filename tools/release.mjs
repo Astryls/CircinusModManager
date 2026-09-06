@@ -5,6 +5,7 @@
 //   node tools/release.mjs 0.2.0            the normal path: three platforms, built by CI
 //   node tools/release.mjs 0.2.0 --dry-run  say what would happen and change nothing
 //   node tools/release.mjs --local          build this machine's platform and push only that
+//   node tools/release.mjs --setup          wire this checkout up to release (tools/setup-release.mjs)
 //
 // Why the normal path goes through CI: a Windows installer can only be made on Windows, a .dmg
 // and its .app.tar.gz only on macOS, an AppImage only on Linux. No one machine can produce the
@@ -96,8 +97,39 @@ async function local() {
 }
 
 // ---------------------------------------------------------------- the normal path
+/**
+ * What has to be true before a tag is worth pushing. Every one of these has been the reason a
+ * release did not happen, and every one of them is quiet: the tag goes up and nothing builds,
+ * or three things build and none of them can be published.
+ */
+async function preflight() {
+  const problems = [];
+  const src = path.join(ROOT, "tools", "release-workflow.yml");
+  const dst = path.join(ROOT, ".github", "workflows", "release.yml");
+  const read = async (p) => readFile(p, "utf8").catch(() => null);
+  const [want, have] = [await read(src), await read(dst)];
+  if (want && have === null) problems.push("there is no .github/workflows/release.yml, so the tag will build nothing");
+  else if (want && have !== want) problems.push(".github/workflows/release.yml has drifted from tools/release-workflow.yml");
+
+  const auth = capture("gh", ["auth", "status"]);
+  if (auth.status !== 0) {
+    problems.push("the GitHub CLI is not signed in, so the secrets cannot be checked from here");
+  } else {
+    const listed = capture("gh", ["secret", "list"]).stdout ?? "";
+    const set = new Set(listed.split("\n").map((l) => l.split(/\s/)[0]).filter(Boolean));
+    // Its password is not checked: a secret that does not exist arrives as an empty string,
+    // which is what a key with no password wants.
+    if (!set.has("TAURI_SIGNING_PRIVATE_KEY")) problems.push("TAURI_SIGNING_PRIVATE_KEY is not set, so the build will fail rather than write unsigned installers");
+    if (!set.has("CIRCINUS_BUILD_KEY")) problems.push("CIRCINUS_BUILD_KEY is not set, so the build will not be sent to circinus.sh");
+  }
+  if (problems.length) {
+    die(`Not ready to release:\n${problems.map((p) => `  - ${p}`).join("\n")}\n\nMost of that is what \`node tools/setup-release.mjs\` is for.`);
+  }
+}
+
 async function cut(v) {
   if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(v)) die(`"${v}" is not a version. Use 0.2.0, or 0.3.0-beta.1 for a pre-release.`);
+  if (!dry) await preflight();
 
   // Nothing half-finished, and nothing that only exists on this machine.
   const status = capture("git", ["status", "--porcelain"]).stdout.trim();
@@ -172,6 +204,7 @@ async function confirm(v) {
 }
 
 const main = async () => {
+  if (has("setup")) return run("node", ["tools/setup-release.mjs", ...args.filter((a) => a !== "--setup")]);
   if (has("local")) return local();
   if (!version) {
     die("Which version? `node tools/release.mjs 0.2.0`.\n\n" +

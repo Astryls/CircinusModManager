@@ -162,7 +162,8 @@ The columns then stop being the two orders and become **what leaves** and **what
 ## Making a release
 
 ```sh
-node tools/release.mjs 0.2.0
+node tools/setup-release.mjs    # once per checkout: the workflow, the leftovers, the secrets
+node tools/release.mjs 0.2.0    # every time after that
 ```
 
 That writes the version into the three files that carry it, runs the tests, tags it and pushes. The tag is what builds the Windows installer, the Mac disk image and update bundle, and the Linux AppImage, on three machines, and uploads all four files to circinus.sh - a Windows installer can only be built on Windows, so no single machine can make the set. `--local` builds and pushes only the platform you are on, for a one-platform fix; `--dry-run` says what would happen. `docs/update-feed.md` has the whole of it, including what the site refuses and why.
