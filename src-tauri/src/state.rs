@@ -1231,13 +1231,20 @@ mod tests {
     #[test]
     fn deleting_a_mod_removes_a_link_but_keeps_its_target() {
         let (tmp, mut app) = app_on_fixture();
-        let work = tmp.path().join("work/linked");
+        let work = tmp.path().join("work").join("linked");
         write(&work.join("About/About.xml"), "<ModMetaData><packageId>x.linked</packageId><name>Linked</name></ModMetaData>");
-        let link = tmp.path().join("game/Mods/deadbeef");
+        let link = tmp.path().join("game").join("Mods").join("deadbeef");
         #[cfg(unix)]
         std::os::unix::fs::symlink(&work, &link).unwrap();
         #[cfg(windows)]
-        assert!(std::process::Command::new("cmd").args(["/C", "mklink", "/J"]).arg(&link).arg(&work).status().unwrap().success());
+        {
+            // A junction needs no privilege on Windows; a symlink would. mklink is a cmd builtin, so
+            // it has to go through cmd, and cmd reads a leading / as a switch: a path carrying forward
+            // slashes, which Rust's own file APIs take happily, arrives here as "Invalid switch".
+            let native = |p: &std::path::Path| p.to_string_lossy().replace('/', "\\");
+            let out = std::process::Command::new("cmd").args(["/C", "mklink", "/J"]).arg(native(&link)).arg(native(&work)).output().unwrap();
+            assert!(out.status.success(), "mklink {} {}: {}{}", native(&link), native(&work), String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+        }
         let shallow = app.scan_quick(false, &|_, _| {}).unwrap();
         app.apply_inspections(circinus_core::scan::inspect_mods(&shallow, &|_, _| {})).unwrap();
         let uid = app.mods.iter().find(|m| m.package_id == "x.linked").unwrap().uid.clone();

@@ -556,8 +556,12 @@ mod tests {
     }
     #[cfg(windows)]
     fn link_dir(target: &Path, link: &Path) {
-        let out = std::process::Command::new("cmd").args(["/C", "mklink", "/J"]).arg(link).arg(target).output().unwrap();
-        assert!(out.status.success(), "mklink: {}", String::from_utf8_lossy(&out.stderr));
+        // A junction needs no privilege on Windows; a symlink would. mklink is a cmd builtin, so
+        // it has to go through cmd, and cmd reads a leading / as a switch: a path carrying forward
+        // slashes, which Rust's own file APIs take happily, arrives here as "Invalid switch".
+        let native = |p: &Path| p.to_string_lossy().replace('/', "\\");
+        let out = std::process::Command::new("cmd").args(["/C", "mklink", "/J"]).arg(native(link)).arg(native(target)).output().unwrap();
+        assert!(out.status.success(), "mklink {} {}: {}{}", native(link), native(target), String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
     }
 
     /// Modmixer and Circinus Dev Tools keep a mod in a workspace and put a link named after a
