@@ -1,18 +1,45 @@
-# The update feed at circinus.sh/modmanager
+# The update feed, and pushing a build to circinus.sh
 
-What the app asks for, what the server answers, and what a release upload consists of. This is
-the whole contract between Circinus Mod Manager and the site; someone who has never seen Tauri
-can build the server side from this page alone.
+Two halves of one thing: what an installed copy asks for and is answered with, and how a build
+gets onto the site in the first place.
 
-The app uses Tauri's updater plugin (`tauri-plugin-updater` 2.x) unchanged. Its wire format
-*is* the contract: the plugin already does the version comparison, the download and the
-signature check, so the server only has to answer one question — *is there something newer
-than what this copy is running, and where is it?*
+**What is built and what the site does.** The app uses Tauri's updater plugin
+(`tauri-plugin-updater` 2.x) unchanged, and the plugin reads either of the two shapes Tauri
+defines. The site serves the **static** one at
 
-## 1. The request
+```
+https://circinus.sh/api/v1/releases/latest.json
+```
+
+which is a single document naming one version and carrying a `url` and a `signature` per
+platform key (`windows-x86_64`, `darwin-aarch64`, `linux-x86_64`). That is the first endpoint in
+`src-tauri/tauri.conf.json`, and it is what an installed copy actually reads today.
+
+The **dynamic** form below — one request per copy, carrying its own target, architecture and
+version, answered with `204` or a single-platform body — is the second endpoint, kept because it
+is strictly better: it can answer `msi` to an MSI install and `nsis` to an NSIS one, which one
+static document cannot. The plugin tries the endpoints in order, so if the site ever implements
+it, apps already in the field pick it up with no new build. Sections 1 and 2 are its
+specification and remain the contract for that route.
+
+**Pushing a build** is section 5. `tools/push-build.mjs` is the whole of it and the release
+workflow runs it; `tools/loadtest/push-build.cjs` drives that script against a stub of the site.
+
+## What the site refuses
+
+- **Intel Macs.** `darwin-x86_64` is rejected rather than filed under Apple Silicon, so the
+  release workflow does not build one.
+- **Em dashes in release notes.** The push script flattens them, along with curly quotes.
+- **A version older than the one published now.** `latest.json` names one version and every
+  installed copy compares it to its own; a lower number leaves every app saying "up to date"
+  forever, and it never sees the next real release either. Re-publishing the same version is
+  fine; a pre-release (`0.3.0-beta.1`) is exempt, being never what `latest.json` names.
+
+## 1. The request (the dynamic route)
 
 Once, a few seconds after launch (when the user has left the setting on), and whenever the user
-presses *Check now* in Settings, the app sends:
+presses *Check now* in Settings, the app asks its endpoints in order. Against the dynamic route
+that request is:
 
 ```
 GET https://circinus.sh/modmanager/update/{target}/{arch}/{current_version}?installer={bundle_type}
@@ -47,7 +74,7 @@ arrive:
 
 Anything else (an arch there is no build for) should get `204 No Content`, not an error.
 
-## 2. The response
+## 2. The response (the dynamic route)
 
 Two answers are possible.
 
@@ -76,9 +103,27 @@ user as "the update feed may be down", so a 204 is the only right way to say "yo
 | `notes`     | no       | Plain text release notes, shown in the banner and in Settings. Keep it to a few sentences; the UI does not render Markdown.                                              |
 
 Extra fields are ignored. Only the `url` and `signature` for the requested platform go in the
-answer; there is no per-platform map in this format (Tauri also accepts a static `platforms`
-object, but the dynamic form above is the one the app expects and the one the server should
-send).
+answer; there is no per-platform map in this format.
+
+The static form the site serves today is the same fields with the per-platform parts moved into
+a map, and no 204:
+
+```json
+{
+  "version": "0.2.0",
+  "pub_date": "2026-09-05T18:00:00Z",
+  "notes": "HALO learns late loaders.",
+  "platforms": {
+    "windows-x86_64": { "url": "https://circinus.sh/...-setup.exe", "signature": "<the .sig>" },
+    "darwin-aarch64": { "url": "https://circinus.sh/....app.tar.gz", "signature": "<the .sig>" },
+    "linux-x86_64":   { "url": "https://circinus.sh/....AppImage",   "signature": "<the .sig>" }
+  }
+}
+```
+
+The plugin compares `version` with the running one itself, so "you are current" needs no special
+answer. Everything section 3 says about signatures applies unchanged: the `signature` is the
+`.sig` file's contents verbatim, and the bytes served must be the bytes that were signed.
 
 ### Worked example
 
@@ -147,44 +192,75 @@ serve the uploaded bytes untouched.
 
 ## 4. What a release upload consists of
 
-`.github/workflows/release.yml` builds one artifact per platform. Each contains the installers
-people download by hand and, for every file the updater can install, a `.sig` next to it. The
-site should accept the whole set and know which file is the *update payload* per
-`target`/`arch`/`installer`:
+The site keeps **four slots** per release. Everything else the build produces (the `.msi`, the
+`.deb`) is for people who come looking on GitHub and is not uploaded.
 
-| Platform             | Update payload (the `url` to serve)                 | Its signature (the `signature` to serve)          | Also in the upload, for people, not for the updater |
-| -------------------- | --------------------------------------------------- | ------------------------------------------------- | --------------------------------------------------- |
-| windows / x86_64 / nsis | `Circinus Mod Manager_0.2.0_x64-setup.exe`        | `Circinus Mod Manager_0.2.0_x64-setup.exe.sig`    |                                                     |
-| windows / x86_64 / msi  | `Circinus Mod Manager_0.2.0_x64_en-US.msi`        | `Circinus Mod Manager_0.2.0_x64_en-US.msi.sig`    |                                                     |
-| darwin / aarch64 / app  | `Circinus Mod Manager.app.tar.gz` (from the aarch64 build) | `Circinus Mod Manager.app.tar.gz.sig`      | `Circinus Mod Manager_0.2.0_aarch64.dmg`           |
-| darwin / x86_64 / app   | `Circinus Mod Manager.app.tar.gz` (from the x86_64 build)  | `Circinus Mod Manager.app.tar.gz.sig`      | `Circinus Mod Manager_0.2.0_x64.dmg`               |
-| linux / x86_64 / appimage | `Circinus Mod Manager_0.2.0_amd64.AppImage`     | `Circinus Mod Manager_0.2.0_amd64.AppImage.sig`   |                                                     |
-| linux / x86_64 / deb    | `Circinus Mod Manager_0.2.0_amd64.deb`            | `Circinus Mod Manager_0.2.0_amd64.deb.sig`        |                                                     |
+| Slot | The file Tauri wrote | Signed? | What it is |
+| --- | --- | --- | --- |
+| `windows` / `installer` | `bundle/nsis/..._x64-setup.exe` | yes | what a person downloads *and* what the updater installs |
+| `mac` / `installer` | `bundle/dmg/..._aarch64.dmg` | no | what a person downloads the first time |
+| `mac` / `update` | `bundle/macos/....app.tar.gz` | yes | what the updater installs, replacing the app bundle in place |
+| `linux` / `installer` | `bundle/appimage/....AppImage` | yes | both, as Tauri re-uses the AppImage for updates |
 
 Things to know about that table:
 
-- **macOS updates are the `.app.tar.gz`, not the `.dmg`.** The `.dmg` is what a person
-  downloads the first time; the updater replaces the app bundle in place from the tarball. The
-  two Mac builds produce a tarball with the *same name*; keep them apart by the build they came
-  from (the workflow artifact is named `circinus-aarch64-apple-darwin` /
-  `circinus-x86_64-apple-darwin`), or rename them on upload — the name of the file does not
-  matter to the app, only its bytes and its signature.
-- The `.sig` is a small text file: base64 of a minisign signature block. Its contents, verbatim,
-  are the `signature` string. It is generated by the build and cannot be produced any other way.
-- Files are named by Tauri from the product name and version; spaces in them are real spaces,
-  so percent-encode when composing `url`.
-- A release without a `.sig` for a file must not be offered for that platform. The workflow
-  refuses to upload such a build, but the server should check too: an installer without a
-  signature is fine for a person to download and useless to the updater.
+- **macOS updates are the `.app.tar.gz`, not the `.dmg`.** The two are different files with
+  different jobs, and only the tarball is signed.
+- The `.sig` is a small text file beside each bundle: base64 of a minisign signature block. Its
+  contents, verbatim, are the `signature` the site serves. It is written by the build and cannot
+  be produced any other way. **A bundle uploaded without one is stored and listed and never
+  offered to the updater, and nothing on the page says why** — so the push script refuses to
+  send an unsigned bundle at all.
+- Files are named by Tauri from the product name and version; spaces in them are real spaces.
 
-A minimal server therefore keeps, per release version, a table of
-`(target, arch, installer) → (file, signature text, size)`, plus `pub_date` and `notes`, and
-answers the request in section 1 with the newest release that has an entry for the asked
-combination and is greater than `current_version`; otherwise `204`.
+## 5. Pushing a build
 
-## 5. Where the app side lives
+`tools/push-build.mjs` is the whole interface. The release workflow runs it on a tag, and it can
+be run by hand against a local build:
 
-- `src-tauri/tauri.conf.json` — the endpoint, the public key, `bundle.createUpdaterArtifacts`.
+```sh
+CIRCINUS_BUILD_KEY=cmk_... node tools/push-build.mjs            # from src-tauri/target/release/bundle
+CIRCINUS_BUILD_KEY=cmk_... node tools/push-build.mjs --dir artifacts --dry-run
+```
+
+The **build key** is made at <https://circinus.sh/admin> under *Mod Manager builds → Build keys*
+and is shown once. It can create a release, upload its files, publish or retract it, and read the
+list back; it cannot delete anything or make another key, and every call it makes is recorded
+against its id. In CI it is the repository secret `CIRCINUS_BUILD_KEY`; without it the workflow
+still builds and drafts a GitHub release and says in the log why nothing was sent.
+
+What the script does, in order:
+
+1. **Create** the release with its notes. A release starts *retracted* — invisible on the
+   download page and absent from the feed — because uploading four files is four requests and a
+   release that went live on the first would spend a minute offering Windows to Mac visitors.
+2. **Upload** each of the four slots, one file per request as the whole body, with the file name,
+   the sha256 of the bytes (the site re-hashes and refuses a mismatch, which is the only way a
+   truncated transfer is ever caught), and the `.sig` contents where there is one. If a slot
+   replaces a file people have already downloaded the site says so, and the script repeats that
+   warning rather than swallowing it: two machines reporting one version number while running
+   different builds is something no updater can reconcile.
+3. **Publish**, which is the moment anything becomes visible. A release missing a platform needs
+   `--force`; the script passes it and names what is missing rather than failing on a
+   single-platform build.
+4. **Read `latest.json` back** and fail if it does not name the version just published, or if any
+   platform in it has no signature. Both are silent in every other way: the release looks fine on
+   the site and no installed copy is ever offered it.
+
+It refuses before sending anything when a bundle that needs a signature has none, when the
+version asked for is not the version this checkout builds (`src-tauri/tauri.conf.json` is where
+the number is written, once), or when a file is empty or over the site's 600 MB limit.
+
+`node tools/loadtest/push-build.cjs` runs the script against a stub of the site with fake
+bundles and checks the whole sequence, including each of those refusals.
+
+## 6. Where the app side lives
+
+- `src-tauri/tauri.conf.json` — the version (written once, here), the two endpoints in order,
+  the public key, `bundle.createUpdaterArtifacts`.
+- `tools/push-build.mjs` — the release push, and `tools/loadtest/push-build.cjs` its test.
+- `.github/workflows/release.yml` — builds three platforms on a tag, pushes them, drafts a
+  GitHub release as a copy.
 - `src-tauri/src/updater.rs` — the `update_check` and `update_install` commands, the quiet
   check on start (once per launch, five seconds in, only when the setting is on), the
   `update-available` and `update-progress` events, and the errors in plain words.

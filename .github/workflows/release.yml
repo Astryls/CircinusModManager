@@ -21,10 +21,10 @@ jobs:
         include:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+          # Apple Silicon only: circinus.sh refuses darwin-x86_64 rather than file an Intel
+          # binary under Apple Silicon, so an Intel job would build what can never be published.
           - os: macos-latest
             target: aarch64-apple-darwin
-          - os: macos-13
-            target: x86_64-apple-darwin
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
     runs-on: ${{ matrix.os }}
@@ -119,6 +119,39 @@ jobs:
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/deb/*.deb.sig
           if-no-files-found: warn
+
+  # Everything the three builds made, sent to circinus.sh and published there. This is what an
+  # installed copy will be offered; the GitHub draft below is a copy for people who come looking
+  # on GitHub. tools/push-build.mjs is the whole interface and refuses before it sends anything
+  # that would publish a build the updater cannot install.
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    # At the job level so the steps below can ask whether the key exists: a step's own `env` is
+    # not in scope for its own `if`.
+    env:
+      CIRCINUS_BUILD_KEY: ${{ secrets.CIRCINUS_BUILD_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the tag's own message becomes the release notes
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Push it to circinus.sh
+        if: env.CIRCINUS_BUILD_KEY != ''
+        run: node tools/push-build.mjs --version "${GITHUB_REF_NAME#v}" --dir artifacts
+      - name: Say why nothing was pushed
+        if: env.CIRCINUS_BUILD_KEY == ''
+        run: |
+          echo "No CIRCINUS_BUILD_KEY secret, so this build was not sent to circinus.sh."
+          echo "Make a build key at https://circinus.sh/admin under Mod Manager builds, then add"
+          echo "it as the repository secret CIRCINUS_BUILD_KEY. The installers are still attached"
+          echo "to the draft release below."
 
   draft:
     needs: build

@@ -83,6 +83,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEREQ0FEMTU0NzkyRUFBMDUKUldRRnFpNTVWTkhLM2NiSGExdS8xaXBIOWI1UFNBeVZ1VCtoY01iUFZiTyt3cEVFR1R1RmRtRk4K",
       "endpoints": [
+        "https://circinus.sh/api/v1/releases/latest.json",
         "https://circinus.sh/modmanager/update/{{target}}/{{arch}}/{{current_version}}?installer={{bundle_type}}"
       ],
       "windows": {

@@ -28,4 +28,6 @@ Playwright is needed for the browser (`npm i -D playwright && npx playwright ins
 
 `shots28.cjs` is the toolbar, swept from 2200px down to 640px in every state it has — the list alone, a preview up, the board open, two lists open — plus the two places a player is told where to ask for help. Same port as `shots26`. It exists because the toolbar overflowed at ordinary desktop widths and drew Discard under the panel beside it, and the checks that were meant to catch that only looked at three widths in one state.
 
+`push-build.cjs` drives the real `tools/push-build.mjs` against a stub of circinus.sh with fake bundles in a temporary folder: `node tools/loadtest/push-build.cjs`. No browser and no network. The push runs once per release, from CI, unattended, and the ways it goes wrong are quiet ones - an unsigned bundle that uploads happily and is never offered, a truncated transfer stored as if it were whole, a tag that does not match the build it publishes - so each of those is a case here.
+
 `moves.cjs` checks the arithmetic behind that board with no browser at all — it bundles `src/lib/moves.ts` with esbuild and calls it: `node tools/loadtest/moves.cjs`.

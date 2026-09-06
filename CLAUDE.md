@@ -30,13 +30,18 @@ user's PC, which is where pushes happen. Deliver changed files there (SendUserFi
 ## circinus.sh
 
 `circinus.sh` is the project's site; it already serves the performance weights the Cost column
-uses. A separate session (`cse_01471kgqd8sGWxexmsnbouqE`) is building
-**https://circinus.sh/modmanager** — a place to upload builds that also serves the auto-update
-feed. The app side of auto-update is built (`src-tauri/src/updater.rs`, `tauri-plugin-updater`
-unchanged, a check-on-start setting, *Check now* in Settings, an install-and-restart banner); the
-server side is not, and **`docs/update-feed.md` is the contract it implements** — the app defined
-it, the site follows. The updater's private key is `/home/claude/circinus-updater.key`, outside
-the repo, meant for the `TAURI_SIGNING_PRIVATE_KEY` secret; only the public key is committed.
+uses. It also takes build uploads and serves the auto-update feed, both of which are live: builds go up
+through four calls under `/api/v1/ci/releases/…` with a `cmk_` build key, and an installed copy
+reads `/api/v1/releases/latest.json`. The site chose Tauri's **static** feed format rather than
+the per-copy dynamic route this repo specified, so `tauri.conf.json` lists both endpoints in
+order and the app takes whichever answers. `docs/update-feed.md` describes both and is the record
+of what is actually served; `tools/push-build.mjs` is the whole push and the release workflow
+runs it on a tag, given the `CIRCINUS_BUILD_KEY` secret. The site refuses Intel Macs and em
+dashes in release notes, so the workflow builds no Intel Mac and the script flattens the dashes.
+
+The updater's private key is `/home/claude/circinus-updater.key`, outside the repo, meant for the
+`TAURI_SIGNING_PRIVATE_KEY` secret; only the public key is committed. It can never be rotated
+without one manual reinstall for everyone, since an app carries the public key it was built with.
 
 ## Shape of the thing
 
