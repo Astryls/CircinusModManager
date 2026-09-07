@@ -137,10 +137,15 @@ export async function listen<T>(event: string, handler: (payload: T) => void): P
 }
 
 /** The version this build is, as tauri.conf.json says it. The mock is 0.1.0. */
+/// What to print where a version goes.
+///
+/// A development build carries the placeholder version `main` keeps, not a released one, so the
+/// number on its own is misleading -- it reads as an old release rather than as "this is the
+/// branch". Saying which kind of build it is costs a few words and stops the question.
 export async function appVersion(): Promise<string> {
   if (!inTauri) return "0.1.0";
-  const app = await import("@tauri-apps/api/app");
-  return app.getVersion();
+  const b = await invoke<{ version: string; dev: boolean }>("app_build");
+  return b.dev ? `${b.version} · development build` : b.version;
 }
 
 export async function openPath(path: string) {

@@ -279,6 +279,7 @@ pub fn run() {
             commands::import_collection,
             commands::import_rentry,
             commands::check_updates,
+            updater::app_build,
             updater::update_check,
             updater::update_install,
             defs::defs_start,

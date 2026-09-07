@@ -209,6 +209,21 @@ fn plain(e: tauri_plugin_updater::Error) -> String {
     }
 }
 
+/// What this build is, for the places that print it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Build {
+    pub version: String,
+    /// True under `tauri dev`. The version then is `main`'s placeholder rather than a release,
+    /// so printing it on its own says nothing true -- see `DEV_BUILD`.
+    pub dev: bool,
+}
+
+#[tauri::command]
+pub fn app_build(app: AppHandle) -> Build {
+    Build { version: app.package_info().version.to_string(), dev: tauri::is_dev() }
+}
+
 #[tauri::command]
 pub async fn update_check(updater: State<'_, Arc<Updater>>) -> Result<UpdateCheck, String> {
     updater.check().await
