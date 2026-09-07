@@ -49,10 +49,8 @@
     store.revertTextures([r.uid]);
   }
   const qualities: { id: DdsQuality; label: string; hint: string }[] = [
-    { id: "quick", label: "Quick", hint: "Fastest. Fine for a first pass" },
-    { id: "balanced", label: "Balanced", hint: "Fast. The default" },
-    { id: "high", label: "High", hint: "About half the speed of Balanced" },
-    { id: "max", label: "Max", hint: "Slow, about three times slower than High" }
+    { id: "quick", label: "Quick", hint: "Half the time. Slightly rougher on small sprites, the same on large ones" },
+    { id: "balanced", label: "Balanced", hint: "The default. Worth the extra time on small sprites" }
   ];
   const formats: { id: DdsFormat; label: string; hint: string }[] = [
     { id: "bc7", label: "BC7", hint: "Best quality for transparency. What todds and RimSort use" },
@@ -136,6 +134,7 @@
         <span class="l">Quality</span>
         <div class="seg">{#each qualities as q}<button class:on={s?.quality === q.id} title={q.hint} onclick={() => update({ quality: q.id })}>{q.label}</button>{/each}</div>
       </div>
+      <p class="hint">Quality is how hard the encoder works on textures that have transparency, and it changes nothing else. A texture without transparency is BC1, which has one setting, so it comes out identical either way. The file is the same size at both: what you buy is a closer match to the original colours, not a smaller texture.</p>
       <label class="switch"><input type="checkbox" checked={s?.mipmaps ?? true} onchange={(e) => update({ mipmaps: e.currentTarget.checked })} />Make mipmaps (smoother when zoomed out, recommended)</label>
       <label class="switch"><input type="checkbox" checked={s?.auto ?? false} onchange={(e) => update({ auto: e.currentTarget.checked })} />Convert new and updated mods automatically</label>
       <div class="opt">
@@ -144,6 +143,7 @@
         <span class="hint">0 = all cores but one</span>
       </div>
       <p class="hint">Changing the format converts textures with transparency again next time. Changing quality only affects new work. Sides that are not multiples of four are resized up, never padded.</p>
+      <p class="hint">There were two slower settings above these. Measured against Balanced they cost twice and eight times the time and returned a difference of less than a tenth of a decibel, which nothing on screen can show, so they are gone. If you were using one, you are on Balanced now and your next run will be a good deal quicker.</p>
     </section>
   </div>
 

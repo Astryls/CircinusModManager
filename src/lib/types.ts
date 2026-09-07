@@ -140,7 +140,7 @@ export interface DbSource {
 }
 
 export type DdsFormat = "bc1" | "bc3" | "bc7";
-export type DdsQuality = "quick" | "balanced" | "high" | "max";
+export type DdsQuality = "quick" | "balanced";
 
 export interface DdsSettings {
   /** Format for textures with alpha; opaque ones are always BC1. */

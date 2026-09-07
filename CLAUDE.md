@@ -114,6 +114,14 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   is Unity's and preferring it by name is what hid Core. Both candidates are tried and the one
   with Core in it wins. None of this is behind `cfg!(target_os = "macos")` on purpose: a rule
   that only runs where the tests cannot is a rule nobody checks.
+- `dds` quality is two settings, not four. `High` and `Max` were the ISPC `alpha_basic` and
+  `alpha_slow` BC7 modes; `examples/dds_bench.rs` measured them against Balanced at 2.1x and 8x
+  the time for 0.0-0.1 dB, which nothing on screen can show — a 2048-square atlas took 41 seconds
+  at Max against 5 at Balanced for the same picture. `Balanced` carries `serde(alias)` for both
+  old names so an older settings file still loads and is written back under the new one; without
+  that, one unknown word fails the whole settings file and the player opens a Circinus that has
+  forgotten their folders. Quality changes nothing for an opaque texture (BC1 has one mode) and
+  never changes a file's size (a BC7 block is a fixed 16 bytes), which the Textures view now says.
 - `dds`: a texture is flipped vertically before it is encoded (`Options::vflip`). A DDS stores
   its first row at the top, Unity takes the first row it is handed as the *bottom* one, so a file
   written the natural way is upside down in the game — which is what `-vf` is doing in the todds

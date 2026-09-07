@@ -58,15 +58,25 @@ impl Format {
     }
 }
 
-/// BC7 effort. BC1/BC3 have a single (fast) mode in the ISPC compressor.
+/// BC7 effort, and nothing else: BC1 and BC3 have one mode each in the ISPC compressor, so a
+/// texture without transparency comes out byte for byte the same whichever of these is chosen.
+///
+/// There used to be four. `High` and `Max` were `alpha_basic` and `alpha_slow`, and measuring
+/// them (`examples/dds_bench.rs`) is what ended them: against Balanced they cost 2.1x and 8x the
+/// time and bought between 0.0 and 0.1 dB, which is nothing anybody can see. A 2048-square atlas
+/// took 41 seconds at Max and 5 at Balanced for the same picture. The step from Quick to Balanced
+/// is the only one that shows -- about 3 dB on a 128-pixel sprite -- so those two are what is
+/// left. BC7 blocks are a fixed 16 bytes either way, so none of this ever changed a file's size.
+///
+/// `Balanced` answers to the old names so that a settings file written by an older build still
+/// loads; it is read once and saved back as `balanced`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Quality {
     Quick,
     #[default]
+    #[serde(alias = "high", alias = "max")]
     Balanced,
-    High,
-    Max,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -243,8 +253,6 @@ fn bc7_settings(q: Quality) -> bc7::EncodeSettings {
     match q {
         Quality::Quick => bc7::alpha_very_fast_settings(),
         Quality::Balanced => bc7::alpha_fast_settings(),
-        Quality::High => bc7::alpha_basic_settings(),
-        Quality::Max => bc7::alpha_slow_settings(),
     }
 }
 
@@ -440,6 +448,47 @@ mod tests {
         let info2 = crate::dds::validate::parse(&kept.bytes).unwrap();
         let out2 = crate::dds::validate::decode_top(&kept.bytes, &info2);
         assert!(reddest(out2.get_pixel(0, 0)), "without the flip the rows stay as they came in: {:?}", out2.get_pixel(0, 0));
+    }
+
+    /// What the quality setting is, and what it is not.
+    ///
+    /// It picks a BC7 effort level. BC1 and BC3 have one mode each in the ISPC compressor, so an
+    /// opaque texture -- which is always BC1 -- comes out byte for byte the same at every
+    /// setting, and a player who picks Max for a folder of opaque art waits longer for identical
+    /// files. The Textures view says so now; this is what keeps that true.
+    #[test]
+    fn quality_is_bc7_effort_and_nothing_else() {
+        let opaque = synth(64, 64, false);
+        let mut first: Option<Vec<u8>> = None;
+        for q in [Quality::Quick, Quality::Balanced] {
+            let e = encode_rgba(opaque.clone(), &Options { quality: q, ..Options::default() }).unwrap();
+            assert_eq!(e.format, Format::Bc1, "opaque is BC1 whatever the setting says");
+            match &first {
+                None => first = Some(e.bytes),
+                Some(b) => assert_eq!(b, &e.bytes, "{q:?} produced different bytes from Quick"),
+            }
+        }
+        // With alpha it is BC7, and then the setting really does change the file.
+        let alpha = synth(64, 64, true);
+        let quick = encode_rgba(alpha.clone(), &Options { quality: Quality::Quick, ..Options::default() }).unwrap();
+        let balanced = encode_rgba(alpha, &Options { quality: Quality::Balanced, ..Options::default() }).unwrap();
+        assert_eq!((quick.format, balanced.format), (Format::Bc7, Format::Bc7));
+        assert_eq!(quick.bytes.len(), balanced.bytes.len(), "same size either way; only the fit differs");
+        assert_ne!(quick.bytes, balanced.bytes, "and the fit does differ");
+    }
+
+    /// A settings file written before High and Max were removed must still load. Without the
+    /// aliases the whole settings file fails to parse on one unknown word, and the player opens
+    /// a Circinus that has forgotten their folders.
+    #[test]
+    fn the_settings_of_an_older_build_still_load() {
+        for old in ["\"high\"", "\"max\""] {
+            let q: Quality = serde_json::from_str(old).unwrap_or_else(|e| panic!("{old} should still parse: {e}"));
+            assert_eq!(q, Quality::Balanced, "{old} becomes the setting that replaced it");
+        }
+        assert_eq!(serde_json::from_str::<Quality>("\"quick\"").unwrap(), Quality::Quick);
+        // and it is written back under its own name
+        assert_eq!(serde_json::to_string(&Quality::Balanced).unwrap(), "\"balanced\"");
     }
 
     #[test]

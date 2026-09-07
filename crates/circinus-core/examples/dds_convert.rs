@@ -11,7 +11,7 @@ fn main() {
         opts.alpha_format = f;
     }
     if let Some(q) = args.get(4) {
-        opts.quality = match q.as_str() { "quick" => Quality::Quick, "high" => Quality::High, "max" => Quality::Max, _ => Quality::Balanced };
+        opts.quality = if q.as_str() == "quick" { Quality::Quick } else { Quality::Balanced };
     }
     let bytes = std::fs::read(input).expect("read");
     let t = std::time::Instant::now();
