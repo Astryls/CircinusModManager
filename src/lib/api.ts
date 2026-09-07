@@ -63,6 +63,8 @@ export const api = {
   unsubscribeItems: (ids: number[]) => invoke<SubscribeOutcome>("unsubscribe_items", { ids }),
   acknowledgeChanges: () => invoke<Snapshot>("acknowledge_changes"),
   markNewSeen: () => invoke<Snapshot>("mark_new_seen"),
+  diagnostics: () => invoke<string>("diagnostics"),
+  logFromTheWindow: (message: string, stack?: string) => invoke<void>("log_from_the_window", { message, stack }),
   // list history
   savedLists: () => invoke<SavedList[]>("saved_lists"),
   restoreList: (path: string, save: boolean) => invoke<RestoreResult>("restore_list", { path, save }),

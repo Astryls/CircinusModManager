@@ -1029,7 +1029,36 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
   // Load testing: a page may provide a full backend snapshot (see src-tauri/examples/dump_snapshot.rs).
   const fixture = (globalThis as any).__CIRCINUS_FIXTURE__ as Snapshot | undefined;
   switch (cmd) {
-    case "get_snapshot":
+    case "log_from_the_window":
+      console.error("[circinus mock] the window would have logged:", A.message, A.stack ?? "");
+      return undefined as T;
+    case "diagnostics":
+      return [
+        "Circinus Mod Manager 0.0.0 (mock)",
+        `${navigator.platform} in a browser`,
+        "",
+        "This is the browser mock, so there are no folders and no log to read.",
+        "The real report carries the version, the platform, every folder and whether it is",
+        "there, what the scan found, and the tail of the log with the home directory hidden."
+      ].join("\n") as T;
+    // ?crash=1 hands back a snapshot whose mods cannot be read, which is what a bad value in the
+    // store looks like from the window's point of view. It exists so the error boundary can be
+    // tested rather than assumed: the difference between a message and a black window is not
+    // something to find out from a user.
+    case "get_snapshot": {
+      if (typeof location !== "undefined" && /[?&]crash=1/.test(location.search)) {
+        // A field that is simply not there, which is what a backend and a window that disagree
+        // about the shape actually produce: an old build talking to a new one, or a serialisation
+        // that dropped something. A snapshot missing `settings` used to reach a `$derived` and
+        // take the whole window down with an error from inside the framework.
+        const bad: any = { ...(fixture ?? snapshot()) };
+        delete bad.settings;
+        return bad as T;
+      }
+    }
+    // falls through to the normal snapshot
+    // eslint-disable-next-line no-fallthrough
+    case "__snapshot":
     case "rescan":
       return (fixture ?? snapshot()) as T;
     case "set_active":

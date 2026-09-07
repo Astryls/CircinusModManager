@@ -766,6 +766,26 @@ pub async fn acknowledge_changes(state: State<'_, Shared>) -> CmdResult<Snapshot
     .await
 }
 
+/// What a player pastes into Discord when something goes wrong: which build, which platform,
+/// which folders and whether they are there, what was found, and the tail of the log.
+#[tauri::command]
+pub async fn diagnostics(state: State<'_, Shared>) -> CmdResult<String> {
+    with_app(&state, |app| Ok(crate::diag::report(app))).await
+}
+
+/// Something in the window threw. Put it in the same log as everything else, so a report carries
+/// it: a message that only ever reached a console nobody opens is a message nobody has.
+#[tauri::command]
+pub async fn log_from_the_window(message: String, stack: Option<String>) -> CmdResult<()> {
+    // Bounded, because this is called from a place that can fail in a loop.
+    let brief: String = message.chars().take(2000).collect();
+    match stack {
+        Some(s) => tracing::error!(target: "circinus", "window: {brief}\n{}", s.chars().take(4000).collect::<String>()),
+        None => tracing::error!(target: "circinus", "window: {brief}"),
+    }
+    Ok(())
+}
+
 /// The user has seen which mods are new: stop marking them. Separate from acknowledging changes
 /// because they answer different questions -- what happened while you were away, against which
 /// mods you have not looked at yet -- and clearing one should not quietly clear the other.

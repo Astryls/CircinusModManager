@@ -528,6 +528,11 @@ mod tests {
 }
 
 /// Circinus' own data folder (cache, rule databases, settings).
+/// The user's home directory, for writing paths without their name in them.
+pub fn home_dir() -> Option<PathBuf> {
+    dirs::home_dir()
+}
+
 pub fn app_data_dir() -> PathBuf {
     dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("Circinus")
 }

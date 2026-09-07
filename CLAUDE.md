@@ -91,6 +91,23 @@ without one manual reinstall for everyone, since an app carries the public key i
   .NET runtime and without ever loading a mod's code. `harmony` caches those readings and groups
   them into what one mod patches and who else patches the same method.
 
+## When something goes wrong
+
+- `diag` writes tracing to `<app data>/logs/circinus.log`, rolled once at 4 MB. Logging to stdout
+  is logging to nowhere for a packaged app, which is how a black window got reported with nothing
+  to read. `Copy diagnostics` (Settings, and on the crash screen) gathers version, platform,
+  folders and whether each is there, what the scan found, and the log's tail, with the home
+  directory written as `~` so a bug report does not carry the user's name.
+- `Root.svelte` puts the whole window inside one boundary. `Panel` already caught a panel, but
+  App's outermost layer sits outside every one, and Svelte re-throws a cached `$derived` failure
+  to every later reader -- so one bad value took down the panels *and* the frame.
+- `store.accept()` reads the handful of snapshot fields everything depends on the moment one
+  arrives. A snapshot that cannot be read used to fail later, inside a derived, and surface as an
+  error from inside the framework rather than the one that mattered. With something on screen the
+  old copy is kept; with nothing, the message says what happened.
+- `?crash=1` in the browser mock returns a snapshot missing `settings`, so all of the above is
+  tested rather than assumed (`tools/loadtest/crash.cjs`).
+
 ## Packaging
 
 `npm run release` makes the installer players download: `tauri build`, nothing else. Rust and

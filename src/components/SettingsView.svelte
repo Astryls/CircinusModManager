@@ -9,6 +9,18 @@
   const q = $derived(store.downloads);
   const st = $derived(store.steamcmd);
   store.refreshDownloads();
+  let diagCopied = $state(false);
+  let diagFailed = $state<string | null>(null);
+  async function copyDiagnostics() {
+    diagFailed = null;
+    try {
+      await navigator.clipboard.writeText(await api.diagnostics());
+      diagCopied = true;
+      setTimeout(() => (diagCopied = false), 4000);
+    } catch (e) {
+      diagFailed = e instanceof Error ? e.message : String(e);
+    }
+  }
   let launch = $state<LaunchInfo | null>(null);
   function refreshLaunch() {
     api.launchInfo().then((l) => (launch = l)).catch(() => {});
@@ -211,7 +223,13 @@
       <div class="row">
         <button class="btn" onclick={() => openUrl(DISCORD)}>{@html I.link}Circinus on Discord</button>
         <button class="btn" onclick={() => openUrl("https://circinus.sh")}>{@html I.cloud}circinus.sh</button>
+        <button class="btn" onclick={copyDiagnostics}>{diagCopied ? "Copied" : "Copy diagnostics"}</button>
       </div>
+      <p class="hint">
+        Diagnostics are what turns "it went wrong" into something anyone can act on: the version, your folders and whether they are there, what the scan found, and
+        the end of the log. Your user folder is written as <span class="mono">~</span>, so your name does not go with it. Read it before you paste it if you like -
+        it is plain text.{#if diagFailed}<span class="att"> Could not reach the clipboard: {diagFailed}</span>{/if}
+      </p>
       <p class="hint">Circinus Mod Manager {store.appVersion ?? ""} · MIT licence · data folder <span class="mono">{appData || "loading"}</span></p>
       <p class="hint">Reads About.xml (with ByVersion blocks), Fluffy's Manifest.xml, LoadFolders.xml and PublishedFileId.txt. Writes ModsConfig.xml (and keeps a .bak) and your rules in dbs/userRules.json.</p>
     </section>

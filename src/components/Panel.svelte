@@ -1,10 +1,18 @@
 <script lang="ts">
   // Error boundary: a panel that throws shows the error instead of taking the app down.
   import type { Snippet } from "svelte";
+  import { api } from "$lib/api";
   let { name, children }: { name: string; children: Snippet } = $props();
 </script>
 
-<svelte:boundary onerror={(e) => console.error(`[circinus] ${name} failed to render:`, e)}>
+<svelte:boundary
+  onerror={(e) => {
+    // The console is not somewhere a player can look, so this goes to the log file as well.
+    const err = e as { message?: string; stack?: string };
+    console.error(`[circinus] ${name} failed to render:`, e);
+    api.logFromTheWindow(`${name} failed to render: ${err?.message ?? String(e)}`, err?.stack).catch(() => {});
+  }}
+>
   {@render children()}
   {#snippet failed(error, reset)}
     <div class="card fail">

@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod defs;
+pub mod diag;
 pub mod downloads;
 pub mod instances;
 pub mod logs;
@@ -143,7 +144,17 @@ pub(crate) fn remember_window(w: &tauri::WebviewWindow, st: &Shared) {
 }
 
 pub fn run() {
-    tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env().add_directive("circinus=info".parse().unwrap())).init();
+    // The log goes to a file in the app's own data folder. Logging to stdout is logging to
+    // nowhere once the app is packaged, which is how a black screen came to be reported with
+    // nothing to read; if the file cannot be opened, stdout is better than silence.
+    let log = circinus_core::paths::app_data_dir();
+    match diag::install(&log) {
+        Some(p) => eprintln!("Circinus is logging to {}", p.display()),
+        None => {
+            tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env().add_directive("circinus=info".parse().unwrap_or_default())).init();
+            eprintln!("Circinus could not open a log file; logging to this console instead");
+        }
+    }
 
     let app = state::App::open().unwrap_or_else(|e| {
         eprintln!("Circinus could not open its data folder: {e}");
@@ -230,6 +241,8 @@ pub fn run() {
             subscribe::unsubscribe_items,
             commands::acknowledge_changes,
             commands::mark_new_seen,
+            commands::diagnostics,
+            commands::log_from_the_window,
             commands::dds_state,
             commands::dds_overview,
             commands::dds_start,

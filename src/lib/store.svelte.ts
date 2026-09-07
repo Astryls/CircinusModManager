@@ -444,13 +444,19 @@ class Store {
       log(`snapshot received: ${snap.mods.length} mods, ${snap.active.length} active, ${snap.issues.length} issues`);
       this.error = null;
     } catch (e) {
+      // Nothing to draw. Stop here rather than carrying on into a render with no data: the app
+      // was written for a snapshot that is late, not for one that never comes, and going on
+      // anyway is how a failure at this point turned into a blank window instead of a sentence.
       log(`snapshot failed: ${e}`);
       this.error = String(e);
+      this.loading = false;
+      api.logFromTheWindow(`the first snapshot could not be read: ${e}`, e instanceof Error ? e.stack : undefined).catch(() => {});
+      return;
     }
     // A snapshot from before the first scan finished (the window can be up before the scan
     // thread has the lock) is empty: keep the overlay up and let `state-changed` deliver the
     // real one. If nothing arrives, ask for a scan outright.
-    if (snap && !snap.scannedAt) {
+    if (snap && this.accept(snap) && !snap.scannedAt) {
       log("snapshot predates the first scan; waiting for it");
       this.snap = snap;
       this.step = "Reading your mods";
@@ -466,7 +472,10 @@ class Store {
     // Drop the overlay first, then apply the data: even if a panel throws while rendering,
     // its boundary shows the error and the rest of the app stays usable.
     this.loading = false;
-    if (snap) {
+    // Refused rather than rendered: the first snapshot is no more trustworthy than the others,
+    // and a bad one used to reach a `$derived` and take the window down before anything had a
+    // chance to say why.
+    if (snap && this.accept(snap)) {
       this.snap = snap;
       queueMicrotask(() => log("first render scheduled"));
       this.announceChanges(snap);
@@ -724,7 +733,9 @@ class Store {
     const had = this.snap != null && this.snap.scannedAt > 0;
     const before = new Set(this.changes.map((c) => `${c.kind}:${c.uid}`));
     const beforeList = JSON.stringify(this.listChange);
-    this.snap = await api.snapshot();
+    const next = await api.snapshot();
+    if (!this.accept(next)) return;
+    this.snap = next;
     api.ddsOverview().then((o) => (this.texOverview = o)).catch(() => {});
     if (this.loading && this.snap.scannedAt) {
       // The first scan came in while the overlay was waiting for it.
@@ -764,8 +775,36 @@ class Store {
     }
   }
 
+  /** Take a snapshot, or refuse it and say so.
+   *
+   *  A snapshot the store cannot read does not fail where it arrives -- it fails later, inside
+   *  whichever `$derived` touches it first, and Svelte caches that throw and hands it to every
+   *  reader afterwards. The window then goes down with an error from deep inside the framework
+   *  rather than the one that mattered. Reading the few fields everything depends on, here, turns
+   *  that into a message naming the real problem, with the previous snapshot still on screen. */
+  private accept(s: Snapshot): boolean {
+    try {
+      void s.mods.length;
+      void s.active.length;
+      void s.settings.listColumns;
+      void s.gameVersion.majorMinor;
+      void s.user.groups;
+      return true;
+    } catch (e) {
+      const why = e instanceof Error ? e.message : String(e);
+      console.error("[circinus] unusable snapshot", e);
+      api.logFromTheWindow(`unusable snapshot: ${why}`, e instanceof Error ? e.stack : undefined).catch(() => {});
+      // With something already on screen, keep it and say so in passing: what is there is still
+      // true, it is only out of date. With nothing, an empty window pretending to be a mod
+      // manager with no mods is worse than a sentence explaining itself.
+      if (this.snap) this.say(`Circinus could not read what the backend sent back: ${why}. What you can see is the last good copy; Settings has Copy diagnostics.`, "err");
+      else this.error = `Circinus could not read what the backend sent back: ${why}\n\nNothing on disk has been changed. Settings has Copy diagnostics for a bug report.`;
+      return false;
+    }
+  }
+
   private apply(s: Snapshot | undefined) {
-    if (s) {
+    if (s && this.accept(s)) {
       this.snap = s;
       this.clearPreview();
     }
@@ -1114,7 +1153,8 @@ class Store {
     if (id === this.instance?.id) return;
     return this.run("Switching instance…", async () => {
       const inst = await api.instanceSwitch(id, discard);
-      this.snap = await api.snapshot();
+      const fresh = await api.snapshot();
+      if (this.accept(fresh)) this.snap = fresh;
       this.selected = [];
       this.clearPreview();
       await this.refreshInstances();

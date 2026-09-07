@@ -708,6 +708,12 @@ impl App {
         }
     }
 
+    /// How many instances there are, for the report: "instance 1 of 1" and "instance 1 of 4" are
+    /// different situations and the second is where instance bugs live.
+    pub fn instance_count(&self) -> usize {
+        instances::load(&self.cache, &self.data_dir, &self.settings).map(|s| s.instances.len()).unwrap_or(1)
+    }
+
     /// The user has seen what is new: stop marking it.
     pub fn mark_new_seen(&mut self) {
         self.arrivals.clear(now());
@@ -735,7 +741,13 @@ impl App {
             self.active = existing.into_iter().filter(|u| live.contains(u.as_str())).collect();
             return;
         }
-        let cfg = self.locations.mods_config_path().and_then(|p| modsconfig::read(&p).ok()).unwrap_or_else(|| ModsConfig { version: self.game_version.full.clone(), active_mods: vec![CORE_PACKAGE_ID.into()], known_expansions: vec![] });
+        // Whether there is a list at all, kept apart from what it says. A synthesised one is
+        // Core and nothing else, which is exactly the shape of RimWorld's own reset -- so an
+        // instance whose config folder is still empty was being announced as a list the game had
+        // just wiped, with a button offering to restore something over it.
+        let read = self.locations.mods_config_path().and_then(|p| modsconfig::read(&p).ok());
+        let had_a_list = read.is_some();
+        let cfg = read.unwrap_or_else(|| ModsConfig { version: self.game_version.full.clone(), active_mods: vec![CORE_PACKAGE_ID.into()], known_expansions: vec![] });
         let (uids, missing) = modsconfig::resolve_active(&cfg.active_mods, &self.mods);
         self.active = uids;
         self.missing = missing;
@@ -744,7 +756,7 @@ impl App {
         self.dirty = false;
         // Keep every real list we come across, whoever wrote it — and notice RimWorld's
         // "resetting mods config" recovery, which leaves only official content behind.
-        if modsconfig::looks_reset(&cfg.active_mods) {
+        if had_a_list && modsconfig::looks_reset(&cfg.active_mods) {
             // The list this session started with is a copy too: archive it before it is lost.
             if let Some(b) = &self.baseline {
                 if b.active.len() > cfg.active_mods.len() && !modsconfig::looks_reset(&b.active) {
@@ -765,8 +777,30 @@ impl App {
         }
     }
 
+    /// Where this instance's archived copies of ModsConfig.xml live.
+    ///
+    /// Per instance, for the reason the named lists are: an archive shared between instances is
+    /// one instance's mod list offered to another as its own history, and the offer comes with a
+    /// button that writes it. Copies made before instances existed are moved into the default
+    /// instance's folder the first time this is asked for, so nobody's history disappears.
     pub fn lists_dir(&self) -> PathBuf {
-        self.data_dir.join("lists")
+        let root = self.data_dir.join("lists");
+        let mine = root.join("archive").join(&self.instance.id);
+        if self.instance.id == instances::DEFAULT_ID && !mine.exists() {
+            if let Ok(entries) = std::fs::read_dir(&root) {
+                let loose: Vec<PathBuf> = entries.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.is_file() && p.extension().map(|x| x == "xml").unwrap_or(false)).collect();
+                if !loose.is_empty() && std::fs::create_dir_all(&mine).is_ok() {
+                    for p in loose {
+                        if let Some(name) = p.file_name() {
+                            if let Err(e) = std::fs::rename(&p, mine.join(name)) {
+                                tracing::warn!("could not move an archived list into the default instance: {e}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        mine
     }
 
     /// Archived lists, newest first.
