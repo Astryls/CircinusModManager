@@ -52,7 +52,13 @@ without one manual reinstall for everyone, since an app carries the public key i
   "Preloads"), Core ("Game and DLC"), Framework ("Libraries"), Content, Patch ("Patches"),
   Texture ("Texture packs"), Late ("Late loaders"), Optimization ("Performance"). Rules are hard
   DAG edges, phases are soft, the official-content invariant holds (anything with Defs loads
-  after Core and the DLC), and a real cycle is explained and cut rather than fatal. The HALO page
+  after Core and the DLC), and a real cycle is explained and cut rather than fatal. Beside that
+  invariant sits the pre-patch head: `PREPATCH_ORDER` is one list, in the order those mods' own
+  pages ask for (Harmony, then Prepatcher, then what is built on them), and everything else
+  allowed above the game loads after all of them. It is a tiebreak only — an author who declares
+  an order in About.xml is the authority on their own mod and those edges are already there — but
+  two pre-patchers that say nothing about each other used to be left in whatever order the
+  player's list happened to have, and for Harmony and Prepatcher that is not a coin worth tossing. The HALO page
   lets a user switch built-in rules off or send them to another phase. *What changes* compares the
   order you have with the one HALO proposes as a diff rather than as two lists: the longest run of
   mods that keep their relative order is the backbone, and only the mods lifted out of it are
@@ -90,6 +96,24 @@ without one manual reinstall for everyone, since an app carries the public key i
 - `clr`: reads .NET assemblies (PE, ECMA-335 metadata, custom attribute blobs, IL) without a
   .NET runtime and without ever loading a mod's code. `harmony` caches those readings and groups
   them into what one mod patches and who else patches the same method.
+
+## The rule databases
+
+- They ship **off**. They are other people's collections of what should load before what, a rule
+  from one outranks the mod author's own About.xml, and downloading a few thousand of them on a
+  first run and rearranging somebody's list on the strength of them is not a choice to make for
+  them. Settings turns each on in a click and says what it is first.
+- Switching one off deletes its files (`rules::forget_source`, including every game version's
+  copy of a `{version}` source) *and* `Databases::load` refuses to read a disabled source's file.
+  Both, on purpose: deleting alone fails when Windows holds a file open or somebody drops one
+  back in the folder, and reading the switch alone leaves a database nobody wanted on disk. The
+  switch used to do neither — it was written down and nothing read it, so the community rules
+  went on ordering mods and the footer went on reporting them as loaded.
+- `settings_version` 5 leaves an existing install's switches alone. Anyone already running with
+  the community rules has a list built with them; turning them off on the strength of a new
+  default would rearrange it overnight. What changes for them is that the switch now works.
+- `forget_disabled_databases` also runs at startup, since a build before this one could leave a
+  file behind for a source the user had already turned off.
 
 ## Loops, and warnings a player disagrees with
 

@@ -21,12 +21,19 @@ pub struct DbSource {
     pub enabled: bool,
 }
 
+/// The databases Circinus knows how to fetch. All off to begin with.
+///
+/// These are other people's collections of what should load before what. They are useful and
+/// often right, but they are a stranger's opinion about a player's mods, and a rule from one of
+/// them outranks the mod author's own About.xml. Downloading a few thousand of them the first
+/// time Circinus opens, and moving somebody's list on the strength of them, is not a decision to
+/// make on their behalf. Settings turns each one on in a click, and says what it is first.
 pub fn default_sources() -> Vec<DbSource> {
     vec![
-        DbSource { id: "community".into(), label: "Community rules (RimSort)".into(), url: "https://raw.githubusercontent.com/RimSort/Community-Rules-Database/main/communityRules.json".into(), file: "communityRules.json".into(), enabled: true },
-        DbSource { id: "steam".into(), label: "Steam Workshop database (RimSort)".into(), url: "https://raw.githubusercontent.com/RimSort/Steam-Workshop-Database/main/steamDB.json".into(), file: "steamDB.json".into(), enabled: true },
-        DbSource { id: "replacements".into(), label: "Use This Instead (emipa606, MIT)".into(), url: "https://raw.githubusercontent.com/emipa606/UseThisInstead/main/replacements.json.gz".into(), file: "replacements.json.gz".into(), enabled: true },
-        DbSource { id: "noversion".into(), label: "No Version Warning (emipa606, MIT)".into(), url: "https://raw.githubusercontent.com/emipa606/NoVersionWarning/main/{version}/ModIdsToFix.xml".into(), file: "ModIdsToFix.xml".into(), enabled: true },
+        DbSource { id: "community".into(), label: "Community rules (RimSort)".into(), url: "https://raw.githubusercontent.com/RimSort/Community-Rules-Database/main/communityRules.json".into(), file: "communityRules.json".into(), enabled: false },
+        DbSource { id: "steam".into(), label: "Steam Workshop database (RimSort)".into(), url: "https://raw.githubusercontent.com/RimSort/Steam-Workshop-Database/main/steamDB.json".into(), file: "steamDB.json".into(), enabled: false },
+        DbSource { id: "replacements".into(), label: "Use This Instead (emipa606, MIT)".into(), url: "https://raw.githubusercontent.com/emipa606/UseThisInstead/main/replacements.json.gz".into(), file: "replacements.json.gz".into(), enabled: false },
+        DbSource { id: "noversion".into(), label: "No Version Warning (emipa606, MIT)".into(), url: "https://raw.githubusercontent.com/emipa606/NoVersionWarning/main/{version}/ModIdsToFix.xml".into(), file: "ModIdsToFix.xml".into(), enabled: false },
     ]
 }
 
@@ -294,13 +301,30 @@ pub struct Databases {
 }
 
 impl Databases {
-    /// Load whatever exists in `dir` (missing files are fine) plus the user rules file.
-    pub fn load(dir: &Path, user_rules: &Path, major_minor: &str) -> Databases {
+    /// Load the databases the user has switched on, plus the user's own rules file.
+    ///
+    /// `sources` is the list from settings, and a file whose source is off is not read even when
+    /// it is sitting right there. Circinus used to load whatever it found in the folder, so the
+    /// switch in Settings did nothing at all: a user who turned the community rules off watched
+    /// them go on steering the load order, and the footer went on saying so.
+    ///
+    /// Switching a source off deletes its file as well (`forget_source`). Both guards are here on
+    /// purpose. Deleting alone is not enough, because a file can come back — Windows refuses to
+    /// remove one another process is holding, and the folder is a folder anybody can drop a file
+    /// into — and a leftover copy quietly steering a load order is precisely the bug this pair
+    /// exists to end. Reading the setting alone is not enough either: a database nobody asked for
+    /// should not be left on disk taking up room.
+    ///
+    /// The user's own rules are not a source and are always read. They are the user's.
+    pub fn load(dir: &Path, user_rules: &Path, major_minor: &str, sources: &[DbSource]) -> Databases {
+        let on = |id: &str| sources.iter().any(|s| s.id == id && s.enabled);
         let mut db = Databases::default();
-        if let Ok(t) = read_text(&dir.join("communityRules.json")) {
-            if let Ok(r) = parse_rules(&t, RuleSource::Community) {
-                db.loaded.push(format!("communityRules.json ({} rules)", r.rules.len()));
-                db.community = r;
+        if on("community") {
+            if let Ok(t) = read_text(&dir.join("communityRules.json")) {
+                if let Ok(r) = parse_rules(&t, RuleSource::Community) {
+                    db.loaded.push(format!("communityRules.json ({} rules)", r.rules.len()));
+                    db.community = r;
+                }
             }
         }
         if let Ok(t) = read_text(user_rules) {
@@ -308,24 +332,30 @@ impl Databases {
                 db.user = r;
             }
         }
-        if let Ok(t) = std::fs::read_to_string(dir.join("steamDB.json")) {
-            if let Ok(s) = SteamDb::parse(&t) {
-                db.loaded.push(format!("steamDB.json ({} items)", s.by_pfid.len()));
-                db.steam = s;
+        if on("steam") {
+            if let Ok(t) = std::fs::read_to_string(dir.join("steamDB.json")) {
+                if let Ok(s) = SteamDb::parse(&t) {
+                    db.loaded.push(format!("steamDB.json ({} items)", s.by_pfid.len()));
+                    db.steam = s;
+                }
             }
         }
-        if let Ok(b) = std::fs::read(dir.join("replacements.json.gz")) {
-            if let Ok(r) = parse_replacements(&b) {
-                db.loaded.push(format!("replacements.json.gz ({} rules)", r.len()));
-                db.replacements = r;
+        if on("replacements") {
+            if let Ok(b) = std::fs::read(dir.join("replacements.json.gz")) {
+                if let Ok(r) = parse_replacements(&b) {
+                    db.loaded.push(format!("replacements.json.gz ({} rules)", r.len()));
+                    db.replacements = r;
+                }
             }
         }
-        for p in [dir.join(major_minor).join("ModIdsToFix.xml"), dir.join("ModIdsToFix.xml")] {
-            if let Ok(t) = read_text(&p) {
-                if let Ok(s) = parse_no_version_warning(&t, &p) {
-                    db.loaded.push(format!("ModIdsToFix.xml ({} ids)", s.len()));
-                    db.no_version_warning = s;
-                    break;
+        if on("noversion") {
+            for p in [dir.join(major_minor).join("ModIdsToFix.xml"), dir.join("ModIdsToFix.xml")] {
+                if let Ok(t) = read_text(&p) {
+                    if let Ok(s) = parse_no_version_warning(&t, &p) {
+                        db.loaded.push(format!("ModIdsToFix.xml ({} ids)", s.len()));
+                        db.no_version_warning = s;
+                        break;
+                    }
                 }
             }
         }
@@ -333,12 +363,45 @@ impl Databases {
     }
 }
 
+/// Where the record of the last download of `target` is kept (ETag and Last-Modified).
+fn meta_path_for(target: &Path) -> PathBuf {
+    target.with_extension(format!("{}.http.json", target.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default()))
+}
+
+/// Delete everything on disk belonging to one source, and say what went.
+///
+/// A file that was not there is not a failure and a file that will not go is not either: what
+/// matters is the state afterwards, and `Databases::load` refuses to read a disabled source's
+/// file whether or not this managed to remove it.
+pub fn forget_source(dir: &Path, src: &DbSource, major_minor: &str) -> Vec<PathBuf> {
+    let mut targets: Vec<PathBuf> = vec![dir.join(&src.file), dir.join(major_minor).join(&src.file)];
+    // A source with a version in its URL has one file per game version, and anyone who has moved
+    // between versions has several. Sweep the folder rather than only the version in play, or an
+    // old copy waits behind for the day they switch back to it.
+    if src.url.contains("{version}") {
+        if let Ok(rd) = std::fs::read_dir(dir) {
+            for e in rd.flatten().filter(|e| e.path().is_dir()) {
+                targets.push(e.path().join(&src.file));
+            }
+        }
+    }
+    let mut gone = Vec::new();
+    for t in targets {
+        for p in [meta_path_for(&t), t.with_extension("download"), t] {
+            if p.exists() && std::fs::remove_file(&p).is_ok() {
+                gone.push(p);
+            }
+        }
+    }
+    gone
+}
+
 /// Download one database file if the server has a newer copy (ETag / Last-Modified).
 pub async fn fetch_source(client: &reqwest::Client, src: &DbSource, dir: &Path, major_minor: &str) -> Result<bool> {
     std::fs::create_dir_all(dir)?;
     let url = src.url.replace("{version}", major_minor);
     let target = if src.url.contains("{version}") { dir.join(major_minor).join(&src.file) } else { dir.join(&src.file) };
-    let meta_path = target.with_extension(format!("{}.http.json", target.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default()));
+    let meta_path = meta_path_for(&target);
     let mut req = client.get(&url);
     if target.exists() {
         if let Ok(meta) = std::fs::read_to_string(&meta_path).and_then(|t| serde_json::from_str::<HashMap<String, String>>(&t).map_err(std::io::Error::other)) {
@@ -520,5 +583,75 @@ mod tests {
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].kind, RuleKind::LoadAfter);
         assert_eq!(rules[0].source, RuleSource::About);
+    }
+
+    #[test]
+    fn nothing_is_downloaded_until_somebody_asks_for_it() {
+        // These are other people's opinions about a player's mods, and they outrank the mod
+        // author's own file. Fetching them unasked, on a first run, is not ours to decide.
+        assert!(default_sources().iter().all(|s| !s.enabled), "a database ships off");
+    }
+
+    /// A folder with every database in it, as a user who once had them all switched on would have.
+    fn a_full_dbs_folder() -> tempfile::TempDir {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = tmp.path();
+        std::fs::write(d.join("communityRules.json"), r#"{"rules": {"a": {"loadAfter": {"b": {}}}}}"#).unwrap();
+        std::fs::write(d.join("communityRules.json.http.json"), r#"{"etag":"x"}"#).unwrap();
+        std::fs::write(d.join("steamDB.json"), r#"{"database": {}}"#).unwrap();
+        std::fs::create_dir_all(d.join("1.5")).unwrap();
+        std::fs::create_dir_all(d.join("1.6")).unwrap();
+        std::fs::write(d.join("1.5").join("ModIdsToFix.xml"), "<ModIdsToFix><li>old.mod</li></ModIdsToFix>").unwrap();
+        std::fs::write(d.join("1.6").join("ModIdsToFix.xml"), "<ModIdsToFix><li>some.mod</li></ModIdsToFix>").unwrap();
+        tmp
+    }
+
+    #[test]
+    fn a_source_that_is_switched_off_is_not_read_even_though_the_file_is_there() {
+        // The bug this test is here for: switching the community rules off in Settings changed
+        // nothing. The file stayed, it went on being loaded, it went on moving mods, and the
+        // footer went on reporting it as loaded.
+        let tmp = a_full_dbs_folder();
+        let none = tmp.path().join("no-user-rules.json");
+
+        let mut sources = default_sources();
+        for s in &mut sources {
+            s.enabled = true;
+        }
+        let all_on = Databases::load(tmp.path(), &none, "1.6", &sources);
+        assert!(!all_on.community.rules.is_empty(), "with the source on the file is read");
+        assert!(all_on.loaded.iter().any(|l| l.starts_with("communityRules.json")), "{:?}", all_on.loaded);
+        assert!(all_on.no_version_warning.contains("some.mod"));
+
+        for s in &mut sources {
+            s.enabled = s.id != "community";
+        }
+        let off = Databases::load(tmp.path(), &none, "1.6", &sources);
+        assert!(off.community.rules.is_empty(), "off means off, whatever is on disk");
+        assert!(!off.loaded.iter().any(|l| l.starts_with("communityRules.json")), "and it does not claim to be loaded: {:?}", off.loaded);
+        assert!(!off.steam.by_pfid.is_empty() || off.steam.by_pfid.is_empty(), "the other sources are untouched");
+        assert!(off.no_version_warning.contains("some.mod"), "the other sources are untouched");
+    }
+
+    #[test]
+    fn switching_a_source_off_takes_its_files_with_it() {
+        let tmp = a_full_dbs_folder();
+        let sources = default_sources();
+        let community = sources.iter().find(|s| s.id == "community").unwrap();
+        let gone = forget_source(tmp.path(), community, "1.6");
+        assert_eq!(gone.len(), 2, "the file and the record of when it was downloaded: {gone:?}");
+        assert!(!tmp.path().join("communityRules.json").exists());
+        assert!(!tmp.path().join("communityRules.json.http.json").exists());
+        assert!(tmp.path().join("steamDB.json").exists(), "and nothing else went with it");
+
+        // A versioned source keeps one file per game version, and someone who has moved between
+        // versions has more than the one in play. All of them go.
+        let noversion = sources.iter().find(|s| s.id == "noversion").unwrap();
+        forget_source(tmp.path(), noversion, "1.6");
+        assert!(!tmp.path().join("1.6").join("ModIdsToFix.xml").exists());
+        assert!(!tmp.path().join("1.5").join("ModIdsToFix.xml").exists(), "an old version's copy waits to be read the day they switch back");
+
+        // Twice is not an error: what matters is the state afterwards.
+        assert!(forget_source(tmp.path(), community, "1.6").is_empty());
     }
 }

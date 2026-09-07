@@ -159,10 +159,18 @@ pub async fn apply_import(state: State<'_, Shared>, uids: Vec<String>, append: b
 pub async fn update_settings(state: State<'_, Shared>, settings: Settings) -> CmdResult<Snapshot> {
     with_app(&state, move |app| {
         let locations_changed = app.settings.locations != settings.locations;
+        let sources_changed = app.settings.db_sources != settings.db_sources;
         app.settings = settings;
         app.persist().map_err(err)?;
         if locations_changed {
             app.resolve_locations();
+        }
+        if sources_changed {
+            // Switching one off deletes it and takes effect now. It used to take effect never:
+            // the setting was written down and nothing read it.
+            app.forget_disabled_databases();
+        }
+        if locations_changed || sources_changed {
             app.load_databases();
         }
         Ok(app.snapshot())

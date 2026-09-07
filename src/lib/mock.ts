@@ -183,9 +183,9 @@ let settings: Settings = {
   locations: { gameDir: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld", configDir: "C:\\Users\\Player\\AppData\\LocalLow\\Ludeon Studios\\RimWorld by Ludeon Studios\\Config", localModsDir: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld\\Mods", workshopDir: "C:\\Program Files (x86)\\Steam\\steamapps\\workshop\\content\\294100" },
   dbSources: [
     { id: "community", label: "Community rules (RimSort)", url: "https://raw.githubusercontent.com/RimSort/Community-Rules-Database/main/communityRules.json", file: "communityRules.json", enabled: true },
-    { id: "steam", label: "Steam Workshop database (RimSort)", url: "https://raw.githubusercontent.com/RimSort/Steam-Workshop-Database/main/steamDB.json", file: "steamDB.json", enabled: true },
-    { id: "replacements", label: "Use This Instead (emipa606, MIT)", url: "https://raw.githubusercontent.com/emipa606/UseThisInstead/main/replacements.json.gz", file: "replacements.json.gz", enabled: true },
-    { id: "noversion", label: "No Version Warning (emipa606, MIT)", url: "https://raw.githubusercontent.com/emipa606/NoVersionWarning/main/{version}/ModIdsToFix.xml", file: "ModIdsToFix.xml", enabled: true }
+    { id: "steam", label: "Steam Workshop database (RimSort)", url: "https://raw.githubusercontent.com/RimSort/Steam-Workshop-Database/main/steamDB.json", file: "steamDB.json", enabled: false },
+    { id: "replacements", label: "Use This Instead (emipa606, MIT)", url: "https://raw.githubusercontent.com/emipa606/UseThisInstead/main/replacements.json.gz", file: "replacements.json.gz", enabled: false },
+    { id: "noversion", label: "No Version Warning (emipa606, MIT)", url: "https://raw.githubusercontent.com/emipa606/NoVersionWarning/main/{version}/ModIdsToFix.xml", file: "ModIdsToFix.xml", enabled: false }
   ],
   showWeight: true,
   includeLocalRuns: true,
@@ -312,7 +312,13 @@ function snapshot(): Snapshot {
     currentList: currentList() ?? undefined,
     namedLists: namedLists().map((l) => ({ name: l.name, path: `C:\\Users\\Player\\AppData\\Local\\Circinus\\lists\\named\\${current}\\${l.name}.xml`, count: l.uids.length, updatedAt: l.updatedAt, gameVersion: "1.6.4530 rev1235" })),
     instance: instances.find((i) => i.id === current)!,
-    dbLoaded: ["communityRules.json (7,412 rules)", "steamDB.json (31,988 items)"],
+    // Only what is switched on, the way the backend now reports it: a source that is off is not
+    // read and does not claim to be loaded. The mock said both were loaded whatever the switches
+    // did, which is exactly the bug it should have been showing.
+    dbLoaded: [
+      ...(settings.dbSources.find((d) => d.id === "community")?.enabled ? ["communityRules.json (7,412 rules)"] : []),
+      ...(settings.dbSources.find((d) => d.id === "steam")?.enabled ? ["steamDB.json (31,988 items)"] : [])
+    ],
     scannedAt: 1_757_000_000,
     inspecting: 0,
     unreadable: [{ path: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld\\Mods\\deadbeef0000", reason: "links to C:\\Users\\Player\\AppData\\Roaming\\Modmixer\\workspace\\Mods\\deadbeef0000, which cannot be read: The system cannot find the path specified" }],

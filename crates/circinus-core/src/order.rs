@@ -15,7 +15,20 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
-const PREPATCH_IDS: &[&str] = &["zetrith.prepatcher", "jikulopo.prepatcher", "brrainz.harmony", "brrainz.visualexceptions", "bs.fishery"];
+/// The pre-patchers, in the order their own pages ask for, and the order they go in.
+///
+/// Harmony first: it is the patching library every one of the others is built on, and "load
+/// Harmony first" has been the instruction on its page for as long as it has had one. Prepatcher
+/// next, because it rewrites the game's assemblies before anything reads them and asks to sit as
+/// high as it can. Then the mods built on those two.
+///
+/// This is a tiebreak, not a claim to know better. An author who declares an order in About.xml
+/// is the authority on their own mod and those rules are already edges by the time this is read;
+/// all this decides is two pre-patchers that say nothing about each other, where the alternative
+/// is whatever order the player's list happened to be in.
+const PREPATCH_ORDER: &[&str] = &["brrainz.harmony", "zetrith.prepatcher", "jikulopo.prepatcher", "bs.fishery", "brrainz.visualexceptions"];
+/// The same mods as a set, for the classifier. One list, so the two cannot drift apart.
+const PREPATCH_IDS: &[&str] = PREPATCH_ORDER;
 /// Loading-screen and loader mods that belong above Core and ship no Defs; they do not always
 /// say so in their About.xml.
 const TOP_IDS: &[&str] = &["me.samboycoding.betterloading", "ilyvion.loadingprogress", "taranchuk.fastergameloading", "pirateby.harmony.optimizer", "automatic.startupimpact"];
@@ -263,6 +276,8 @@ struct Edge {
 
 const OFFICIAL_ORDER: &str = "The game and its DLC load in release order";
 const AFTER_OFFICIAL: &str = "Loads after the game and its DLC: a def can only inherit from mods above it";
+const PREPATCH_ORDER_WHY: &str = "The pre-patchers load in the order their own pages ask for";
+const PREPATCH_FIRST: &str = "A pre-patcher changes the game before anything else loads";
 
 fn is_official(m: &ModInfo) -> bool {
     m.source == Source::Ludeon || official_rank(&m.package_id).is_some()
@@ -380,6 +395,24 @@ fn build_graph(order: &[&ModInfo], ctx: &Context) -> (DiGraph<usize, Rule>, Vec<
             cands.push(Edge { from, to, rule: halo(&m.package_id, &order[*o].package_id, AFTER_OFFICIAL) });
         }
     }
+    // The pre-patch head. A pre-patcher changes the game before other mods load — that is what
+    // the word means — so it goes above everything else allowed up there, and the known ones go
+    // in the order their own pages ask for. Two of them that say nothing about each other used to
+    // be left in whatever order the player's list happened to have them in, which for Harmony and
+    // Prepatcher is not a coin worth tossing.
+    let mut heads: Vec<usize> = (0..order.len()).filter(|i| PREPATCH_ORDER.contains(&order[*i].package_id.as_str())).collect();
+    heads.sort_by_key(|i| (PREPATCH_ORDER.iter().position(|p| *p == order[*i].package_id).unwrap_or(usize::MAX), *i));
+    for w in heads.windows(2) {
+        let (a, b) = (order[w[0]], order[w[1]]);
+        cands.push(Edge { from: idx_of[a.uid.as_str()], to: idx_of[b.uid.as_str()], rule: halo(&b.package_id, &a.package_id, PREPATCH_ORDER_WHY) });
+    }
+    for m in order.iter().filter(|m| top.contains(&m.uid) && !PREPATCH_ORDER.contains(&m.package_id.as_str())) {
+        let to = idx_of[m.uid.as_str()];
+        for h in &heads {
+            cands.push(Edge { from: idx_of[order[*h].uid.as_str()], to, rule: halo(&m.package_id, &order[*h].package_id, PREPATCH_FIRST) });
+        }
+    }
+
     // Dependencies imply loadAfter unless an explicit rule says otherwise.
     let explicit: HashSet<(NodeIndex, NodeIndex)> = cands.iter().map(|e| (e.from, e.to)).collect();
     for m in order {
@@ -1288,6 +1321,45 @@ mod tests {
         let back: HaloRules = serde_json::from_str(&json).unwrap();
         assert_eq!(back, ov.halo);
         assert!(json.contains("\"packagePhases\""));
+    }
+
+    #[test]
+    fn the_prepatchers_go_in_the_order_their_own_pages_ask_for() {
+        // Harmony, Prepatcher and Fishery say nothing about one another in this fixture, which is
+        // close enough to the real thing: Prepatcher's page asks to sit high, right under Harmony,
+        // and until now two pre-patchers with nothing to separate them were left in whatever order
+        // the player's list happened to have. That is not a coin worth tossing.
+        let mut mods = fixture();
+        let mut prep = m("prep", "zetrith.prepatcher", "Prepatcher", Source::Workshop);
+        prep.contents.assemblies = 1;
+        let mut fish = m("fish", "bs.fishery", "Fishery", Source::Workshop);
+        fish.contents.assemblies = 1;
+        // A loading-screen mod: allowed above the game, but not a pre-patcher.
+        let mut loading = m("loading", "me.samboycoding.betterloading", "BetterLoading", Source::Workshop);
+        loading.contents.assemblies = 1;
+        loading.kind = ModKind::Code;
+        mods.extend([prep, fish, loading]);
+
+        let db = Databases::default();
+        let rules = compile_rules(&mods, &db);
+        let files = HashMap::new();
+        let ov = UserOverrides::default();
+        let ctx = Context { mods: &mods, files: &files, rules: &rules, db: &db, major_minor: "1.6", overrides: &ov };
+        // Deliberately backwards, and with the loading-screen mod first.
+        let current: Vec<String> = ["loading", "fish", "prep", "harmony", "core", "hugs", "bpc"].iter().map(|s| s.to_string()).collect();
+        let r = sort(&current, &ctx);
+        let at = |u: &str| r.order.iter().position(|x| x == u).unwrap_or_else(|| panic!("{u} is missing"));
+
+        assert!(at("harmony") < at("prep"), "Harmony first: everything here is built on it — {:?}", r.order);
+        assert!(at("prep") < at("fish"), "Fishery is built on Prepatcher — {:?}", r.order);
+        assert!(at("fish") < at("loading"), "a loading screen is not a pre-patcher and waits its turn — {:?}", r.order);
+        assert!(at("loading") < at("core"), "but it is still allowed above the game — {:?}", r.order);
+        assert!(at("core") < at("hugs"), "and the game and its DLC come before anything with Defs — {:?}", r.order);
+        assert!(r.issues.iter().all(|i| !matches!(i, Issue::Cycle { .. })), "no loop was invented to do it: {:?}", r.issues);
+
+        // Sorting a list that is already right leaves it alone.
+        let again = sort(&r.order, &ctx);
+        assert_eq!(again.order, r.order, "the order it proposes is stable");
     }
 
     #[test]

@@ -66,6 +66,15 @@
     if (!s) return;
     await store.updateSettings({ dbSources: s.dbSources.map((d) => (d.id === id ? { ...d, enabled: !d.enabled } : d)) });
   }
+  // "Nothing loaded yet. Press Update now." was said whether nothing had been fetched or
+  // everything was deliberately off, which reads as a thing gone wrong rather than a choice.
+  const dbState = $derived.by(() => {
+    const loaded = store.snap?.dbLoaded ?? [];
+    if (loaded.length) return `Loaded: ${loaded.join(", ")}.`;
+    const on = (s?.dbSources ?? []).filter((d) => d.enabled);
+    if (!on.length) return "All off, so nothing here is affecting your load order.";
+    return `${on.length === 1 ? on[0].label : `${on.length} switched on`}, but nothing downloaded yet. Press Update now.`;
+  });
   const linked = $derived((store.snap?.mods ?? []).filter((m) => m.linkTarget).length);
   const unreadable = $derived(store.snap?.unreadable ?? []);
   const withNumber = $derived(Object.values(store.snap?.weights ?? {}).filter((w) => w.share != null).length);
@@ -177,7 +186,11 @@
         <button class="btn primary" onclick={() => store.updateDatabases()}>Update now</button>
         <label class="switch"><input type="checkbox" checked={s?.updateDatabasesOnStart ?? false} onchange={(e) => store.updateSettings({ updateDatabasesOnStart: e.currentTarget.checked })} />Update when Circinus starts</label>
       </div>
-      <p class="hint">{store.snap?.dbLoaded.length ? `Loaded: ${store.snap.dbLoaded.join(", ")}.` : "Nothing loaded yet. Press Update now."} The RimSort databases have no licence, so Circinus fetches them when you ask and never bundles them.</p>
+      <p class="hint">{dbState} Switching one off deletes the copy Circinus downloaded and stops using its rules straight away. The RimSort databases have no licence, so Circinus fetches them when you ask and never bundles them.</p>
+      <p class="hint">
+        These are other people's collections of what should load before what. They are useful, and often right, but a rule from one of them outranks what the mod's own
+        author wrote in About.xml — so they start off, and turning one on is your call to make.
+      </p>
     </section>
 
     <section class="card">

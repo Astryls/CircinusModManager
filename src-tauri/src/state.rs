@@ -49,8 +49,9 @@ pub struct Settings {
 }
 
 /// The current `settings_version`: 2 made "by phase" the default view and hid the phase and
-/// group columns; 3 added the update check on start; 4 added the Time column.
-pub const SETTINGS_VERSION: u32 = 4;
+/// group columns; 3 added the update check on start; 4 added the Time column; 5 made the rule
+/// databases ship switched off.
+pub const SETTINGS_VERSION: u32 = 5;
 
 pub fn default_list_columns() -> Vec<String> {
     vec!["time".into(), "load".into(), "versions".into()]
@@ -84,6 +85,12 @@ impl Settings {
             // Show -> Columns turns this one off again in one click.
             self.list_columns.insert(0, "time".into());
         }
+        // 5 made the rule databases ship switched off, and deliberately leaves an existing
+        // install's switches alone. Anyone already running with the community rules has a load
+        // order that was built with them; turning them all off on the strength of a new default
+        // would rearrange that list overnight without asking. The new default is for a new
+        // install. What this build changes for everyone is that the switch now does something:
+        // whatever it says, on or off, is finally what happens.
         self.settings_version = SETTINGS_VERSION;
         true
     }
@@ -541,6 +548,9 @@ impl App {
             instance,
         };
         app.resolve_locations();
+        // Before loading, not after: a build before this one ignored the switch entirely, so a
+        // user who turned a database off months ago still has its file sitting there.
+        app.forget_disabled_databases();
         app.load_databases();
         app.load_cached_weights()?;
         app.reload_dds_index();
@@ -597,8 +607,26 @@ impl App {
 
     pub fn load_databases(&mut self) {
         let user_rules = rules::user_rules_path(&self.data_dir);
-        self.db = Databases::load(&self.data_dir.join("dbs"), &user_rules, &self.game_version.major_minor);
+        self.db = Databases::load(&self.data_dir.join("dbs"), &user_rules, &self.game_version.major_minor, &self.settings.db_sources);
         self.recompile();
+    }
+
+    /// Remove the files of every source that is switched off.
+    ///
+    /// Run whenever the sources change and once on startup, rather than only on the click that
+    /// turned one off: a copy that was left behind by an older build, or by a delete Windows
+    /// refused while the file was open, is still a database the user said they did not want.
+    pub fn forget_disabled_databases(&mut self) -> Vec<PathBuf> {
+        let dir = self.data_dir.join("dbs");
+        let version = self.game_version.major_minor.clone();
+        let mut gone = Vec::new();
+        for src in self.settings.db_sources.iter().filter(|s| !s.enabled) {
+            gone.extend(rules::forget_source(&dir, src, &version));
+        }
+        if !gone.is_empty() {
+            tracing::info!("removed {} file(s) for switched-off databases", gone.len());
+        }
+        gone
     }
 
     fn recompile(&mut self) {
