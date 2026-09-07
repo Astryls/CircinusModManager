@@ -641,4 +641,4 @@
      both would be one fact drawn twice. */
   .row .tm { text-align: right; font-family: var(--mono); font-size: 11.5px; color: var(--text-2); }
   .row .tm .unread { color: var(--text-4); }
-</style>\n
+</style>

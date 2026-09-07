@@ -1,11 +1,20 @@
 <script lang="ts">
   import { store } from "$lib/store.svelte";
-  import { headline } from "$lib/describe";
+  import { headline, headlineFor } from "$lib/describe";
+  import { severityOf } from "$lib/types";
   import { I } from "$lib/icons";
 
-  type Notice = { id: string; kind: "error" | "warning" | "note" | "info"; title: string; detail: string; action: string; run: () => void; dismissable: boolean; alt?: { action: string; title: string; run: () => void } };
+  type Notice = { id: string; kind: "error" | "warning" | "note" | "info"; title: string; detail: string; pos?: string; action: string; run: () => void; dismissable: boolean; closeTitle?: string; close?: () => void; alt?: { action: string; title: string; run: () => void } };
 
-  const head = $derived(headline(store.issues, store.byUid));
+  // The mod Review is standing on, if it is standing on one.
+  const reviewing = $derived(store.reviewPos.at >= 0 ? (store.selected[0] ?? null) : null);
+  // While it is, the banner is about that mod. It used to keep naming whichever issue was worst
+  // in the whole list, so Next scrolled the list to the next mod and the words above it did not
+  // change — the button looked broken and there was no way to read what you had been sent to.
+  const head = $derived.by(() => (reviewing ? headlineFor(reviewing, store.issuesByUid.get(reviewing) ?? [], store.byUid) : null) ?? headline(store.issues, store.byUid));
+  // Following the selection must not let a serious problem drop out of sight: a note about the
+  // mod under review says so where there are still errors behind it.
+  const errorsLeft = $derived(store.issues.filter((i) => severityOf(i) === "error").length);
   const missing = $derived(store.snap?.missing ?? []);
   const since = $derived.by(() => {
     const t = store.snap?.changesSince ?? 0;
@@ -63,8 +72,23 @@
       // Errors stay until fixed; warnings and notes can be closed for this session. Review walks
       // the mods with something to look at, one press each, most serious first.
       const { at, total } = store.reviewPos;
-      const action = total > 1 ? (at < 0 ? `Review (${total})` : `Next (${((at + 1) % total) + 1} of ${total})`) : "Review";
-      const notice: Notice = { id: `issues:${head.title}`, kind: head.kind, title: head.title, detail: head.detail, action, run: () => store.reviewNext(), dismissable: head.kind !== "error" };
+      // "Next (6 of 166)" counted the mod it was about to go to while the banner described the
+      // one before it, so the two numbers never agreed and neither was the one being read. The
+      // position belongs beside the words it describes; the button just says what it does.
+      const action = total <= 1 ? "Review" : at < 0 ? `Review (${total})` : "Next";
+      // How far along, kept out of the detail: the detail is elided when the window is narrow,
+      // and where you are is the one thing that must not be the part that disappears.
+      const pos = at >= 0 && total > 1 ? `${at + 1} of ${total}` : "";
+      const behind = at >= 0 && head.kind !== "error" && errorsLeft ? `${errorsLeft} error${errorsLeft === 1 ? "" : "s"} still to come` : "";
+      const detail = [head.detail, behind].filter(Boolean).join(" · ");
+      const notice: Notice = { id: `issues:${head.title}`, kind: head.kind, title: head.title, detail, pos, action, run: () => store.reviewNext(), dismissable: head.kind !== "error" || at >= 0 };
+      // Closing a banner about the mod under review leaves the review, rather than hiding that
+      // one mod for the session: come back round to it and the banner would vanish with the only
+      // button that walks the list.
+      if (at >= 0) {
+        notice.close = () => (store.selected = []);
+        notice.closeTitle = "Stop reviewing";
+      }
       // Something that will make the game reset the list outranks housekeeping notices.
       if (head.kind === "error") out.splice(reset ? 1 : 0, 0, notice);
       else out.push(notice);
@@ -116,9 +140,10 @@
   <div class="banner {n.kind}" class:compact={i > 0} role="status">
     <span class="ico">{@html n.kind === "error" ? I.error : n.kind === "warning" ? I.warn : n.id === "changes" ? I.bell : I.note}</span>
     <span class="t">{n.title}{#if i === 0}<small>{n.detail}</small>{:else}<span class="inline">{n.detail}</span>{/if}</span>
+    {#if n.pos}<span class="pos num">{n.pos}</span>{/if}
     {#if n.alt}<button class="alt" title={n.alt.title} onclick={n.alt.run}>{n.alt.action}</button>{/if}
     <button onclick={n.run}>{n.action}</button>
-    {#if n.dismissable}<button class="x" aria-label="Dismiss" title="Hide until next launch" onclick={() => store.dismiss(n.id)}>{@html I.close}</button>{/if}
+    {#if n.dismissable}<button class="x" aria-label={n.closeTitle ?? "Dismiss"} title={n.closeTitle ?? "Hide until next launch"} onclick={() => (n.close ? n.close() : store.dismiss(n.id))}>{@html I.close}</button>{/if}
   </div>
 {/each}
 
@@ -141,6 +166,9 @@
   .banner.update .bar.indeterminate i { background: repeating-linear-gradient(-45deg, #fff 0 10px, rgba(255, 255, 255, 0.55) 10px 20px); background-size: 28px 100%; animation: slide 0.8s linear infinite; }
   @keyframes slide { to { background-position: 28px 0; } }
   .banner.update .pct { width: 38px; text-align: right; font-size: 12.5px; opacity: 0.9; }
+  /* Where you are in the review. Beside the button rather than in the detail, which is elided
+     the moment the window is narrow. */
+  .pos { flex: none; font-weight: 700; font-size: 12.5px; opacity: 0.75; }
   .ico { width: 24px; height: 24px; border-radius: 50%; background: rgba(0, 0, 0, 0.18); display: grid; place-items: center; flex: none; }
   .ico :global(svg) { width: 12px; height: 12px; }
   .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -1,4 +1,4 @@
-import type { Issue, ModInfo, Rule } from "./types";
+import { severityOf, type Issue, type ModInfo, type Rule } from "./types";
 
 /** Where a mod's estimated loading time comes from: one clause per part that matters. */
 export function explainLoad(m: ModInfo): string[] {
@@ -106,4 +106,26 @@ export function headline(issues: Issue[], byUid: Map<string, ModInfo>): { title:
   const ov = issues.find((i) => i.kind === "orderViolation");
   if (ov && ov.kind === "orderViolation") return { title: `${n(ov.uid)} is out of order`, detail: describe(ov, byUid), kind: "warning" };
   return null;
+}
+
+/** The same line, about one mod: what Review has just moved to.
+ *
+ * `headline` reads the whole list and names whichever issue is worst in it, which is the right
+ * answer for a banner nobody has interacted with and the wrong one the moment Review starts
+ * walking: pressing Next moved the list to the next mod while the words above it went on
+ * describing something else entirely. */
+export function headlineFor(uid: string, mine: Issue[], byUid: Map<string, ModInfo>): { title: string; detail: string; kind: "error" | "warning" | "note" } | null {
+  if (!mine.length) return null;
+  const rank = { error: 0, warning: 1, note: 2 };
+  const worst = [...mine].sort((a, b) => rank[severityOf(a)] - rank[severityOf(b)])[0];
+  // Scoped to the one issue, `headline` writes the same sentence about this mod that it would
+  // have written about the list's worst, so the two banners read alike.
+  const name = byUid.get(uid)?.name ?? uid;
+  const h = headline([worst], byUid);
+  // Keep the familiar wording where it is already about this mod. Several issues have two sides
+  // and `headline` always writes them from the other one's: the mod whose textures are being
+  // overwritten would have been handed a sentence praising the mod overwriting them, and Review
+  // would have looked like it had gone to the wrong row.
+  if (h && h.title.startsWith(name)) return h;
+  return { title: name, detail: describe(worst, byUid, uid).replace(/\s*\n\s*/g, " "), kind: severityOf(worst) };
 }
