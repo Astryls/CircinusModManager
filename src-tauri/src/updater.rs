@@ -1,7 +1,8 @@
 //! Auto-update. circinus.sh/modmanager serves the feed; Tauri's updater plugin does the
 //! asking, the download, the signature check and the install. This file turns that into two
 //! commands, one quiet check a few seconds after launch, and `update-progress` events for the
-//! banner while an install runs.
+//! banner while an install runs. A development build does nothing of the kind; `DEV_BUILD` says
+//! why.
 //!
 //! The wire format is the plugin's own, written out in `docs/update-feed.md` for the site.
 
@@ -40,6 +41,17 @@ pub struct UpdateProgress {
     pub error: Option<String>,
 }
 
+/// Why a development build says nothing about updates.
+///
+/// `main` carries a placeholder version on purpose: the real number is set on the release commit,
+/// which belongs to the tag rather than to the branch. So a build made from `main` tells the feed
+/// it is 0.1.0, every release circinus.sh has ever served looks newer than it, and a banner
+/// offering the newest one comes up a few seconds into every `npm run tauri dev`. Pressing Install
+/// on it would download the real installer and run it over the machine being developed on -- which
+/// on Windows takes the running dev process with it. Only a developer ever reads this sentence: a
+/// player's copy is a release build and checks normally.
+const DEV_BUILD: &str = "This is a development build. It carries the placeholder version main keeps rather than a released one, so there is nothing for circinus.sh to compare it against. Build it with `npm run tauri build` to test the updater.";
+
 pub struct Updater {
     handle: AppHandle,
     app: Shared,
@@ -65,6 +77,9 @@ impl Updater {
 
     /// Ask the feed. Remembers what it offered so `install` can use it.
     pub async fn check(&self) -> Result<UpdateCheck, String> {
+        if tauri::is_dev() {
+            return Err(DEV_BUILD.into());
+        }
         let current = self.current_version();
         let updater = self.handle.updater().map_err(plain)?;
         let result = updater.check().await.map_err(plain)?;
@@ -81,6 +96,10 @@ impl Updater {
     /// The check on start: once, only when the setting is on, and quiet about anything that
     /// goes wrong. An update it finds arrives as an `update-available` event.
     pub fn start(self: &Arc<Self>) {
+        if tauri::is_dev() {
+            tracing::info!("development build: not checking for updates");
+            return;
+        }
         if self.checked_on_start.swap(true, Ordering::SeqCst) {
             return;
         }
@@ -105,6 +124,9 @@ impl Updater {
     /// Download, verify, install and restart. Progress goes out as `update-progress`; this
     /// only returns when something went wrong, because on success the process is replaced.
     pub async fn install(self: Arc<Self>) -> Result<(), String> {
+        if tauri::is_dev() {
+            return Err(DEV_BUILD.into());
+        }
         if self.installing.swap(true, Ordering::SeqCst) {
             return Err("An update is already being installed".into());
         }
@@ -195,4 +217,16 @@ pub async fn update_check(updater: State<'_, Arc<Updater>>) -> Result<UpdateChec
 #[tauri::command]
 pub async fn update_install(updater: State<'_, Arc<Updater>>) -> Result<(), String> {
     updater.inner().clone().install().await
+}
+
+#[cfg(test)]
+mod tests {
+    /// The guard above is only as good as what `is_dev` means. `cargo test` builds the same way
+    /// `tauri dev` does -- without the `custom-protocol` feature -- so this run is a development
+    /// build, and saying so here means a change to that in Tauri fails a test rather than quietly
+    /// waking the updater up in somebody's dev window again.
+    #[test]
+    fn a_development_build_is_recognised_as_one() {
+        assert!(tauri::is_dev(), "a test build should look like a development build to the updater");
+    }
 }

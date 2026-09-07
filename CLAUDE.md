@@ -43,6 +43,13 @@ The updater's private key is `/home/claude/circinus-updater.key`, outside the re
 `TAURI_SIGNING_PRIVATE_KEY` secret; only the public key is committed. It can never be rotated
 without one manual reinstall for everyone, since an app carries the public key it was built with.
 
+A development build does not check, and refuses to install. The version on `main` is a
+placeholder — the real one is set on the release commit, which belongs to the tag — so a build
+made from the branch says 0.1.0 and every release ever served looks newer than it. That put an
+update banner in every `npm run tauri dev` a few seconds after launch, and pressing Install on it
+runs the real installer over the machine being developed on. `tauri::is_dev()` is the guard, and
+`updater::DEV_BUILD` is what it says instead.
+
 ## Shape of the thing
 
 - `circinus-core`: `scan` (two-phase: About.xml quickly, folder contents in the background,
