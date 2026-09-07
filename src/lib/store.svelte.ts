@@ -1087,6 +1087,22 @@ class Store {
   /** Stop marking the new mods. Leaves the New tab in place with the arrival dates still on it,
    *  because "I have seen these" and "I no longer want to know when they came" are not the same
    *  thing, and the second is not what anyone means by clicking it. */
+  /** How many "these two do not work together" warnings are hidden. */
+  hiddenWarnings = $derived((this.snap?.user.muted ?? []).length);
+  /** Hide this pair's warning, or bring it back. */
+  setIncompatibilityHidden(uid: string, otherUid: string, hidden: boolean) {
+    return this.run(hidden ? "Hiding it…" : "Bringing it back…", async () => {
+      this.apply(await api.setIncompatibilityHidden(uid, otherUid, hidden));
+      this.say(hidden ? "Hidden. Settings brings every hidden warning back." : "That warning is back.");
+    });
+  }
+  clearHiddenWarnings() {
+    return this.run("Bringing them back…", async () => {
+      const [n, snap] = await api.clearHiddenWarnings();
+      this.apply(snap);
+      this.say(n ? `${n} hidden ${n === 1 ? "warning is" : "warnings are"} showing again` : "There were none hidden");
+    });
+  }
   markNewSeen() {
     return this.run("Clearing…", async () => {
       this.apply(await api.markNewSeen());

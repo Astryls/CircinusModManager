@@ -786,6 +786,26 @@ pub async fn log_from_the_window(message: String, stack: Option<String>) -> CmdR
     Ok(())
 }
 
+/// Hide, or bring back, the "these two do not work together" warning for one pair of mods.
+#[tauri::command]
+pub async fn set_incompatibility_hidden(state: State<'_, Shared>, uid: String, other_uid: String, hidden: bool) -> CmdResult<Snapshot> {
+    with_app(&state, move |app| {
+        app.set_incompatibility_hidden(&uid, &other_uid, hidden).map_err(err)?;
+        Ok(app.snapshot())
+    })
+    .await
+}
+
+/// Show every hidden warning again. Returns how many came back.
+#[tauri::command]
+pub async fn clear_hidden_warnings(state: State<'_, Shared>) -> CmdResult<(usize, Snapshot)> {
+    with_app(&state, |app| {
+        let n = app.clear_hidden_warnings().map_err(err)?;
+        Ok((n, app.snapshot()))
+    })
+    .await
+}
+
 /// The user has seen which mods are new: stop marking them. Separate from acknowledging changes
 /// because they answer different questions -- what happened while you were away, against which
 /// mods you have not looked at yet -- and clearing one should not quietly clear the other.

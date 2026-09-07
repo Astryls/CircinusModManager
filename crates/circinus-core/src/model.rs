@@ -365,10 +365,18 @@ pub enum Issue {
         supported: Vec<String>,
     },
     Cycle {
+        /// The mods along the loop, in order. `uids[i]` loads before `uids[i + 1]`, and the last
+        /// wraps back to the first.
         uids: Vec<String>,
         /// Human-readable chain, e.g. "A → B → C → A".
         chain: String,
+        /// The rule behind each step, in the same order as `uids`: `rules[i]` is why `uids[i]`
+        /// must come before the next one. This is what tells a player which rule to change.
         rules: Vec<Rule>,
+        /// The one rule that was dropped so sorting could finish. None only if the loop could
+        /// not be cut, which should not happen.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cut: Option<Rule>,
     },
     TextureCollision {
         /// Relative path under Textures/, without extension.

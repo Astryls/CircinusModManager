@@ -1,4 +1,4 @@
-import type { Issue, ModInfo } from "./types";
+import type { Issue, ModInfo, Rule } from "./types";
 
 /** Where a mod's estimated loading time comes from: one clause per part that matters. */
 export function explainLoad(m: ModInfo): string[] {
@@ -42,8 +42,17 @@ export function describe(i: Issue, byUid: Map<string, ModInfo>, viewer?: string)
     }
     case "versionMismatch":
       return i.supported.length ? `Made for ${i.supported.join(", ")}, not for this game version.` : "Does not say which game versions it supports.";
-    case "cycle":
-      return `Rules form a loop: ${i.chain}. The weakest rule was set aside so sorting could finish.`;
+    case "cycle": {
+      // Every step, and where it came from. A loop is only actionable if you can see which rule
+      // to change, and the rule to change is almost never in the mod you are looking at: it is
+      // usually one line in a community database or one line in somebody's About.xml.
+      const where = (r: Rule) => (r.source === "community" ? "community database" : r.source === "user" ? "your rule" : r.source === "manifest" ? "Manifest.xml" : r.source === "halo" ? "worked out by HALO" : "the mod's About.xml");
+      const steps = i.rules.map((r, k) => `  ${n(i.uids[k])} before ${n(i.uids[(k + 1) % i.uids.length])} — ${where(r)}${r.comment ? `, ${r.comment}` : ""}`);
+      const cut = i.cut
+        ? `Sorting cannot obey all of them, so one was set aside: ${n(i.cut.subject === (i.uids[0] ?? "") ? i.uids[0] : i.cut.subject)} ${i.cut.kind === "loadBefore" ? "before" : "after"} ${i.cut.target ?? "?"}, from the ${where(i.cut)}. Everything else on the loop was obeyed.`
+        : "Sorting could not break the loop.";
+      return `Rules form a loop:\n${steps.join("\n")}\n\n${cut}`;
+    }
     case "textureCollision": {
       const winner = n(i.winnerUid);
       const others = i.uids.filter((u) => u !== i.winnerUid).map(n).join(", ");

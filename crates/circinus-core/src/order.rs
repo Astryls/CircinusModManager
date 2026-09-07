@@ -432,31 +432,85 @@ fn build_graph(order: &[&ModInfo], ctx: &Context) -> (DiGraph<usize, Rule>, Vec<
     for e in best.into_values() {
         g.add_edge(e.from, e.to, e.rule);
     }
-    // Cut real cycles: report each strongly connected component, then remove its
-    // lowest-precedence internal edges until it is acyclic.
+    // Cut real cycles. One at a time, and each one reported as the path it actually is.
+    //
+    // This used to take the strongly connected component -- the set of mods that can all reach
+    // one another -- and print its members joined by arrows, as though the set were a path. It is
+    // not. Eight mods tangled together were shown as an eight-step loop in whatever order Tarjan
+    // happened to return them, so the chain named steps that no rule had ever asked for, and the
+    // one thing a player wants to know from a loop report ("which rule do I change") was the one
+    // thing it could not tell them. Finding a real cycle inside the component costs a depth-first
+    // walk and makes every step in the message true.
+    //
+    // The cut is one edge, not every edge of the lowest precedence, and the issue says which one
+    // and where it came from. "The weakest rule was set aside" described neither.
     let mut guard = 0;
     loop {
         guard += 1;
         let sccs: Vec<Vec<NodeIndex>> = tarjan_scc(&g).into_iter().filter(|c| c.len() > 1).collect();
-        if sccs.is_empty() || guard > 50 {
+        if sccs.is_empty() || guard > 500 {
             break;
         }
+        let mut cut_any = false;
         for comp in sccs {
             let set: HashSet<NodeIndex> = comp.iter().copied().collect();
-            let internal: Vec<petgraph::graph::EdgeIndex> = g.edge_references().filter(|e| set.contains(&e.source()) && set.contains(&e.target())).map(|e| e.id()).collect();
-            let rules: Vec<Rule> = internal.iter().map(|e| g[*e].clone()).collect();
-            let uids: Vec<String> = comp.iter().map(|n| order[g[*n]].uid.clone()).collect();
-            let chain = comp.iter().map(|n| order[g[*n]].name.clone()).collect::<Vec<_>>().join(" → ");
-            issues.push(Issue::Cycle { uids, chain: format!("{chain} → {}", order[g[comp[0]]].name), rules: rules.clone() });
-            let min_src = rules.iter().map(|r| r.source).min().unwrap_or(RuleSource::About);
-            for e in internal.into_iter().rev() {
-                if g[e].source == min_src {
-                    g.remove_edge(e);
-                }
-            }
+            let Some(path) = find_cycle(&g, &set) else { continue };
+            let rules: Vec<Rule> = path.iter().map(|e| g[*e].clone()).collect();
+            let nodes: Vec<NodeIndex> = path.iter().filter_map(|e| g.edge_endpoints(*e).map(|(a, _)| a)).collect();
+            let uids: Vec<String> = nodes.iter().map(|n| order[g[*n]].uid.clone()).collect();
+            let names: Vec<String> = nodes.iter().map(|n| order[g[*n]].name.clone()).collect();
+            let chain = match names.first() {
+                Some(first) => format!("{} → {first}", names.join(" → ")),
+                None => String::new(),
+            };
+            // The edge to drop: the weakest rule on this cycle. Ties go to the last one in the
+            // walk rather than to whichever the graph happened to hand back first, so the same
+            // list cut the same way twice.
+            let weakest = rules.iter().map(|r| r.source).min().unwrap_or(RuleSource::About);
+            let victim = path.iter().rposition(|e| g[*e].source == weakest).unwrap_or(0);
+            let cut = rules.get(victim).cloned();
+            issues.push(Issue::Cycle { uids, chain, rules, cut });
+            g.remove_edge(path[victim]);
+            cut_any = true;
+        }
+        // A component with no findable cycle cannot be helped by cutting; stop rather than spin.
+        if !cut_any {
+            break;
         }
     }
     (g, issues)
+}
+
+/// One real cycle inside a strongly connected component, as the edges along it.
+///
+/// A depth-first walk that stops the moment it reaches a node already on the path: everything
+/// from that node onwards is a cycle, and every step of it is an edge that exists. Restricted to
+/// `set`, because a walk that wanders out of the component may never come back.
+fn find_cycle(g: &DiGraph<usize, Rule>, set: &HashSet<NodeIndex>) -> Option<Vec<petgraph::graph::EdgeIndex>> {
+    let start = *set.iter().min_by_key(|n| n.index())?;
+    // (node, edges taken to get here). The stack holds the path itself so the cycle can be read
+    // straight off it rather than reconstructed from parents.
+    let mut stack: Vec<(NodeIndex, Vec<petgraph::graph::EdgeIndex>)> = vec![(start, Vec::new())];
+    let mut seen: HashSet<NodeIndex> = HashSet::new();
+    while let Some((node, path)) = stack.pop() {
+        if !seen.insert(node) {
+            continue;
+        }
+        // Neighbours in a fixed order: two runs on the same list must report the same loop.
+        let mut out: Vec<petgraph::graph::EdgeIndex> = g.edges(node).filter(|e| set.contains(&e.target())).map(|e| e.id()).collect();
+        out.sort_by_key(|e| g.edge_endpoints(*e).map(|(_, b)| b.index()).unwrap_or(0));
+        for e in out {
+            let Some((_, next)) = g.edge_endpoints(e) else { continue };
+            let mut here = path.clone();
+            here.push(e);
+            // Back to somewhere already on this path: the cycle is the tail from there.
+            if let Some(at) = here.iter().position(|x| g.edge_endpoints(*x).map(|(a, _)| a) == Some(next)) {
+                return Some(here[at..].to_vec());
+            }
+            stack.push((next, here));
+        }
+    }
+    None
 }
 
 /// Count, for every active packageId, how many active mods declare it as a dependency.
@@ -845,6 +899,76 @@ mod tests {
         let r2 = sort(&current, &ctx2);
         assert!(r2.issues.iter().any(|i| matches!(i, Issue::Cycle { chain, .. } if chain.contains("HugsLib"))));
         assert_eq!(r2.order.len(), 4);
+    }
+
+    /// Every step in a reported loop must be a rule that exists.
+    ///
+    /// It did not used to be. The report was the strongly connected component -- the set of mods
+    /// that can all reach one another -- printed in Tarjan's order with arrows between them, so a
+    /// tangle of eight mods was shown as an eight-step loop naming steps nobody had written. A
+    /// player reading it reasonably concluded the tool was making things up, and could not tell
+    /// which rule to change because the message did not contain one.
+    #[test]
+    fn a_reported_loop_is_a_real_path_and_names_the_rule_it_dropped() {
+        // Six mods in a ring, plus two more that hang off it: A -> B -> C -> D -> E -> F -> A,
+        // with X and Y reachable from the ring and reaching back into it, so the component is
+        // eight mods but the cycle is six.
+        let names = ["A", "B", "C", "D", "E", "F", "X", "Y"];
+        let mut mods: Vec<ModInfo> = names.iter().map(|n| m(&n.to_lowercase(), &format!("t.{}", n.to_lowercase()), n, Source::Workshop)).collect();
+        for i in 0..6 {
+            let prev = format!("t.{}", names[(i + 5) % 6].to_lowercase());
+            mods[i].rules.load_after = vec![prev];
+        }
+        // X and Y join the same component without being on that ring.
+        mods[6].rules.load_after = vec!["t.a".into()];
+        mods[0].rules.load_after.push("t.y".into());
+        mods[7].rules.load_after = vec!["t.x".into()];
+
+        let files: HashMap<String, ModFiles> = HashMap::new();
+        let db = Databases::default();
+        let rules = compile_rules(&mods, &db);
+        let ov = UserOverrides::default();
+        let ctx = Context { mods: &mods, files: &files, rules: &rules, db: &db, major_minor: "1.6", overrides: &ov };
+        let current: Vec<String> = mods.iter().map(|x| x.uid.clone()).collect();
+        let r = sort(&current, &ctx);
+
+        let cycles: Vec<&Issue> = r.issues.iter().filter(|i| matches!(i, Issue::Cycle { .. })).collect();
+        assert!(!cycles.is_empty(), "the ring is a loop and has to be reported");
+        let by_uid: HashMap<&str, &ModInfo> = mods.iter().map(|x| (x.uid.as_str(), x)).collect();
+
+        for issue in &cycles {
+            let Issue::Cycle { uids, rules: steps, chain, cut } = issue else { continue };
+            assert_eq!(uids.len(), steps.len(), "one rule per step, or the message cannot name any of them");
+            assert!(uids.len() >= 2, "a loop of one is not a loop: {chain}");
+            // Every step names a rule that one of the two mods actually declared.
+            for (i, rule) in steps.iter().enumerate() {
+                let earlier = by_uid[uids[i].as_str()];
+                let later = by_uid[uids[(i + 1) % uids.len()].as_str()];
+                let subject = if rule.subject == later.package_id { later } else { earlier };
+                let other = if std::ptr::eq(subject, later) { earlier } else { later };
+                assert!(
+                    rule.subject == subject.package_id,
+                    "step {i} of {chain} names {} but the mods there are {} and {}",
+                    rule.subject,
+                    earlier.package_id,
+                    later.package_id
+                );
+                assert_eq!(rule.target.as_deref(), Some(other.package_id.as_str()), "step {i} of {chain} points at a mod that is not the next one along");
+            }
+            // And every name in the chain is one of the mods on the loop, in the same order.
+            let shown: Vec<&str> = chain.split(" → ").collect();
+            assert_eq!(shown.len(), uids.len() + 1, "the chain has to close: {chain}");
+            assert_eq!(shown[0], shown[shown.len() - 1], "and close on the mod it started from: {chain}");
+            for (i, u) in uids.iter().enumerate() {
+                assert_eq!(shown[i], by_uid[u.as_str()].name, "the chain and the mods disagree at step {i}");
+            }
+            // The message has to say which rule was dropped; "the weakest rule" named nothing.
+            let cut = cut.as_ref().expect("a loop that was cut says what was cut");
+            assert!(steps.iter().any(|r| r == cut), "the rule dropped has to be one of the ones on the loop");
+        }
+
+        // And the sort still finishes with every mod in it.
+        assert_eq!(r.order.len(), mods.len());
     }
 
     /// The shape of the list that crashed: a loading-screen mod (no Defs) declares it loads before

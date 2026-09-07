@@ -269,6 +269,14 @@ pub struct NamedList {
 
 /// The groups everyone starts with. Three fill themselves: the game and its DLC, the libraries,
 /// and the performance mods, as HALO files them.
+/// One key for a pair of mods, whichever way round they are named. The databases record the
+/// incompatibility on one of the two and the UI shows it on both, so a key that depended on the
+/// order would hide the warning in one place and leave it in the other.
+pub fn incompatible_key(a: &str, b: &str) -> String {
+    let (x, y) = if a <= b { (a, b) } else { (b, a) };
+    format!("incompatible:{x}|{y}")
+}
+
 fn default_groups() -> Vec<Group> {
     vec![
         Group { id: "core".into(), name: "Core".into(), color: "blue".into(), phase: None, section: false, auto: Some(AutoRule::Official) },
@@ -840,7 +848,42 @@ impl App {
         if !self.install_known() {
             issues.retain(|i| !matches!(i, Issue::MissingDependency { .. }));
         }
+        // Warnings the user has said are wrong about their install. The databases say two mods do
+        // not work together; sometimes they did once and a patch fixed it, and a warning that
+        // cannot be dismissed is one a player learns to ignore -- along with the true ones beside
+        // it, which is the actual cost.
+        if !self.user.muted.is_empty() {
+            issues.retain(|i| match i {
+                Issue::Incompatible { uid, other_uid, .. } => !self.user.muted.contains(&incompatible_key(self.package_of(uid), self.package_of(other_uid))),
+                _ => true,
+            });
+        }
         issues
+    }
+
+    /// The package id of a mod, or its uid when it has none, so a hidden warning survives the mod
+    /// being uninstalled and put back: the folder changes, the package id does not.
+    fn package_of<'a>(&'a self, uid: &'a str) -> &'a str {
+        self.mods.iter().find(|m| m.uid == uid).map(|m| m.package_id.as_str()).filter(|p| !p.is_empty()).unwrap_or(uid)
+    }
+
+    /// Hide, or stop hiding, the "these two do not work together" warning for a pair.
+    pub fn set_incompatibility_hidden(&mut self, uid: &str, other_uid: &str, hidden: bool) -> Result<()> {
+        let key = incompatible_key(self.package_of(uid), self.package_of(other_uid));
+        if hidden {
+            self.user.muted.insert(key);
+        } else {
+            self.user.muted.remove(&key);
+        }
+        self.persist()
+    }
+
+    /// Show every warning again.
+    pub fn clear_hidden_warnings(&mut self) -> Result<usize> {
+        let n = self.user.muted.len();
+        self.user.muted.clear();
+        self.persist()?;
+        Ok(n)
     }
 
     pub fn placements(&self) -> Vec<Placement> {

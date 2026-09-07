@@ -95,7 +95,7 @@ export type Issue =
   | { kind: "incompatible"; uid: string; otherUid: string; source: RuleSource }
   | { kind: "orderViolation"; uid: string; targetUid: string; rule: RuleKind; source: RuleSource; comment?: string }
   | { kind: "versionMismatch"; uid: string; supported: string[] }
-  | { kind: "cycle"; uids: string[]; chain: string; rules: Rule[] }
+  | { kind: "cycle"; uids: string[]; chain: string; rules: Rule[]; cut?: Rule }
   | { kind: "textureCollision"; path: string; uids: string[]; winnerUid: string }
   | { kind: "misplacedOptimization"; uid: string; afterUids: string[] }
   | { kind: "duplicatePackageId"; packageId: string; uids: string[] }

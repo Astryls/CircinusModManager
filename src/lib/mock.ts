@@ -1029,6 +1029,10 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
   // Load testing: a page may provide a full backend snapshot (see src-tauri/examples/dump_snapshot.rs).
   const fixture = (globalThis as any).__CIRCINUS_FIXTURE__ as Snapshot | undefined;
   switch (cmd) {
+    case "set_incompatibility_hidden":
+    case "clear_hidden_warnings":
+      // The mock has no backend to remember it; the button still proves it is reachable.
+      return (cmd === "clear_hidden_warnings" ? [0, snapshot()] : snapshot()) as T;
     case "log_from_the_window":
       console.error("[circinus mock] the window would have logged:", A.message, A.stack ?? "");
       return undefined as T;

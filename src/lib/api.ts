@@ -63,6 +63,8 @@ export const api = {
   unsubscribeItems: (ids: number[]) => invoke<SubscribeOutcome>("unsubscribe_items", { ids }),
   acknowledgeChanges: () => invoke<Snapshot>("acknowledge_changes"),
   markNewSeen: () => invoke<Snapshot>("mark_new_seen"),
+  setIncompatibilityHidden: (uid: string, otherUid: string, hidden: boolean) => invoke<Snapshot>("set_incompatibility_hidden", { uid, otherUid, hidden }),
+  clearHiddenWarnings: () => invoke<[number, Snapshot]>("clear_hidden_warnings"),
   diagnostics: () => invoke<string>("diagnostics"),
   logFromTheWindow: (message: string, stack?: string) => invoke<void>("log_from_the_window", { message, stack }),
   // list history

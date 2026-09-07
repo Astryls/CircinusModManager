@@ -224,6 +224,9 @@
         <button class="btn" onclick={() => openUrl(DISCORD)}>{@html I.link}Circinus on Discord</button>
         <button class="btn" onclick={() => openUrl("https://circinus.sh")}>{@html I.cloud}circinus.sh</button>
         <button class="btn" onclick={copyDiagnostics}>{diagCopied ? "Copied" : "Copy diagnostics"}</button>
+        {#if store.hiddenWarnings}
+          <button class="btn" onclick={() => store.clearHiddenWarnings()}>Show {store.hiddenWarnings} hidden {store.hiddenWarnings === 1 ? "warning" : "warnings"}</button>
+        {/if}
       </div>
       <p class="hint">
         Diagnostics are what turns "it went wrong" into something anyone can act on: the version, your folders and whether they are there, what the scan found, and

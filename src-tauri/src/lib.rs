@@ -241,6 +241,8 @@ pub fn run() {
             subscribe::unsubscribe_items,
             commands::acknowledge_changes,
             commands::mark_new_seen,
+            commands::set_incompatibility_hidden,
+            commands::clear_hidden_warnings,
             commands::diagnostics,
             commands::log_from_the_window,
             commands::dds_state,

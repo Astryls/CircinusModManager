@@ -91,6 +91,20 @@ without one manual reinstall for everyone, since an app carries the public key i
   .NET runtime and without ever loading a mod's code. `harmony` caches those readings and groups
   them into what one mod patches and who else patches the same method.
 
+## Loops, and warnings a player disagrees with
+
+- A reported loop is a real path. It used to be the strongly connected component -- the set of
+  mods that can all reach one another -- printed in Tarjan's order with arrows between them, so a
+  tangle of eight was shown as an eight-step loop naming steps nobody wrote. `order::find_cycle`
+  walks the component for an actual cycle; `Issue::Cycle` carries one rule per step and the one
+  rule that was `cut`, and the message says where each came from. "The weakest rule was set aside"
+  named neither the rule nor its source.
+- The cut is one edge per pass, not every edge of the lowest precedence.
+- `Issue::Incompatible` can be hidden per pair (`UserData::muted`, keyed by package ids so it
+  survives a reinstall). The databases are a community's best guess and a patch can make two mods
+  work together without the entry changing; a warning nobody can dismiss is one people learn to
+  look past, along with the true ones beside it. Settings brings them all back.
+
 ## When something goes wrong
 
 - `diag` writes tracing to `<app data>/logs/circinus.log`, rolled once at 4 MB. Logging to stdout

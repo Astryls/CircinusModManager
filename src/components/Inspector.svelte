@@ -277,6 +277,12 @@
             <span class="flag {severityOf(i)}">{@html sevIcon[severityOf(i)]}</span>
             <span>{describe(i, store.byUid, m.uid)}
               {#if dep}<button class="lnk sub" title="Opens that mod's page in Steam, where Subscribe is one press" onclick={() => store.subscribeIds([dep])}>Subscribe in Steam</button>{/if}
+              {#if i.kind === "incompatible"}
+                <!-- The databases are a community's best guess, and a patch can make two mods
+                     work together without anybody updating the entry. A warning that cannot be
+                     dismissed is one a player learns to look past, along with the true ones. -->
+                <button class="lnk sub" title="Stop showing this one. Settings brings every hidden warning back." onclick={() => store.setIncompatibilityHidden(i.uid, i.otherUid, true)}>Hide this warning</button>
+              {/if}
             </span>
           </div>
         {/each}
