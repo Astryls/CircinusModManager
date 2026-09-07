@@ -140,7 +140,7 @@
   <div class="banner {n.kind}" class:compact={i > 0} role="status">
     <span class="ico">{@html n.kind === "error" ? I.error : n.kind === "warning" ? I.warn : n.id === "changes" ? I.bell : I.note}</span>
     <span class="t">{n.title}{#if i === 0}<small>{n.detail}</small>{:else}<span class="inline">{n.detail}</span>{/if}</span>
-    {#if n.pos}<span class="pos num">{n.pos}</span>{/if}
+    {#if n.pos}<span class="step num">{n.pos}</span>{/if}
     {#if n.alt}<button class="alt" title={n.alt.title} onclick={n.alt.run}>{n.alt.action}</button>{/if}
     <button onclick={n.run}>{n.action}</button>
     {#if n.dismissable}<button class="x" aria-label={n.closeTitle ?? "Dismiss"} title={n.closeTitle ?? "Hide until next launch"} onclick={() => (n.close ? n.close() : store.dismiss(n.id))}>{@html I.close}</button>{/if}
@@ -168,7 +168,10 @@
   .banner.update .pct { width: 38px; text-align: right; font-size: 12.5px; opacity: 0.9; }
   /* Where you are in the review. Beside the button rather than in the detail, which is elided
      the moment the window is narrow. */
-  .pos { flex: none; font-weight: 700; font-size: 12.5px; opacity: 0.75; }
+  /* Not `.pos`: app.css owns that name for a positive number and colours it green, which on an
+     amber banner is unreadable. This is a position in the review, and it takes the banner's own
+     ink whichever kind of banner it is. */
+  .step { flex: none; font-weight: 700; font-size: 12.5px; color: inherit; opacity: 0.8; }
   .ico { width: 24px; height: 24px; border-radius: 50%; background: rgba(0, 0, 0, 0.18); display: grid; place-items: center; flex: none; }
   .ico :global(svg) { width: 12px; height: 12px; }
   .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

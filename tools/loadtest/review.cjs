@@ -61,6 +61,30 @@ function ok(label, cond, detail = '') {
       ok(`step ${step}: it names the mod the list moved to`, now.all.toLowerCase().includes(now.selected.toLowerCase()), `banner "${now.title}" vs row "${now.selected}"`);
     }
   }
+  // The position sits on a coloured banner, so it has to be legible against it. `app.css` owns
+  // `.pos` for a positive number and paints it green; when this element carried that name it was
+  // green on amber, which is roughly nothing. Contrast is measurable, so measure it.
+  const contrast = await page.evaluate(() => {
+    const el = document.querySelector('.banner .step');
+    if (!el) return null;
+    const lum = (c) => {
+      const [r, g, b] = c.match(/[\d.]+/g).slice(0, 3).map((v) => {
+        const s = Number(v) / 255;
+        return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const fg = getComputedStyle(el).color;
+    let node = el, bg = 'rgba(0, 0, 0, 0)';
+    while (node && (bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent')) {
+      bg = getComputedStyle(node).backgroundColor;
+      node = node.parentElement;
+    }
+    const [a, b2] = [lum(fg), lum(bg)].sort((x, y) => y - x);
+    return { fg, bg, ratio: Math.round(((a + 0.05) / (b2 + 0.05)) * 10) / 10 };
+  });
+  ok('the position is legible on the banner', contrast !== null && contrast.ratio >= 4.5, contrast ? `${contrast.fg} on ${contrast.bg} = ${contrast.ratio}:1` : 'no .step found');
+
   await page.screenshot({ path: `${OUT}/reviewing.png` });
 
   const titles = new Set(seen.map((s) => s.title));
