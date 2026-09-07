@@ -3,7 +3,7 @@
 export type Source = "ludeon" | "workshop" | "local" | "steamcmd" | "git";
 export type ModKind = "unknown" | "official" | "code" | "xml" | "textures" | "translation" | "scenario";
 export type Phase = "core" | "prepatch" | "framework" | "content" | "patch" | "texture" | "late" | "optimization";
-export type RuleSource = "about" | "manifest" | "community" | "user" | "halo";
+export type RuleSource = "halo" | "community" | "about" | "user";
 export type RuleKind = "loadAfter" | "loadBefore" | "incompatible" | "loadTop" | "loadBottom";
 export type Severity = "error" | "warning" | "note";
 export type Band = "negligible" | "light" | "moderate" | "heavy" | "veryheavy" | "insufficient" | "unknown";
@@ -101,7 +101,7 @@ export type Issue =
   | { kind: "duplicatePackageId"; packageId: string; uids: string[] }
   | { kind: "missingPackageId"; uid: string }
   | { kind: "invalid"; uid: string; reason: string }
-  | { kind: "aboveOfficial"; uid: string; officialUid: string }
+  | { kind: "aboveOfficial"; uid: string; officialUid: string; declared: boolean }
   | { kind: "ruleIgnored"; uid: string; targetUid: string; rule: RuleKind; source: RuleSource; reason: string };
 
 export interface Placement {
@@ -740,8 +740,11 @@ export function severityOf(i: Issue): Severity {
     case "incompatible":
     case "cycle":
     case "invalid":
-    case "aboveOfficial":
       return "error";
+    // Somebody asked for this placement, so it is a warning about what it may cost rather than
+    // an error about a list nobody chose.
+    case "aboveOfficial":
+      return i.declared ? "warning" : "error";
     case "textureCollision":
     case "ruleIgnored":
       return "note";

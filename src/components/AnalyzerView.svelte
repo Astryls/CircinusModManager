@@ -9,7 +9,7 @@
   const groups = $derived.by(() => {
     const order: Issue["kind"][] = ["aboveOfficial", "cycle", "incompatible", "missingDependency", "misplacedOptimization", "orderViolation", "versionMismatch", "duplicatePackageId", "missingPackageId", "invalid", "ruleIgnored", "textureCollision"];
     const titles: Record<Issue["kind"], string> = {
-      aboveOfficial: "Above the game or a DLC, so the game will reset the list",
+      aboveOfficial: "Above the game or a DLC, where a def cannot inherit from it",
       cycle: "Rules that contradict each other",
       incompatible: "Mods that do not work together, both active",
       missingDependency: "Missing dependencies",

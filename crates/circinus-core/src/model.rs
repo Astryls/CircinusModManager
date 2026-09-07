@@ -286,16 +286,30 @@ impl Phase {
     }
 }
 
-/// Where a rule came from, in ascending precedence.
+/// Where a rule came from, in ascending precedence: what Circinus worked out for itself is the
+/// weakest thing in the graph, and the person at the keyboard is the strongest.
+///
+/// The order is the whole precedence system -- `Ord` is derived from it, the contradiction
+/// resolver compares on it, and the cycle cutter drops the `min` -- so it is worth saying what it
+/// means. A mod's author is the authority on their own mod, and About.xml is the file the game
+/// itself sorts by, so nothing Circinus infers may outrank it. The databases sit below the author
+/// because they are other people's read of somebody else's mod, and they ship switched off. HALO
+/// is last because everything at that rung is a guess: an order read out of a file the game does
+/// not read, a dependency taken to mean an order, a rule kept in reserve for mods nobody has said
+/// anything about. A guess should be the first thing dropped when a loop has to be cut, and it is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RuleSource {
-    About,
-    Manifest,
-    Community,
-    User,
-    /// Derived by HALO (phase placement, dependency implies loadAfter).
+    /// Worked out by Circinus rather than declared by anybody: a `modDependencies` entry read as
+    /// "load after", an order read out of a Fluffy `Manifest.xml`, the rule that keeps a mod
+    /// nobody has spoken for below the game's own content.
     Halo,
+    /// The downloaded rule databases. Off until switched on.
+    Community,
+    /// The mod's author, in About.xml -- the file RimWorld itself sorts by.
+    About,
+    /// You.
+    User,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -406,6 +420,11 @@ pub enum Issue {
         uid: String,
         /// The official mod it should be below.
         official_uid: String,
+        /// Somebody asked for this: the mod's own About.xml, a database in use, a user rule, or
+        /// the user filing it under Prepatch. Then it is a warning about what the placement may
+        /// cost rather than an error about a list nobody chose -- a mod whose defs inherit
+        /// nothing from the game loads above it perfectly well, and only its author knows.
+        declared: bool,
     },
     /// A declared rule HALO set aside, and why.
     RuleIgnored {
@@ -420,7 +439,14 @@ pub enum Issue {
 impl Issue {
     pub fn severity(&self) -> Severity {
         match self {
-            Issue::MissingDependency { .. } | Issue::Incompatible { .. } | Issue::Cycle { .. } | Issue::Invalid { .. } | Issue::AboveOfficial { .. } => Severity::Error,
+            Issue::AboveOfficial { declared, .. } => {
+                if *declared {
+                    Severity::Warning
+                } else {
+                    Severity::Error
+                }
+            }
+            Issue::MissingDependency { .. } | Issue::Incompatible { .. } | Issue::Cycle { .. } | Issue::Invalid { .. } => Severity::Error,
             Issue::OrderViolation { .. } | Issue::VersionMismatch { .. } | Issue::MisplacedOptimization { .. } | Issue::DuplicatePackageId { .. } | Issue::MissingPackageId { .. } => Severity::Warning,
             Issue::TextureCollision { .. } | Issue::RuleIgnored { .. } => Severity::Note,
         }

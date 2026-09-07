@@ -5,7 +5,7 @@
   import { severityOf } from "$lib/types";
 
   const s = $derived(store.stats);
-  const errorIssue = $derived(store.issues.find((i) => i.kind === "aboveOfficial" || i.kind === "incompatible" || i.kind === "missingDependency" || i.kind === "cycle"));
+  const errorIssue = $derived(store.issues.find((i) => severityOf(i) === "error" && (i.kind === "aboveOfficial" || i.kind === "incompatible" || i.kind === "missingDependency" || i.kind === "cycle")));
   const errorText = $derived.by(() => {
     if (!errorIssue) return "Nothing blocks a launch";
     const n = (uid: string) => store.byUid.get(uid)?.name ?? uid;

@@ -15,20 +15,20 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
-/// The pre-patchers, in the order their own pages ask for, and the order they go in.
+/// The pre-patchers: mods that change the game before anything else loads, and so may sit above
+/// official content.
 ///
-/// Harmony first: it is the patching library every one of the others is built on, and "load
-/// Harmony first" has been the instruction on its page for as long as it has had one. Prepatcher
-/// next, because it rewrites the game's assemblies before anything reads them and asks to sit as
-/// high as it can. Then the mods built on those two.
+/// A set, deliberately, and not a sequence. There used to be an order here -- Harmony, then
+/// Prepatcher, then the rest -- pushed into the graph as hard edges and labelled "the order their
+/// own pages ask for". The pages ask for no such thing. Prepatcher's says, in as many words:
+/// "Prepatcher should go first in the mod list, above Core and expansions. Its placement relative
+/// to Harmony doesn't matter, it can be put below or above it."
 ///
-/// This is a tiebreak, not a claim to know better. An author who declares an order in About.xml
-/// is the authority on their own mod and those rules are already edges by the time this is read;
-/// all this decides is two pre-patchers that say nothing about each other, where the alternative
-/// is whatever order the player's list happened to be in.
-const PREPATCH_ORDER: &[&str] = &["brrainz.harmony", "zetrith.prepatcher", "jikulopo.prepatcher", "bs.fishery", "brrainz.visualexceptions"];
-/// The same mods as a set, for the classifier. One list, so the two cannot drift apart.
-const PREPATCH_IDS: &[&str] = PREPATCH_ORDER;
+/// So there is nothing to encode. Being in this set puts a mod in the Prepatch phase, which
+/// floats it above everything else; among mods in that phase that no rule separates, the order
+/// stays the one the player has. Where an author does declare an order, that is already an edge
+/// by the time this is read, and it wins.
+const PREPATCH_IDS: &[&str] = &["brrainz.harmony", "zetrith.prepatcher", "jikulopo.prepatcher", "bs.fishery", "brrainz.visualexceptions"];
 /// Loading-screen and loader mods that belong above Core and ship no Defs; they do not always
 /// say so in their About.xml.
 const TOP_IDS: &[&str] = &["me.samboycoding.betterloading", "ilyvion.loadingprogress", "taranchuk.fastergameloading", "pirateby.harmony.optimizer", "automatic.startupimpact"];
@@ -276,8 +276,6 @@ struct Edge {
 
 const OFFICIAL_ORDER: &str = "The game and its DLC load in release order";
 const AFTER_OFFICIAL: &str = "Loads after the game and its DLC: a def can only inherit from mods above it";
-const PREPATCH_ORDER_WHY: &str = "The pre-patchers load in the order their own pages ask for";
-const PREPATCH_FIRST: &str = "A pre-patcher changes the game before anything else loads";
 
 fn is_official(m: &ModInfo) -> bool {
     m.source == Source::Ludeon || official_rank(&m.package_id).is_some()
@@ -291,15 +289,23 @@ fn official_rank(id: &str) -> Option<usize> {
 /// Mods allowed above official content.
 ///
 /// RimWorld's `XmlInheritance` resolves a def's `ParentName` only against mods loaded at or
-/// before its own, so anything that ships Defs must sit below Core and every DLC — above them it
-/// loses its parents (`BuildingBase`, `MoteBase`…), its category, and the game falls over in
-/// `NewFrameDef_Thing`. What may sit above: the known pre-patchers, and mods without Defs that the
-/// user filed under Prepatch or that declare (About, community, user) they load before official
-/// content or before another such mod — Harmony, Prepatcher, Fishery, loading-screen mods.
-/// Rule-derived membership needs an inspected folder; before that only the known ids qualify.
+/// before its own, so a mod that ships Defs and sits above Core can lose its parents
+/// (`BuildingBase`, `MoteBase`…) and the game falls over in `NewFrameDef_Thing`. That is the
+/// reason for the rule that keeps mods below the game's own content.
+///
+/// It is a rule for silence. Vanilla's sort has no such rule at all, and its depth-first walk
+/// will hoist a mod above Core on nobody's authority whatever -- that drift is what this exists to
+/// stop. It was never an argument for overruling a person. So anybody who actually says a mod
+/// loads above official content is obeyed: its author in About.xml, a database the user switched
+/// on, the user's own rule, or the user filing it under Prepatch by hand. What that costs is then
+/// reported by `validate` as `AboveOfficial`, which is HALO checking a declaration rather than
+/// discarding it.
+///
+/// Defs still gate the two routes where nobody has spoken -- the known pre-patchers and the known
+/// loaders, which are HALO's own lists and ship no Defs anyway.
 fn top_set(order: &[&ModInfo], ctx: &Context) -> HashSet<String> {
     let mut top: HashSet<&str> = HashSet::new();
-    let mut eligible: HashSet<&str> = HashSet::new();
+    let mut present: HashSet<&str> = HashSet::new();
     let mut official_ids: HashSet<&str> = HashSet::new();
     for m in order {
         if m.package_id.is_empty() {
@@ -309,21 +315,27 @@ fn top_set(order: &[&ModInfo], ctx: &Context) -> HashSet<String> {
             official_ids.insert(m.package_id.as_str());
             continue;
         }
-        if PREPATCH_IDS.contains(&m.package_id.as_str()) {
+        present.insert(m.package_id.as_str());
+        // Filed under Prepatch by hand: the user has said so, and Defs are their business.
+        if ctx.overrides.phases.get(&m.uid) == Some(&Phase::Prepatch) {
             top.insert(m.package_id.as_str());
             continue;
         }
-        if m.contents.defs == 0 && m.kind != ModKind::Unknown {
-            eligible.insert(m.package_id.as_str());
-            if ctx.overrides.phases.get(&m.uid) == Some(&Phase::Prepatch) || TOP_IDS.contains(&m.package_id.as_str()) {
-                top.insert(m.package_id.as_str());
-            }
+        // HALO's own lists, where nobody has said anything. These stay gated on shipping no Defs.
+        if PREPATCH_IDS.contains(&m.package_id.as_str()) || (TOP_IDS.contains(&m.package_id.as_str()) && m.contents.defs == 0 && m.kind != ModKind::Unknown) {
+            top.insert(m.package_id.as_str());
         }
     }
     // "x before t" comes from LoadBefore(x, t) or LoadAfter(t, x).
+    //
+    // Only from somebody who said so. Sitting above the game's own content is the one placement
+    // that can cost a player their list, so HALO's own guesses do not get to authorise it: a
+    // dependency read as an order, or an order read out of a Manifest.xml the game never looks
+    // at, is not a mod author asking to load early.
     let befores: Vec<(&str, &str)> = ctx
         .rules
         .iter()
+        .filter(|r| r.source > RuleSource::Halo)
         .filter_map(|r| match (r.kind, r.target.as_deref()) {
             (RuleKind::LoadBefore, Some(t)) => Some((r.subject.as_str(), t)),
             (RuleKind::LoadAfter, Some(t)) => Some((t, r.subject.as_str())),
@@ -333,7 +345,7 @@ fn top_set(order: &[&ModInfo], ctx: &Context) -> HashSet<String> {
     loop {
         let mut grew = false;
         for (x, t) in &befores {
-            if !top.contains(x) && eligible.contains(x) && (official_ids.contains(t) || top.contains(t)) {
+            if !top.contains(x) && present.contains(x) && (official_ids.contains(t) || top.contains(t)) {
                 top.insert(x);
                 grew = true;
             }
@@ -395,23 +407,9 @@ fn build_graph(order: &[&ModInfo], ctx: &Context) -> (DiGraph<usize, Rule>, Vec<
             cands.push(Edge { from, to, rule: halo(&m.package_id, &order[*o].package_id, AFTER_OFFICIAL) });
         }
     }
-    // The pre-patch head. A pre-patcher changes the game before other mods load — that is what
-    // the word means — so it goes above everything else allowed up there, and the known ones go
-    // in the order their own pages ask for. Two of them that say nothing about each other used to
-    // be left in whatever order the player's list happened to have them in, which for Harmony and
-    // Prepatcher is not a coin worth tossing.
-    let mut heads: Vec<usize> = (0..order.len()).filter(|i| PREPATCH_ORDER.contains(&order[*i].package_id.as_str())).collect();
-    heads.sort_by_key(|i| (PREPATCH_ORDER.iter().position(|p| *p == order[*i].package_id).unwrap_or(usize::MAX), *i));
-    for w in heads.windows(2) {
-        let (a, b) = (order[w[0]], order[w[1]]);
-        cands.push(Edge { from: idx_of[a.uid.as_str()], to: idx_of[b.uid.as_str()], rule: halo(&b.package_id, &a.package_id, PREPATCH_ORDER_WHY) });
-    }
-    for m in order.iter().filter(|m| top.contains(&m.uid) && !PREPATCH_ORDER.contains(&m.package_id.as_str())) {
-        let to = idx_of[m.uid.as_str()];
-        for h in &heads {
-            cands.push(Edge { from: idx_of[order[*h].uid.as_str()], to, rule: halo(&m.package_id, &order[*h].package_id, PREPATCH_FIRST) });
-        }
-    }
+    // No edges for the pre-patch head. Everything allowed above the game is in the Prepatch
+    // phase, which is what floats it; the order among them is the player's unless somebody
+    // declared otherwise, and a declaration is an edge already. See `PREPATCH_IDS`.
 
     // Dependencies imply loadAfter unless an explicit rule says otherwise.
     let explicit: HashSet<(NodeIndex, NodeIndex)> = cands.iter().map(|e| (e.from, e.to)).collect();
@@ -744,18 +742,21 @@ pub fn validate(current: &[String], ctx: &Context) -> Vec<Issue> {
     let officials: Vec<usize> = (0..order.len()).filter(|i| is_official(order[*i])).collect();
     if let Some(&last_official) = officials.last() {
         for (i, m) in order.iter().enumerate().take(last_official) {
-            // A Defs-less mod above Core is unusual but harmless; only Defs break there.
-            if is_official(m) || top.contains(&m.uid) || m.contents.defs == 0 {
+            // A Defs-less mod above Core is unusual but harmless; only Defs break there. Being
+            // allowed up there does not make it silent: `top` now holds mods somebody declared
+            // belong above the game, Defs and all, and saying nothing about those would hide the
+            // one thing worth knowing about the placement.
+            if is_official(m) || m.contents.defs == 0 {
                 continue;
             }
             let below = officials.iter().find(|o| **o > i).map(|o| order[*o].uid.clone()).expect("an official mod follows");
-            issues.push(Issue::AboveOfficial { uid: m.uid.clone(), official_uid: below });
+            issues.push(Issue::AboveOfficial { uid: m.uid.clone(), official_uid: below, declared: top.contains(&m.uid) });
         }
         for w in officials.windows(2) {
             let (a, b) = (order[w[0]], order[w[1]]);
             if let (Some(ra), Some(rb)) = (official_rank(&a.package_id), official_rank(&b.package_id)) {
                 if ra > rb {
-                    issues.push(Issue::AboveOfficial { uid: a.uid.clone(), official_uid: b.uid.clone() });
+                    issues.push(Issue::AboveOfficial { uid: a.uid.clone(), official_uid: b.uid.clone(), declared: false });
                 }
             }
         }
@@ -1009,7 +1010,7 @@ mod tests {
     /// Ancot Library, Dubs Bad Hygiene — above it. Above Core they cannot inherit `BuildingBase`,
     /// and RimWorld fails in `NewFrameDef_Thing`. Frameworks must stay below every official mod.
     #[test]
-    fn nothing_with_defs_sorts_above_official_content() {
+    fn defs_stay_below_the_game_unless_their_author_asks_otherwise() {
         let mut core = m("core", "ludeon.rimworld", "RimWorld", Source::Ludeon);
         core.contents.defs = 3000;
         core.kind = ModKind::Official;
@@ -1040,7 +1041,9 @@ mod tests {
             a.rules.dependencies = vec![Dependency { package_id: "dubwise.dubsbadhygiene".into(), ..Default::default() }];
             addons.push(a);
         }
-        // A mod with Defs whose About.xml wrongly asks to sit above Core.
+        // A mod with Defs whose About.xml asks to sit above Core. It is probably a mistake by
+        // its author -- but it is their mod, and they are the ones who said so, so HALO obeys and
+        // reports what it costs rather than quietly filing them somewhere else.
         let mut wrong = m("wrong", "x.wrong", "Wrong Way Up", Source::Workshop);
         wrong.contents.defs = 12;
         wrong.kind = ModKind::Xml;
@@ -1059,15 +1062,21 @@ mod tests {
         assert!(pos("harmony") < pos("core"), "{:?}", r.order);
         assert!(pos("loader") < pos("core"), "a Defs-less loader may stay above Core: {:?}", r.order);
         assert!(pos("core") < pos("royalty"), "{:?}", r.order);
-        for u in ["ancot", "dbh", "dbh0", "dbh1", "dbh2", "wrong"] {
-            assert!(pos(u) > pos("royalty"), "{u} must load after all official content: {:?}", r.order);
+        // Nobody has said anything about these, so the rule that keeps them below the game holds.
+        for u in ["ancot", "dbh", "dbh0", "dbh1", "dbh2"] {
+            assert!(pos(u) > pos("royalty"), "{u} declares nothing, so it loads after the game: {:?}", r.order);
         }
+        // This one did say something. Its author outranks anything Circinus worked out by itself.
+        assert!(pos("wrong") < pos("core"), "an author who asks to load above Core is obeyed: {:?}", r.order);
         assert!(pos("dbh") < pos("dbh0"));
         let phase = |u: &str| r.placements.iter().find(|p| p.uid == u).unwrap().phase;
         assert_eq!(phase("ancot"), Phase::Framework);
         assert_eq!(phase("loader"), Phase::Prepatch, "declares it loads before Core and ships no Defs");
-        assert!(r.issues.iter().any(|i| matches!(i, Issue::RuleIgnored { uid, .. } if uid == "wrong")), "{:?}", r.issues);
-        assert!(!r.issues.iter().any(|i| matches!(i, Issue::AboveOfficial { .. } | Issue::Cycle { .. })), "{:?}", r.issues);
+        // Obeyed, and then checked: the order HALO proposes carries the error it has produced,
+        // so the player is told what their mod's own About.xml has asked for.
+        assert!(!r.issues.iter().any(|i| matches!(i, Issue::RuleIgnored { uid, .. } if uid == "wrong")), "the author is not overruled any more: {:?}", r.issues);
+        assert!(r.issues.iter().any(|i| matches!(i, Issue::AboveOfficial { uid, .. } if uid == "wrong")), "but it is reported: {:?}", r.issues);
+        assert!(!r.issues.iter().any(|i| matches!(i, Issue::Cycle { .. })), "{:?}", r.issues);
         // The order that crashed is flagged as an error before Play.
         let crashed: Vec<String> = ["harmony", "ancot", "dbh", "loader", "core", "royalty", "dbh0", "dbh1", "dbh2", "wrong"].iter().map(|s| s.to_string()).collect();
         let issues = validate(&crashed, &ctx);
@@ -1076,7 +1085,7 @@ mod tests {
         assert!(issues.iter().any(|i| i.severity() == Severity::Error));
         // A DLC above Core is the same error.
         let dlc_first: Vec<String> = ["harmony", "loader", "royalty", "core", "ancot", "dbh", "dbh0", "dbh1", "dbh2", "wrong"].iter().map(|s| s.to_string()).collect();
-        assert!(validate(&dlc_first, &ctx).iter().any(|i| matches!(i, Issue::AboveOfficial { uid, official_uid } if uid == "royalty" && official_uid == "core")));
+        assert!(validate(&dlc_first, &ctx).iter().any(|i| matches!(i, Issue::AboveOfficial { uid, official_uid, .. } if uid == "royalty" && official_uid == "core")));
     }
 
     /// A big content mod with a `loadBottom` rule and sixty add-ons: the add-ons follow it into
@@ -1324,11 +1333,12 @@ mod tests {
     }
 
     #[test]
-    fn the_prepatchers_go_in_the_order_their_own_pages_ask_for() {
-        // Harmony, Prepatcher and Fishery say nothing about one another in this fixture, which is
-        // close enough to the real thing: Prepatcher's page asks to sit high, right under Harmony,
-        // and until now two pre-patchers with nothing to separate them were left in whatever order
-        // the player's list happened to have. That is not a coin worth tossing.
+    fn the_prepatchers_stay_where_the_player_put_them() {
+        // Harmony, Prepatcher and Fishery say nothing about one another here, which is the real
+        // situation: Prepatcher's page says its placement relative to Harmony does not matter and
+        // it can go either side. HALO used to assert an order anyway, as a hard edge at the top of
+        // the graph, labelled as what their pages asked for. Nobody asked for it, so it is gone --
+        // all four still float above the game, and among themselves the list is the player's.
         let mut mods = fixture();
         let mut prep = m("prep", "zetrith.prepatcher", "Prepatcher", Source::Workshop);
         prep.contents.assemblies = 1;
@@ -1350,16 +1360,32 @@ mod tests {
         let r = sort(&current, &ctx);
         let at = |u: &str| r.order.iter().position(|x| x == u).unwrap_or_else(|| panic!("{u} is missing"));
 
-        assert!(at("harmony") < at("prep"), "Harmony first: everything here is built on it — {:?}", r.order);
-        assert!(at("prep") < at("fish"), "Fishery is built on Prepatcher — {:?}", r.order);
-        assert!(at("fish") < at("loading"), "a loading screen is not a pre-patcher and waits its turn — {:?}", r.order);
-        assert!(at("loading") < at("core"), "but it is still allowed above the game — {:?}", r.order);
+        for u in ["loading", "fish", "prep", "harmony"] {
+            assert!(at(u) < at("core"), "{u} is allowed above the game — {:?}", r.order);
+        }
+        assert_eq!(
+            r.order.iter().filter(|u| ["loading", "fish", "prep", "harmony"].contains(&u.as_str())).collect::<Vec<_>>(),
+            vec!["loading", "fish", "prep", "harmony"],
+            "nothing separates them, so the player's own order is what comes back — {:?}",
+            r.order
+        );
         assert!(at("core") < at("hugs"), "and the game and its DLC come before anything with Defs — {:?}", r.order);
         assert!(r.issues.iter().all(|i| !matches!(i, Issue::Cycle { .. })), "no loop was invented to do it: {:?}", r.issues);
 
         // Sorting a list that is already right leaves it alone.
         let again = sort(&r.order, &ctx);
         assert_eq!(again.order, r.order, "the order it proposes is stable");
+
+        // An author who does declare an order is still obeyed, which is the whole point of not
+        // asserting one here: there is room for the real answer when somebody gives it.
+        let mut declared = mods.clone();
+        let f = declared.iter_mut().find(|m| m.package_id == "bs.fishery").expect("Fishery");
+        f.rules.load_after = vec!["zetrith.prepatcher".into()];
+        let rules2 = compile_rules(&declared, &db);
+        let ctx2 = Context { mods: &declared, files: &files, rules: &rules2, db: &db, major_minor: "1.6", overrides: &ov };
+        let r2 = sort(&current, &ctx2);
+        let at2 = |u: &str| r2.order.iter().position(|x| x == u).unwrap();
+        assert!(at2("prep") < at2("fish"), "Fishery says it loads after Prepatcher — {:?}", r2.order);
     }
 
     #[test]

@@ -498,7 +498,7 @@ pub fn manifest_rules(mods: &[ModInfo]) -> Vec<Rule> {
             for r in reqs {
                 if let Some(t) = resolve(r) {
                     if t != m.package_id {
-                        out.push(Rule { kind, subject: m.package_id.clone(), target: Some(t), source: RuleSource::Manifest, comment: Some("Manifest.xml".into()) });
+                        out.push(Rule { kind, subject: m.package_id.clone(), target: Some(t), source: RuleSource::Halo, comment: Some("Read from the mod's Manifest.xml".into()) });
                     }
                 }
             }

@@ -71,7 +71,7 @@
     const ok = mi == null || oi == null ? true : after ? mi > oi : mi < oi;
     return { type: after ? "after" : "before", name, ok };
   }
-  const srcLabel: Record<string, string> = { about: "About", manifest: "Manifest", community: "Community", user: "Mine", halo: "HALO" };
+  const srcLabel: Record<string, string> = { about: "About", community: "Community", user: "Mine", halo: "HALO" };
   function workshopUrl() {
     return m?.publishedFileId ? `https://steamcommunity.com/sharedfiles/filedetails/?id=${m.publishedFileId}` : m?.url;
   }

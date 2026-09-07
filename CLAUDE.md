@@ -58,21 +58,39 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
 - HALO — Harmonized Automated Load Order. Eight phases in load order: Prepatch (shown as
   "Preloads"), Core ("Game and DLC"), Framework ("Libraries"), Content, Patch ("Patches"),
   Texture ("Texture packs"), Late ("Late loaders"), Optimization ("Performance"). Rules are hard
-  DAG edges, phases are soft, the official-content invariant holds (anything with Defs loads
-  after Core and the DLC), and a real cycle is explained and cut rather than fatal. Beside that
-  invariant sits the pre-patch head: `PREPATCH_ORDER` is one list, in the order those mods' own
-  pages ask for (Harmony, then Prepatcher, then what is built on them), and everything else
-  allowed above the game loads after all of them. It is a tiebreak only — an author who declares
-  an order in About.xml is the authority on their own mod and those edges are already there — but
-  two pre-patchers that say nothing about each other used to be left in whatever order the
-  player's list happened to have, and for Harmony and Prepatcher that is not a coin worth tossing. The HALO page
-  lets a user switch built-in rules off or send them to another phase. *What changes* compares the
-  order you have with the one HALO proposes as a diff rather than as two lists: the longest run of
-  mods that keep their relative order is the backbone, and only the mods lifted out of it are
+  DAG edges, phases are soft, and a real cycle is explained and cut rather than fatal. The HALO
+  page lets a user switch built-in rules off or send them to another phase. *What changes* compares
+  the order you have with the one HALO proposes as a diff rather than as two lists: the longest run
+  of mods that keep their relative order is the backbone, and only the mods lifted out of it are
   moves. The rest is drift, and saying so is the point. Those moves are then shown as what leaves
   each phase beside what arrives in each, with one weighted arrow per journey — chosen from five
   mockups, because a row-by-row comparison of a thousand-mod list is unreadable however it is
   drawn (`src/lib/moves.ts`, `MovesView.svelte`).
+- **Precedence: you > the author > the databases > HALO.** `RuleSource`'s declared order *is* the
+  precedence system — `Ord` is derived from it, the contradiction resolver compares on it, and the
+  cycle cutter drops the `min`. About.xml is the file the game itself sorts by and its author is
+  the authority on their own mod, so nothing Circinus infers may outrank it. The databases sit
+  below the author because they are other people's read of somebody else's mod and they ship off.
+  HALO is last because everything at that rung is a guess. It used to be first, which is how a
+  guess came to beat a declaration and how an author's own rule became the first thing cut out of
+  a loop.
+- Fluffy's `About/Manifest.xml` is not a tier. The game never reads it, its identifiers are
+  free-form strings resolved through a lowercased folder-name lookup, and its load-order fields
+  were bolted onto a version-check file. HALO reads it when a mod ships one and files what it
+  finds at the HALO rung, where a fuzzy match can only ever produce the weakest edge in the graph.
+- The official-content rule is a rule for silence. Anything that ships Defs loads after Core and
+  the DLC *when nobody has said otherwise* — that is the drift vanilla's depth-first sort causes
+  on its own, and the reason the rule exists. It was never an argument for overruling a person, so
+  an author, a database in use, a user rule or the user filing a mod under Prepatch all put it
+  above the game, Defs and all. `validate` then reports `AboveOfficial` with `declared: true`, a
+  warning about what the placement may cost rather than an error about a list nobody chose: a mod
+  whose defs inherit nothing from the game loads up there perfectly well, and only its author
+  knows. Undeclared, it stays an error.
+- `PREPATCH_IDS` is a set, not a sequence. There used to be an order in it, pushed in as hard
+  edges labelled "the order their own pages ask for". Prepatcher's page says the opposite in as
+  many words: "Its placement relative to Harmony doesn't matter, it can be put below or above it."
+  Being in the set puts a mod in the Prepatch phase, which is what floats it; among mods no rule
+  separates the order stays the player's.
 - New mods: `arrivals` records when Circinus first saw each folder, durably and per instance,
   because `changes` retakes its baseline on every scan and a mark on a row has to outlive the
   rescan the eight second folder poll runs a moment later. The first record stamps everything 0

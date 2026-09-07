@@ -255,7 +255,7 @@ function issues(order: string[]): Issue[] {
   for (const [i, u] of order.entries()) {
     const m = byUid.get(u);
     if (!m || i >= lastOfficial || m.source === "ludeon" || phaseOfSeed[u] === "prepatch" || m.contents.defs === 0) continue;
-    out.push({ kind: "aboveOfficial", uid: u, officialUid: nextOfficial[i]! });
+    out.push({ kind: "aboveOfficial", uid: u, officialUid: nextOfficial[i]!, declared: false });
   }
   if (has("voult.betterpawncontrol") && has("oskarpotocki.vanillafactionsexpanded.core") && idx("voult.betterpawncontrol") < idx("oskarpotocki.vanillafactionsexpanded.core"))
     out.push({ kind: "orderViolation", uid: uidOf("voult.betterpawncontrol"), targetUid: uidOf("oskarpotocki.vanillafactionsexpanded.core"), rule: "loadAfter", source: "community", comment: "BPC patches VEF work tabs" });

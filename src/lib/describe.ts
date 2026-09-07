@@ -37,7 +37,7 @@ export function describe(i: Issue, byUid: Map<string, ModInfo>, viewer?: string)
       }
       const who = viewer && viewer === i.targetUid ? n(i.uid) : n(i.targetUid);
       const verb = viewer && viewer === i.targetUid ? (i.rule === "loadAfter" ? "should load before" : "should load after") : i.rule === "loadAfter" ? "should load after" : "should load before";
-      const src = i.source === "community" ? "Community rule" : i.source === "user" ? "Your rule" : i.source === "manifest" ? "Manifest.xml" : "About.xml";
+      const src = i.source === "community" ? "Community rule" : i.source === "user" ? "Your rule" : i.source === "halo" ? "Worked out by HALO" : "About.xml";
       return `${src}: ${viewer && viewer === i.targetUid ? who : "this mod"} ${verb} ${viewer && viewer === i.targetUid ? "this mod" : who}.${i.comment ? ` (${i.comment})` : ""}`;
     }
     case "versionMismatch":
@@ -46,7 +46,7 @@ export function describe(i: Issue, byUid: Map<string, ModInfo>, viewer?: string)
       // Every step, and where it came from. A loop is only actionable if you can see which rule
       // to change, and the rule to change is almost never in the mod you are looking at: it is
       // usually one line in a community database or one line in somebody's About.xml.
-      const where = (r: Rule) => (r.source === "community" ? "community database" : r.source === "user" ? "your rule" : r.source === "manifest" ? "Manifest.xml" : r.source === "halo" ? "worked out by HALO" : "the mod's About.xml");
+      const where = (r: Rule) => (r.source === "community" ? "community database" : r.source === "user" ? "your rule" : r.source === "halo" ? "worked out by HALO" : "the mod's About.xml");
       const steps = i.rules.map((r, k) => `  ${n(i.uids[k])} before ${n(i.uids[(k + 1) % i.uids.length])} — ${where(r)}${r.comment ? `, ${r.comment}` : ""}`);
       const cut = i.cut
         ? `Sorting cannot obey all of them, so one was set aside: ${n(i.cut.subject === (i.uids[0] ?? "") ? i.uids[0] : i.cut.subject)} ${i.cut.kind === "loadBefore" ? "before" : "after"} ${i.cut.target ?? "?"}, from the ${where(i.cut)}. Everything else on the loop was obeyed.`
@@ -67,9 +67,11 @@ export function describe(i: Issue, byUid: Map<string, ModInfo>, viewer?: string)
     case "invalid":
       return i.reason;
     case "aboveOfficial":
-      return `Sits above ${n(i.officialUid)}. A def can only inherit from mods loaded before it, so this mod would lose its parents and the game would fail to load. Move it below the game and all DLC.`;
+      return i.declared
+        ? `Sits above ${n(i.officialUid)}, which is where it asks to be. A def can only inherit from mods loaded before it, so any of its defs that inherit from the game will not find their parents. If the game resets your list, this is the first thing to check.`
+        : `Sits above ${n(i.officialUid)}. A def can only inherit from mods loaded before it, so this mod would lose its parents and the game would fail to load. Move it below the game and all DLC.`;
     case "ruleIgnored": {
-      const src = i.source === "community" ? "community rule" : i.source === "user" ? "your rule" : i.source === "manifest" ? "Manifest.xml rule" : "About.xml rule";
+      const src = i.source === "community" ? "community rule" : i.source === "user" ? "your rule" : i.source === "halo" ? "rule HALO worked out" : "About.xml rule";
       return `HALO set aside the ${src} "${i.rule === "loadBefore" ? "load before" : "load after"} ${n(i.targetUid)}" because ${i.reason}.`;
     }
     default:
@@ -80,7 +82,9 @@ export function describe(i: Issue, byUid: Map<string, ModInfo>, viewer?: string)
 /** One line for the attention banner: the most pressing issue in the list. */
 export function headline(issues: Issue[], byUid: Map<string, ModInfo>): { title: string; detail: string; kind: "error" | "warning" | "note" } | null {
   const n = (uid: string) => byUid.get(uid)?.name ?? uid;
-  const above = issues.filter((i) => i.kind === "aboveOfficial");
+  // Only the ones nobody asked for lead the banner. A mod placed above the game by its own
+  // author is worth a warning on its row, not the loudest sentence in the window.
+  const above = issues.filter((i) => i.kind === "aboveOfficial" && !i.declared);
   if (above.length) {
     const first = above[0] as Extract<Issue, { kind: "aboveOfficial" }>;
     const names = above.map((i) => n(i.kind === "aboveOfficial" ? i.uid : "")).slice(0, 3).join(", ");
