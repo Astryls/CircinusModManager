@@ -16,8 +16,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-/// The sidecar's JSON. Every field defaults, so a newer Circinus reads an older sidecar's output
-/// and the other way round.
+/// A whole reading as JSON. Nothing in the app produces this any more — `clr` hands back
+/// `AssemblyPatches` directly — but `tests/clr_reader.rs` parses the C# oracle's output through
+/// it, so the shape is the record of what the two readers have to agree on. Every field
+/// defaults, so an oracle file written before a field existed still parses.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ScanOutput {
@@ -321,14 +323,14 @@ mod tests {
     }
 
     #[test]
-    fn reads_the_sidecars_json() {
+    fn reads_the_oracles_json() {
         let out = parsed();
         assert_eq!(out.version, 1);
         assert_eq!(out.assemblies.len(), 3);
         assert_eq!(out.assemblies[0].harmony_ids, ["fixture.one"]);
         assert_eq!(out.assemblies[0].patches[0].priority, Some(600));
         assert_eq!(out.assemblies[2].error.as_deref(), Some("the file is not a managed assembly"));
-        // an older sidecar that leaves fields out still parses
+        // an older oracle file that leaves fields out still parses
         let thin: ScanOutput = serde_json::from_str(r#"{"assemblies":[{"path":"x.dll"}]}"#).unwrap();
         assert_eq!(thin.assemblies[0].path, "x.dll");
         assert!(thin.assemblies[0].patches.is_empty());

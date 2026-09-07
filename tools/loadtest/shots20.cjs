@@ -1,5 +1,4 @@
-// The Patches view: every section renders, the tables line up, and the missing-scanner page
-// explains itself instead of throwing.
+// The Patches view: every section renders and the tables line up.
 // node tools/loadtest/shots20.cjs <outdir>
 const { chromium } = require('playwright');
 const PORT = process.env.PORT || 4175;
@@ -117,16 +116,6 @@ const PORT = process.env.PORT || 4175;
   await p.waitForTimeout(300);
   await p.screenshot({ path: `${out}/m20-inspector.png`, clip: { x: 1345, y: 60, width: 355, height: 930 } });
   await p.close();
-
-  // a machine with no scanner: an explanation and a command, no error dump
-  const n = await open(1500, 950, '?noscanner');
-  await gotoPatches(n);
-  console.log('no scanner heading:', await n.evaluate(() => document.querySelector('main.center .card h3')?.textContent.trim()));
-  console.log('no scanner says it does not run mods:', await n.evaluate(() => /never loads or runs/.test(document.querySelector('.missing').textContent)));
-  console.log('no scanner command:', await n.evaluate(() => document.querySelector('.missing .cmd')?.textContent.trim()));
-  console.log('no scanner sections:', await n.evaluate(() => document.querySelectorAll('main.center > .card').length), '(1 = nothing else is shown)');
-  await n.screenshot({ path: `${out}/m20-noscanner.png`, clip: { x: 250, y: 60, width: 1230, height: 400 } });
-  await n.close();
 
   // narrow windows still line up
   for (const w of [1440, 1180]) {

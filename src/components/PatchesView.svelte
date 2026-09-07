@@ -76,14 +76,14 @@
       <section class="card tile">
         <div class="k">Patches in all</div>
         <div class="v num">{(report?.perMod ?? []).reduce((n, m) => n + m.patches, 0).toLocaleString()}</div>
-        <div class="sub">{(report?.perMod ?? []).reduce((n, m) => n + m.manual, 0).toLocaleString()} more the scanner cannot follow</div>
+        <div class="sub">{(report?.perMod ?? []).reduce((n, m) => n + m.manual, 0).toLocaleString()} more Circinus cannot follow</div>
       </section>
     </div>
 
     <section class="card run">
       <h3>What your mods patch <span class="aside">{job?.running ? job.phase : job?.summary ? `read in ${job.summary.seconds}s` : "not read yet"}</span></h3>
       <p class="lead">
-        Circinus reads every active mod's assemblies with <span class="mono">harmony-scan</span> and reports the game methods they attach to. Nothing is loaded or run: the tool reads the metadata and instructions of a file the way a disassembler does. Results are kept until a mod changes, so a second run is quick.
+        Circinus reads every active mod's assemblies itself and reports the game methods they attach to. Nothing is loaded or run: it reads the metadata and instructions of a file the way a disassembler does, so a mod's code never executes. Results are kept until a mod changes, so a second run is quick.
       </p>
       {#if job?.running}
         <div class="prog">

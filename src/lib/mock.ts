@@ -1404,12 +1404,6 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
     case "defs_def":
       if (!defsState.report) throw new Error("Nothing has been merged yet. Run it first, then ask.");
       return defTree(String(A.defType), String(A.defName)) as T;
-    case "patches_scanner": {
-      // A missing scanner is worth seeing too: ?noscanner shows what the view says without it.
-      const tried = ["D:\\CircinusModManager\\target\\debug\\harmony-scan.exe", "D:\\CircinusModManager\\target\\debug\\harmony-scan\\harmony-scan.exe", "C:\\Users\\Player\\AppData\\Local\\Circinus\\harmony-scan.exe", "C:\\Windows\\system32\\harmony-scan.exe", "C:\\Windows\\harmony-scan.exe", "C:\\Program Files\\dotnet\\harmony-scan.exe", "C:\\Users\\Player\\.cargo\\bin\\harmony-scan.exe", "C:\\Program Files\\nodejs\\harmony-scan.exe"];
-      const missing = typeof location !== "undefined" && location.search.includes("noscanner");
-      return { path: missing ? null : tried[2], tried } as T;
-    }
     case "patches_status":
       return structuredClone(patchJob) as T;
     case "patches_stop":
