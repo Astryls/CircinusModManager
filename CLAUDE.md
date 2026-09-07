@@ -114,6 +114,16 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   is Unity's and preferring it by name is what hid Core. Both candidates are tried and the one
   with Core in it wins. None of this is behind `cfg!(target_os = "macos")` on purpose: a rule
   that only runs where the tests cannot is a rule nobody checks.
+- `dds`: a texture is flipped vertically before it is encoded (`Options::vflip`). A DDS stores
+  its first row at the top, Unity takes the first row it is handed as the *bottom* one, so a file
+  written the natural way is upside down in the game — which is what `-vf` is doing in the todds
+  recipe the community uses. `validate` cannot catch this: it compares the decoded file against
+  the very image the encoder fed to the block encoder, so it is blind to which way up that was,
+  and it passed every inverted file the first version wrote. The test
+  `a_texture_is_stored_bottom_row_first` is what holds the convention. One path asks for no flip:
+  rebuilding a broken DDS that has no PNG beside it starts from pixels decoded out of a DDS, which
+  are already the way round the game wants. `PARAMS_VERSION` is how a fix reaches files already on
+  disk — `job::plan` re-converts anything the manifest says was encoded by an older set of rules.
 - `defs`: builds the document the game builds — every active mod's Defs merged in load order,
   every PatchOperation applied in load order, then Name/ParentName inheritance — with the origin
   of every node recorded, so "who wins this value" has an answer. `defs::xpath` is XPath 1.0 as

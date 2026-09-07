@@ -16,7 +16,13 @@ use intel_tex_2::{bc1, bc3, bc7, RgbaSurface};
 use serde::{Deserialize, Serialize};
 
 /// Bump when the pipeline's output changes in a way that warrants re-converting.
-pub const PARAMS_VERSION: u32 = 1;
+/// Bumped whenever a change here makes an already-converted file wrong. `job::plan` compares it
+/// with what the manifest recorded and re-converts anything encoded by an older set of rules,
+/// which is the only way a fix reaches the files a player already has on disk.
+///
+/// 2: textures are flipped vertically before encoding. Everything written by version 1 is
+///    upside down in the game and has to be done again.
+pub const PARAMS_VERSION: u32 = 2;
 /// Textures larger than this on either side are left alone (Unity's own limit is 16384).
 pub const MAX_DIMENSION: u32 = 8192;
 
@@ -72,11 +78,22 @@ pub struct Options {
     pub mipmaps: bool,
     /// Bleed colour into fully transparent texels before filtering and encoding.
     pub dilate: bool,
+    /// Flip the source vertically before encoding.
+    ///
+    /// On for anything that starts life as a PNG, which is every conversion a player runs. A DDS
+    /// stores its first row at the top; Unity hands the data it reads straight to `Texture2D`,
+    /// which takes the first row as the *bottom* one, so a file written the natural way arrives
+    /// in the game upside down. Every DDS RimWorld loads correctly is stored bottom-up, which is
+    /// why the encoder the community uses spells this `-vf` and why its RimWorld recipe has it.
+    ///
+    /// Off in one place: rebuilding a broken DDS that has no PNG beside it, where the pixels come
+    /// from decoding the DDS itself and are already the way round the game wants them.
+    pub vflip: bool,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { alpha_format: Format::Bc7, quality: Quality::Balanced, mipmaps: true, dilate: true }
+        Options { alpha_format: Format::Bc7, quality: Quality::Balanced, mipmaps: true, dilate: true, vflip: true }
     }
 }
 
@@ -306,6 +323,11 @@ pub fn encode_rgba(mut img: RgbaImage, opts: &Options) -> Result<Encoded> {
     if sw == 0 || sh == 0 {
         return Err(Error::Other("empty image".into()));
     }
+    // Before anything else, so every level and every dilation below works on the rows in the
+    // order they will be stored. See `Options::vflip` for why they go the other way up.
+    if opts.vflip {
+        image::imageops::flip_vertical_in_place(&mut img);
+    }
     if sw > MAX_DIMENSION || sh > MAX_DIMENSION {
         return Err(Error::Other(format!("{sw}×{sh} is larger than {MAX_DIMENSION} on a side; left as PNG")));
     }
@@ -393,6 +415,31 @@ mod tests {
         let corner = e.top.get_pixel(0, 0);
         assert_eq!(corner[3], 0);
         assert!(corner[0] > 0 || corner[1] > 0);
+    }
+
+    /// The one thing `validate` cannot check.
+    ///
+    /// `check` compares the decoded file against `Encoded::top`, which is whatever the encoder
+    /// fed to the block encoder -- so it is blind to which way up that was, and stayed happy for
+    /// every upside-down file version 1 wrote. This asserts the convention directly: the row
+    /// stored first is the row that was at the bottom of the PNG.
+    #[test]
+    fn a_texture_is_stored_bottom_row_first() {
+        // Red along the top, blue along the bottom: two colours BC1 keeps far apart.
+        let src = RgbaImage::from_fn(16, 16, |_, y| if y < 8 { Rgba([230, 20, 20, 255]) } else { Rgba([20, 20, 230, 255]) });
+        let e = encode_rgba(src.clone(), &Options::default()).unwrap();
+        let info = crate::dds::validate::parse(&e.bytes).unwrap();
+        let out = crate::dds::validate::decode_top(&e.bytes, &info);
+        let reddest = |p: &Rgba<u8>| p[0] > p[2];
+        assert!(!reddest(out.get_pixel(0, 0)), "the first stored row is the PNG's last one, which is blue: {:?}", out.get_pixel(0, 0));
+        assert!(reddest(out.get_pixel(0, 15)), "and the last stored row is the PNG's first: {:?}", out.get_pixel(0, 15));
+
+        // Rebuilding a DDS that has no PNG beside it starts from pixels that are already stored
+        // the right way up, so that path asks for no flip and must get none.
+        let kept = encode_rgba(src, &Options { vflip: false, ..Options::default() }).unwrap();
+        let info2 = crate::dds::validate::parse(&kept.bytes).unwrap();
+        let out2 = crate::dds::validate::decode_top(&kept.bytes, &info2);
+        assert!(reddest(out2.get_pixel(0, 0)), "without the flip the rows stay as they came in: {:?}", out2.get_pixel(0, 0));
     }
 
     #[test]

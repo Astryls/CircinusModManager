@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let shallow = app.scan_quick(false, &|_, _| {})?;
     app.apply_inspections(circinus_core::scan::inspect_mods(&shallow, &|_, _| {}))?;
     let mods: Vec<(String, String, PathBuf)> = app.mods.iter().filter(|m| names.is_empty() || names.iter().any(|n| m.path.file_name().map(|f| f == *n).unwrap_or(false))).map(|m| (m.uid.clone(), m.name.clone(), m.path.clone())).collect();
-    let opts = Options { alpha_format: app.settings.dds.alpha_format, quality: app.settings.dds.quality, mipmaps: app.settings.dds.mipmaps, dilate: true };
+    let opts = Options { alpha_format: app.settings.dds.alpha_format, quality: app.settings.dds.quality, mipmaps: app.settings.dds.mipmaps, ..Options::default() };
     match verb {
         "convert" => {
             let t = std::time::Instant::now();

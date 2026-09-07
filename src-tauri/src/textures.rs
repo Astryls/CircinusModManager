@@ -84,7 +84,7 @@ impl Textures {
     fn options(&self) -> (Options, usize, bool) {
         let app = self.app.lock().unwrap();
         let d = &app.settings.dds;
-        (Options { alpha_format: d.alpha_format, quality: d.quality, mipmaps: d.mipmaps, dilate: true }, d.threads, d.auto)
+        (Options { alpha_format: d.alpha_format, quality: d.quality, mipmaps: d.mipmaps, ..Options::default() }, d.threads, d.auto)
     }
 
     fn begin(&self, phase: &str) -> Result<(), String> {

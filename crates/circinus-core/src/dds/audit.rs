@@ -230,7 +230,10 @@ pub fn fix_one(mod_root: &Path, f: &Finding, opts: &Options, now: i64) -> Result
         }
         (validate::decode_top(&original, &info), f.rel.clone(), original.len() as u64, 0, hash(&original))
     };
-    let encoded = encode::encode_rgba(img, opts)?;
+    // Rebuilt from the DDS itself, its rows are already the way round the game wants them, so
+    // this is the one path that must not flip them again.
+    let opts = if png.is_file() { opts.clone() } else { Options { vflip: false, ..opts.clone() } };
+    let encoded = encode::encode_rgba(img, &opts)?;
     validate::check(&encoded).map_err(Error::Other)?;
     let backup = backup_path(&dds);
     if !backup.exists() {
