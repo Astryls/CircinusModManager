@@ -34,6 +34,17 @@ class Store {
   toast = $state<{ msg: string; kind: "ok" | "warn" | "err" } | null>(null);
 
   view = $state<View>("order");
+  /** Where each scrolling view was left.
+   *
+   *  `App.svelte` chooses a view with `{#if}`, so switching away destroys the component and
+   *  everything local to it, and coming back mounts a fresh one at the top. Halfway down a
+   *  thousand-mod list that is the whole position gone for looking at one group. The key is a
+   *  scope ("order:main", "defs"), the value is enough to put the same row back under the same
+   *  pixel.
+   *
+   *  Deliberately not `$state`: it is written on every scroll event and read once on mount, so
+   *  reactivity would buy nothing and cost a re-run of every reader per wheel tick. */
+  readonly scrollMemory = new Map<string, { anchor: string | null; delta: number; top: number }>();
   tab = $state<Tab>("active");
   query = $state("");
   group = $state<string | null>(null);

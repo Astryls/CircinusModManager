@@ -200,8 +200,42 @@
     return [`${ma}.${mi - 1}`, cur];
   });
 
+  // ---- keeping the place ----
+  /** Which list this is. Side by side there are two, and they scroll independently. */
+  const scope = $derived(`order:${pane ?? "main"}`);
+
+  /** Remember the row under the top of the viewport, not the pixel.
+   *
+   *  A pixel is only right if the list is identical when you come back, and it often is not --
+   *  a filter changed, a mod was activated, HALO moved things. The first row still on screen is
+   *  the thing the user was actually looking at, so that is what is put back, at the same
+   *  distance from the top. `top` is the fallback for when that row has gone. */
+  function remember() {
+    if (!scroller) return;
+    const y = scroller.scrollTop;
+    let i = Math.max(0, range.start);
+    while (i < items.length && (items[i].kind !== "row" || offsets[i] + TOP < y)) i++;
+    const hit = i < items.length && items[i].kind === "row" ? items[i] : null;
+    store.scrollMemory.set(scope, { anchor: hit ? hit.key : null, delta: hit ? offsets[i] + TOP - y : 0, top: y });
+  }
+
+  /** Put it back, once, as soon as there are rows to measure against. */
+  let restored = false;
+  $effect(() => {
+    if (restored || !scroller || !items.length) return;
+    restored = true;
+    const m = store.scrollMemory.get(scope);
+    if (!m) return;
+    const i = m.anchor ? items.findIndex((it) => it.kind === "row" && it.key === m.anchor) : -1;
+    // The anchor is gone (deactivated, filtered out): the raw offset is the best guess left, and
+    // the browser clamps it to the new length rather than scrolling into nothing.
+    scroller.scrollTop = Math.max(0, i >= 0 ? offsets[i] + TOP - m.delta : m.top);
+    scrollTop = scroller.scrollTop;
+  });
+
   function onScroll() {
     if (scroller) scrollTop = scroller.scrollTop;
+    remember();
   }
   function scrollToUid(uid: string, focus = false) {
     const i = items.findIndex((it) => it.kind === "row" && it.key === uid);

@@ -7,6 +7,20 @@
   const report = $derived(store.patchReport);
   store.refreshPatches();
 
+
+  // ---- keeping the place ----
+  // Switching views destroys this component, so the position has to live somewhere that
+  // outlives it. A report does not change while you are away from it, so the pixel is enough
+  // here; the mod list needs an anchor because its content can move underneath you.
+  let centre = $state<HTMLElement | null>(null);
+  let restored = false;
+  $effect(() => {
+    if (restored || !centre) return;
+    restored = true;
+    const y = store.scrollMemory.get("patches");
+    if (y) centre.scrollTop = y.top;
+  });
+
   const contested = $derived((report?.targets ?? []).filter((t) => t.contested));
   const rest = $derived((report?.targets ?? []).filter((t) => !t.contested));
   const manualMods = $derived((report?.perMod ?? []).filter((m) => m.manual > 0));
@@ -56,7 +70,7 @@
   const fighters = (t: TargetGroup) => [...t.patchers].sort((a, b) => Number(b.kind === "prefix" || b.kind === "transpiler") - Number(a.kind === "prefix" || a.kind === "transpiler") || (b.priority ?? 400) - (a.priority ?? 400));
 </script>
 
-<main class="center">
+<main class="center" bind:this={centre} onscroll={() => centre && store.scrollMemory.set("patches", { anchor: null, delta: 0, top: centre.scrollTop })}>
     <div class="tiles">
       <section class="card tile">
         <div class="k">Contested methods</div>

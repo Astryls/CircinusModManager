@@ -132,6 +132,16 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   rebuilding a broken DDS that has no PNG beside it starts from pixels decoded out of a DDS, which
   are already the way round the game wants. `PARAMS_VERSION` is how a fix reaches files already on
   disk — `job::plan` re-converts anything the manifest says was encoded by an older set of rules.
+- Keeping your place. `App.svelte` picks a view with `{#if}`, so leaving one destroys the
+  component and everything local to it; coming back mounts a fresh one at the top. Halfway down a
+  thousand-mod list that is the whole position gone for looking at one group, and it did the same
+  in the Defs and Patches reports. `store.scrollMemory` outlives the component: keyed by scope
+  ("order:main", "order:inactive", "defs", "patches"), and deliberately not `$state`, since it is
+  written on every scroll event and read once on mount. The list remembers the *row* under the top
+  of the window rather than the pixel — a pixel is only right if the list is identical when you
+  come back, and a filter or an activation makes it not — and falls back to the raw offset when
+  that row has gone. `tools/loadtest/scroll.cjs` scrolls, leaves, returns and asserts the same row
+  is at the same height.
 - `defs`: builds the document the game builds — every active mod's Defs merged in load order,
   every PatchOperation applied in load order, then Name/ParentName inheritance — with the origin
   of every node recorded, so "who wins this value" has an answer. `defs::xpath` is XPath 1.0 as

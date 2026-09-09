@@ -8,6 +8,20 @@
   const origins = $derived(store.defsOrigins);
   store.refreshDefs();
 
+
+  // ---- keeping the place ----
+  // Switching views destroys this component, so the position has to live somewhere that
+  // outlives it. A report does not change while you are away from it, so the pixel is enough
+  // here; the mod list needs an anchor because its content can move underneath you.
+  let centre = $state<HTMLElement | null>(null);
+  let restored = false;
+  $effect(() => {
+    if (restored || !centre) return;
+    restored = true;
+    const y = store.scrollMemory.get("defs");
+    if (y) centre.scrollTop = y.top;
+  });
+
   const modOf = (o: number) => origins[o]?.name ?? "an unknown mod";
   const whereOf = (o: number) => (origins[o] ? `${origins[o].name}${origins[o].file ? ` · ${origins[o].file}` : ""}` : "");
   const pct = $derived(d && d.total ? Math.round((d.done / d.total) * 100) : 0);
@@ -98,7 +112,7 @@
   const query = $derived(store.defsQuery);
 </script>
 
-<main class="center">
+<main class="center" bind:this={centre} onscroll={() => centre && store.scrollMemory.set("defs", { anchor: null, delta: 0, top: centre.scrollTop })}>
   <section class="card run">
     <h3>The merged defs <span class="aside">{d?.running ? phaseLabel(d.phase) : r ? `${r.defs.toLocaleString()} defs` : `${store.active.length} active mods`}</span></h3>
     <p class="lead">Circinus builds the document the game builds: every active mod's <span class="mono">Defs</span> merged in load order, every <span class="mono">PatchOperation</span> run in load order, then inheritance resolved. Every value then has an owner, so "which mod wins this" has an answer.</p>
