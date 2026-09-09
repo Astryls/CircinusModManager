@@ -90,9 +90,23 @@ function mod(s: Seed): ModInfo {
       load.scoreMs = Math.round((load.defBytes / 1024) * 0.25 + (load.patchOps - load.heavyOps) * 0.6 + load.heavyOps * 20 + load.pngPixels * 8e-6 + (cs ? 2 * 15 + (load.dllBytes / 1048576) * 60 : 0));
       return { assemblies: cs ? 2 : 0, patches: xml ? 3 : 0, defs, textures, dds: 0, sounds: 0, languages: 1, bundlesHarmony: false, sizeBytes: size, load };
     })(),
-    modified: 1_756_000_000,
+    // Spread over the last couple of years rather than one date for everything: a sort with
+    // every value equal proves nothing about the sort. Steam's own date exists only where Steam
+    // is involved, which is the case the Sort menu has to get right.
+    modified: 1_690_000_000 + (hash(pkg) % 60_000_000),
+    updated: src === "workshop" || src === "steamcmd" ? 1_700_000_000 + (hash(pkg + "s") % 55_000_000) : 0,
     kind: src === "ludeon" ? "official" : cs ? "code" : tex ? "textures" : "xml"
   };
+}
+
+/** A small stable hash, so the mock's dates are varied but the same on every run. */
+function hash(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
 }
 
 const mods: ModInfo[] = SEED.map(mod);

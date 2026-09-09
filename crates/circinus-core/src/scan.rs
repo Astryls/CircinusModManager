@@ -17,7 +17,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::UNIX_EPOCH;
 
 /// Bump when the parser changes so cached entries are re-parsed.
-const PARSER_VERSION: u32 = 4;
+// 5: `ModInfo::updated` carries Steam's timeupdated on its own. A cached row from 4 has no such
+// field and would deserialize as "never updated", which is a wrong answer rather than a missing
+// one, so every mod is read again once.
+const PARSER_VERSION: u32 = 5;
 
 /// File inventory kept out of `ModInfo` (too large for the UI): relative paths from the mod
 /// root, lowercase, forward slashes. Textures are stored without extension because RimWorld
@@ -106,6 +109,8 @@ struct Candidate {
     stamp: String,
     /// Newest of the cheap signals: folder mtime, About.xml mtime, Steam's timeupdated.
     modified: u64,
+    /// Steam's timeupdated on its own, 0 when this is not a Workshop item.
+    updated: u64,
 }
 
 fn candidates_in(root: &Path, source: Source, game_version: &str, workshop_updated: &HashMap<u64, u64>, unreadable: &mut Vec<Unreadable>) -> Vec<Candidate> {
@@ -144,7 +149,7 @@ fn candidates_in(root: &Path, source: Source, game_version: &str, workshop_updat
         // updated the item is the only reliable sign of an in-place update.
         let ws_updated = if source == Source::Workshop { name.parse::<u64>().ok().and_then(|id| workshop_updated.get(&id).copied()).unwrap_or(0) } else { 0 };
         let stamp = if ws_updated > 0 { format!("{PARSER_VERSION}:{game_version}:{dir_mtime}:{about_mtime}:{ws_updated}") } else { format!("{PARSER_VERSION}:{game_version}:{dir_mtime}:{about_mtime}") };
-        out.push(Candidate { source, path, real, about_xml, stamp, modified: dir_mtime.max(about_mtime).max(ws_updated) });
+        out.push(Candidate { source, path, real, about_xml, stamp, modified: dir_mtime.max(about_mtime).max(ws_updated), updated: ws_updated });
     }
     out
 }
@@ -281,6 +286,7 @@ fn parse_quick(c: &Candidate, gv: &GameVersion) -> ModInfo {
     let mut info = ModInfo { uid: uid.clone(), path: c.path.clone(), source: c.source, ..Default::default() };
     info.link_target = (c.real != c.path).then(|| c.real.clone());
     info.modified = c.modified;
+    info.updated = c.updated;
 
     match &c.about_xml {
         Some(about_path) => match read_text(about_path).and_then(|t| parse_about(&t, about_path, &gv.major_minor)) {
@@ -665,6 +671,7 @@ mod tests {
         assert_eq!(m.source, Source::Workshop);
         assert_eq!(m.published_file_id, Some(2009463077));
         assert_eq!(m.modified, 4_000_000_000, "Steam's timeupdated is newer than the folder");
+        assert_eq!(m.updated, 4_000_000_000, "and it is kept on its own, so the two dates can be told apart");
         let second = scan(&opts, Some(&cache), true, &|_, _| {}).unwrap();
         assert_eq!(second.from_cache, second.mods.len());
         // Steam updated the item in place: nothing on disk changed except the ACF.

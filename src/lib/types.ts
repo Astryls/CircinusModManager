@@ -77,7 +77,11 @@ export interface ModInfo {
   manifest?: unknown;
   loadFolders?: unknown;
   contents: Contents;
+  /** Newest mtime under the folder; for a Workshop item, the newer of that and Steam's
+   *  timeupdated, because Steam can change files without touching the folder. */
   modified: number;
+  /** When Steam says the author last published an update; 0 for anything Steam has not updated. */
+  updated: number;
   invalid?: string;
   kind: ModKind;
 }

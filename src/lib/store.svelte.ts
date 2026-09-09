@@ -11,7 +11,32 @@ export type Tab = "active" | "inactive" | "all" | "new";
 
 /** What the list is ordered by. `order` is the load order, which is the only one that is real:
  *  every other value sorts the view without touching what the game will read. */
-export type SortKey = "order" | "name" | "pkg" | "versions" | "time" | "load" | "cost" | "phase" | "group" | "arrived";
+export type SortKey = "order" | "name" | "pkg" | "versions" | "time" | "load" | "cost" | "phase" | "group" | "arrived" | "modified" | "updated" | "steamid";
+
+/** Every way the list can be ordered, in the order the Sort menu offers them.
+ *
+ *  The list has always sorted by clicking a column heading, which works right up until you want
+ *  to sort by something that is not a column -- when a folder last changed, when Steam last
+ *  published, which Workshop item it is. Those have no heading to click, so the menu is where
+ *  they live, and it carries the column sorts too rather than being a second place to look. */
+/** The sorts that start A to Z rather than largest first. */
+const ASCENDING_FIRST = new Set<SortKey>(["name", "pkg", "group"]);
+
+export const SORTS: { key: SortKey; label: string; hint: string }[] = [
+  { key: "order", label: "Load order", hint: "The order the game will load them in. The only real one" },
+  { key: "name", label: "Name", hint: "A to Z" },
+  { key: "pkg", label: "Package id", hint: "A to Z" },
+  { key: "versions", label: "Game version", hint: "The newest version each mod says it supports, so the ones furthest behind gather at one end" },
+  { key: "time", label: "Loading time", hint: "Seconds each mod is expected to add to the loading bar" },
+  { key: "load", label: "Share of loading", hint: "The same estimate as a share of the list" },
+  { key: "cost", label: "Frame time", hint: "Share of frame time from circinus.sh, where there is a measurement" },
+  { key: "phase", label: "Phase", hint: "Where HALO files each mod" },
+  { key: "group", label: "Group", hint: "A to Z by group name" },
+  { key: "arrived", label: "Date added", hint: "When Circinus first saw the folder" },
+  { key: "modified", label: "Date modified", hint: "When the files on disk last changed. For a Workshop mod that includes what Steam replaced" },
+  { key: "updated", label: "Date updated on Steam", hint: "When the author last published an update. Local mods have no such date and sort last" },
+  { key: "steamid", label: "Steam id", hint: "The Workshop item number. Local mods have none and sort last" }
+];
 /** Which list one pane of a side-by-side view shows. `null` is the ordinary single list, where
  *  the tabs decide what is in it. */
 export type Pane = "inactive" | "active";
@@ -332,12 +357,12 @@ class Store {
   sortBy(k: SortKey) {
     if (this.sortKey !== k) {
       this.sortKey = k;
-      // Words read best A to Z; a measure reads best largest first, since that is the one you
-      // are looking for.
-      this.sortDir = k === "name" || k === "pkg" ? 1 : -1;
+      // Words read best A to Z; a measure or a date reads best largest first, since that is the
+      // one you are looking for. Group is a name, and was on the wrong side of this line.
+      this.sortDir = ASCENDING_FIRST.has(k) ? 1 : -1;
       return;
     }
-    if (this.sortDir === (k === "name" || k === "pkg" ? 1 : -1)) this.sortDir = this.sortDir === 1 ? -1 : 1;
+    if (this.sortDir === (ASCENDING_FIRST.has(k) ? 1 : -1)) this.sortDir = this.sortDir === 1 ? -1 : 1;
     else this.clearSort();
   }
   clearSort() {
@@ -369,6 +394,13 @@ class Store {
       case "phase": return PHASES.findIndex((p) => p.id === (this.placement(m.uid)?.phase ?? "content"));
       case "group": return this.groupOf(m.uid)?.name?.toLowerCase();
       case "arrived": return this.firstSeenByUid.get(m.uid);
+      // The files on disk, and what Steam published, are different questions: `modified` is the
+      // newest thing seen in the folder, `updated` is Steam's own word about the author. A zero
+      // is "Steam has never updated this", which is an absent answer rather than an old one, so
+      // it sorts with the mods that have no answer at all instead of as 1970.
+      case "modified": return m.modified || undefined;
+      case "updated": return m.updated || undefined;
+      case "steamid": return m.publishedFileId ?? undefined;
       default: return undefined;
     }
   }

@@ -214,8 +214,17 @@ pub struct ModInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub load_folders: Option<Vec<LoadFolder>>,
     pub contents: Contents,
-    /// Newest mtime seen under the folder, seconds since the epoch.
+    /// Newest mtime seen under the folder, seconds since the epoch. For a Workshop item this is
+    /// the newer of that and Steam's `timeupdated`, because Steam can replace files deep inside
+    /// an item without touching the folder -- so this answers "when did the content last change",
+    /// which is what the change detector and the cache stamp need.
     pub modified: u64,
+    /// When Steam says the author last published an update, seconds since the epoch; 0 for
+    /// anything Steam has never updated. Kept apart from `modified` rather than folded into it,
+    /// because "the files on my disk changed" and "the author shipped something" are different
+    /// questions and a player sorting a list is usually asking one or the other.
+    #[serde(default)]
+    pub updated: u64,
     /// Human explanation when the folder is not a usable mod.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub invalid: Option<String>,

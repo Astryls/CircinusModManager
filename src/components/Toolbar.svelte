@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { store, type ShowOnly, type Tab } from "$lib/store.svelte";
+  import { SORTS, store, type ShowOnly, type SortKey, type Tab } from "$lib/store.svelte";
   import { I } from "$lib/icons";
   import { SOURCE_LABEL, type Source } from "$lib/types";
 
@@ -37,6 +37,15 @@
   const version = $derived(store.snap?.gameVersion.majorMinor ?? "this version");
   let open = $state(false);
   let menu = $state<HTMLElement | null>(null);
+  let sortOpen = $state(false);
+  let sortMenu = $state<HTMLElement | null>(null);
+  const sortLabel = $derived(SORTS.find((s) => s.key === store.sortKey)?.label ?? "Load order");
+  /** The same three states a column heading has: pick it, turn it round, then back to the load
+   *  order. The store owns that cycle, so the menu just hands it the key. */
+  function pickSort(k: SortKey) {
+    if (k === "order") store.clearSort();
+    else store.sortBy(k);
+  }
   /** Filters other than "all": how many are narrowing the list right now. */
   const narrowing = $derived((store.showOnly ? 1 : 0) + (store.onlyCurrentVersion ? 1 : 0) + (store.sources.length < sources.length ? 1 : 0));
   const currentLabel = $derived(choices.find((c) => c.id === store.showOnly)?.label ?? "All mods");
@@ -50,10 +59,11 @@
   }
   function onWindowClick(e: MouseEvent) {
     if (open && menu && !menu.contains(e.target as Node)) open = false;
+    if (sortOpen && sortMenu && !sortMenu.contains(e.target as Node)) sortOpen = false;
   }
 </script>
 
-<svelte:window onclick={onWindowClick} onkeydown={(e) => e.key === "Escape" && (open = false)} />
+<svelte:window onclick={onWindowClick} onkeydown={(e) => e.key === "Escape" && ((open = false), (sortOpen = false))} />
 
 <div class="toolbar">
   {#if !store.splitMode}
@@ -106,6 +116,23 @@
       </div>
     {/if}
   </div>
+  <div class="filter sortm" bind:this={sortMenu}>
+    <button class="btn" class:on={store.sorted} onclick={() => (sortOpen = !sortOpen)} aria-haspopup="menu" aria-expanded={sortOpen} title="Order the list by something other than the load order">
+      {@html I.list}<span class="lbl">Sort: {sortLabel}</span>{#if store.sorted}<span class="cnt">{store.sortDir === 1 ? "↑" : "↓"}</span>{/if}
+    </button>
+    {#if sortOpen}
+      <div class="menu card" role="menu">
+        <div class="label">Sort by</div>
+        {#each SORTS as s}
+          <button class="opt" class:on={store.sortKey === s.key} role="menuitemradio" aria-checked={store.sortKey === s.key} title={s.hint} onclick={() => { pickSort(s.key); sortOpen = false; }}>
+            <span class="ico"></span><span class="t">{s.label}</span>
+            {#if store.sortKey === s.key && s.key !== "order"}<span class="n">{store.sortDir === 1 ? "↑" : "↓"}</span>{/if}
+          </button>
+        {/each}
+        <p class="note">Dragging is refused while the list is sorted: a drop between two rows of a list ordered by name writes a position nobody chose.</p>
+      </div>
+    {/if}
+  </div>
   <span class="sp"></span>
   <button class="btn" onclick={() => (store.showImport = true)} title="Import a mod list (Ctrl I)">{@html I.download}<span class="opt-lbl">Import</span></button>
   <button class="btn" onclick={() => store.rescan(false)} title="Read the mod folders again">{@html I.refresh}<span class="opt-lbl">Refresh</span></button>
@@ -147,6 +174,9 @@
   @container (max-width: 980px) { .seg.arr button { padding: 0 8px; } .filter > .btn .lbl { display: none; } .toolbar .filter { min-width: 0; } }
   @container (max-width: 800px) { .seg.arr .lg { display: none; } .seg.arr .sm { display: inline; } .cnt-lbl { display: none; } .toolbar .btn { padding: 0 9px; } }
   .filter { position: relative; }
+  .sortm { min-width: 0; }
+  .sortm .menu { max-height: 60vh; overflow-y: auto; }
+  .sortm .note { margin: 6px 8px 2px; font-size: 11.5px; line-height: 1.45; color: var(--text-3); max-width: 30ch; }
   .filter > .btn.on { background: var(--amber-soft); color: var(--amber); }
   .filter .cnt { font-size: 11px; font-weight: 700; opacity: 0.8; }
   .menu { position: absolute; top: 38px; left: 0; z-index: 20; width: 300px; padding: 10px; box-shadow: var(--shadow-float); display: flex; flex-direction: column; gap: 2px; }

@@ -103,10 +103,19 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   Load come from one number (`contents.load.scoreMs`) so they always agree; only Load is
   coloured, since colouring both would draw one fact twice. All three are estimates from what the
   folder holds, and every tooltip says so.
-- Sorting: any column heading orders the list; the load order is the default and the only real
-  one. Sorting `visibleActive` rather than the sections is what makes "by phase" sort within each
-  section for free, since `layout` builds sections by filtering. Dragging is refused while
-  sorted — a drop between two rows of a list sorted by name writes a position nobody chose.
+- Sorting: any column heading orders the list, and the Sort menu in the toolbar offers the same
+  keys plus the ones that are not columns — date modified, date updated on Steam, Steam id. The
+  load order is the default and the only real one. Sorting `visibleActive` rather than the
+  sections is what makes "by phase" sort within each section for free, since `layout` builds
+  sections by filtering. Dragging is refused while sorted — a drop between two rows of a list
+  sorted by name writes a position nobody chose. `SORTS` is the one list both the menu and the
+  headings read, and `ASCENDING_FIRST` decides which keys open A to Z rather than largest first.
+- `ModInfo::updated` is Steam's `timeupdated` on its own; `modified` stays the newest of the
+  folder mtime, About.xml's mtime and that same Steam date, because the change detector and the
+  cache stamp need "when did the content last change". Sorting wants them apart: "my files
+  changed" and "the author shipped something" are different questions. A mod Steam has never
+  updated has `updated` 0, which sorts as no answer rather than as 1970. `PARSER_VERSION` 5 is
+  what re-reads every cached mod so the field is populated instead of defaulting to zero.
 - macOS paths: RimWorld is `RimWorldMac.app`, and the Finder treats a `.app` as a file, so a
   folder picker only ever offers the folder it sits in. `paths::game_root` resolves that folder
   to the bundle, and everything (Version.txt, Data, Mods, the executable, Steam detection) asks
