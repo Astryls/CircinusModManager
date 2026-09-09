@@ -2,6 +2,7 @@
 // indexes for fast lookups, and the actions the components call.
 
 import { api, appVersion, listen } from "./api";
+import { t } from "./i18n.svelte";
 import type { AuditReport, BuiltinRule, CollectionPreview, DefMatch, DefQuery, DefsState, DefTree, Group, HaloRules, ImportPreview, Instance, Issue, ItemState, LaunchSettings, Locations, LogAnalysis, LogFile, ModChange, ModInfo, ModPatchDetail, ModTextures, PatchJob, PatchReport, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamClientStatus, SteamCmdStatus, SubscribeOutcome, SubscriptionProgress, TexState, TrackedCollection, UpdateCheck, UpdateProgress, UserData, Weight } from "./types";
 import { EMPTY_HALO, GROUP_COLORS, loadBand, PHASES, primaryUid, severityOf, type LoadBand, type Severity } from "./types";
 
@@ -18,25 +19,16 @@ export type SortKey = "order" | "name" | "pkg" | "versions" | "time" | "load" | 
  *  The list has always sorted by clicking a column heading, which works right up until you want
  *  to sort by something that is not a column -- when a folder last changed, when Steam last
  *  published, which Workshop item it is. Those have no heading to click, so the menu is where
- *  they live, and it carries the column sorts too rather than being a second place to look. */
+ *  they live, and it carries the column sorts too rather than being a second place to look.
+ *
+ *  Keys only: the words live in the catalogue, and a module constant that called `t()` would
+ *  capture whatever locale was current when the file first loaded and never change again. */
 /** The sorts that start A to Z rather than largest first. */
 const ASCENDING_FIRST = new Set<SortKey>(["name", "pkg", "group"]);
 
-export const SORTS: { key: SortKey; label: string; hint: string }[] = [
-  { key: "order", label: "Load order", hint: "The order the game will load them in. The only real one" },
-  { key: "name", label: "Name", hint: "A to Z" },
-  { key: "pkg", label: "Package id", hint: "A to Z" },
-  { key: "versions", label: "Game version", hint: "The newest version each mod says it supports, so the ones furthest behind gather at one end" },
-  { key: "time", label: "Loading time", hint: "Seconds each mod is expected to add to the loading bar" },
-  { key: "load", label: "Share of loading", hint: "The same estimate as a share of the list" },
-  { key: "cost", label: "Frame time", hint: "Share of frame time from circinus.sh, where there is a measurement" },
-  { key: "phase", label: "Phase", hint: "Where HALO files each mod" },
-  { key: "group", label: "Group", hint: "A to Z by group name" },
-  { key: "arrived", label: "Date added", hint: "When Circinus first saw the folder" },
-  { key: "modified", label: "Date modified", hint: "When the files on disk last changed. For a Workshop mod that includes what Steam replaced" },
-  { key: "updated", label: "Date updated on Steam", hint: "When the author last published an update. Local mods have no such date and sort last" },
-  { key: "steamid", label: "Steam id", hint: "The Workshop item number. Local mods have none and sort last" }
-];
+export const SORTS: SortKey[] = ["order", "name", "pkg", "versions", "time", "load", "cost", "phase", "group", "arrived", "modified", "updated", "steamid"];
+export const sortLabel = (k: SortKey) => t(`sort.${k}.label`);
+export const sortHint = (k: SortKey) => t(`sort.${k}.hint`);
 /** Which list one pane of a side-by-side view shows. `null` is the ordinary single list, where
  *  the tabs decide what is in it. */
 export type Pane = "inactive" | "active";

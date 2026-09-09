@@ -1,45 +1,46 @@
 <script lang="ts">
-  import { SORTS, store, type ShowOnly, type SortKey, type Tab } from "$lib/store.svelte";
+  import { SORTS, sortLabel as sortLabelOf, sortHint, store, type ShowOnly, type SortKey, type Tab } from "$lib/store.svelte";
+  import { t } from "$lib/i18n.svelte";
   import { I } from "$lib/icons";
   import { SOURCE_LABEL, type Source } from "$lib/types";
 
   // New is only there when there is something in it: a tab that always reads zero is a tab
   // nobody presses, and it costs the other three the width it takes.
   const tabs = $derived.by((): { id: Tab; label: string; count: number }[] => [
-    { id: "active", label: "Active", count: store.active.length },
-    { id: "inactive", label: "Inactive", count: store.inactive.length },
-    { id: "all", label: "All", count: store.mods.length },
-    ...(store.newUids.length ? [{ id: "new" as Tab, label: "New", count: store.newUids.length }] : [])
+    { id: "active", label: t("toolbar.tab.active"), count: store.active.length },
+    { id: "inactive", label: t("toolbar.tab.inactive"), count: store.inactive.length },
+    { id: "all", label: t("toolbar.tab.all"), count: store.mods.length },
+    ...(store.newUids.length ? [{ id: "new" as Tab, label: t("toolbar.tab.new"), count: store.newUids.length }] : [])
   ]);
   const previewCount = $derived(store.preview?.moves.length ?? 0);
   const counts = $derived(store.showOnlyCounts);
   const choices = $derived.by((): { id: ShowOnly; label: string; n?: number; icon?: string }[] => [
-    { id: null, label: "All mods" },
-    { id: "attention", label: "Needs attention", n: counts.attention, icon: I.warn },
-    { id: "error", label: "With errors", n: counts.error, icon: I.error },
-    { id: "warning", label: "With warnings", n: counts.warning, icon: I.warn },
-    { id: "conflict", label: "With conflicts", n: counts.conflict, icon: I.error },
-    { id: "note", label: "With HALO notes", n: counts.note, icon: I.note },
-    { id: "collision", label: "Replacing the same textures", n: counts.collision, icon: I.image },
-    ...(store.showWeight ? [{ id: "heavy" as ShowOnly, label: "Heavy on frame time", n: counts.heavy, icon: I.gauge }] : []),
-    { id: "slow", label: "Slow to load", n: counts.slow, icon: I.halo },
-    { id: "changed", label: "Changed since last launch", n: counts.changed, icon: I.change },
-    ...(store.preview ? [{ id: "moved" as ShowOnly, label: "HALO would move", n: counts.moved, icon: I.halo }] : [])
+    { id: null, label: t("toolbar.show.all") },
+    { id: "attention", label: t("toolbar.show.attention"), n: counts.attention, icon: I.warn },
+    { id: "error", label: t("toolbar.show.error"), n: counts.error, icon: I.error },
+    { id: "warning", label: t("toolbar.show.warning"), n: counts.warning, icon: I.warn },
+    { id: "conflict", label: t("toolbar.show.conflict"), n: counts.conflict, icon: I.error },
+    { id: "note", label: t("toolbar.show.note"), n: counts.note, icon: I.note },
+    { id: "collision", label: t("toolbar.show.collision"), n: counts.collision, icon: I.image },
+    ...(store.showWeight ? [{ id: "heavy" as ShowOnly, label: t("toolbar.show.heavy"), n: counts.heavy, icon: I.gauge }] : []),
+    { id: "slow", label: t("toolbar.show.slow"), n: counts.slow, icon: I.halo },
+    { id: "changed", label: t("toolbar.show.changed"), n: counts.changed, icon: I.change },
+    ...(store.preview ? [{ id: "moved" as ShowOnly, label: t("toolbar.show.moved"), n: counts.moved, icon: I.halo }] : [])
   ]);
   const sources: Source[] = ["workshop", "local", "steamcmd", "git", "ludeon"];
   const columns = [
-    { key: "time", label: "Time", hint: "Seconds this mod is expected to add to the game's loading time" },
-    { key: "load", label: "Load", hint: "Expected share of the list's loading time" },
-    { key: "versions", label: "Versions", hint: "Game versions the mod says it supports" },
-    { key: "phase", label: "Phase", hint: "Where HALO files the mod — already the sections when the list is arranged by phase" },
-    { key: "group", label: "Group", hint: "The group the mod is in" }
+    { key: "time", label: t("toolbar.col.time"), hint: t("toolbar.col.time.title") },
+    { key: "load", label: t("toolbar.col.load"), hint: t("toolbar.col.load.title") },
+    { key: "versions", label: t("toolbar.col.versions"), hint: t("toolbar.col.versions.title") },
+    { key: "phase", label: t("toolbar.col.phase"), hint: t("toolbar.col.phase.title") },
+    { key: "group", label: t("toolbar.col.group"), hint: t("toolbar.col.group.title") }
   ];
   const version = $derived(store.snap?.gameVersion.majorMinor ?? "this version");
   let open = $state(false);
   let menu = $state<HTMLElement | null>(null);
   let sortOpen = $state(false);
   let sortMenu = $state<HTMLElement | null>(null);
-  const sortLabel = $derived(SORTS.find((s) => s.key === store.sortKey)?.label ?? "Load order");
+  const sortLabel = $derived(sortLabelOf(store.sortKey));
   /** The same three states a column heading has: pick it, turn it round, then back to the load
    *  order. The store owns that cycle, so the menu just hands it the key. */
   function pickSort(k: SortKey) {
@@ -48,7 +49,7 @@
   }
   /** Filters other than "all": how many are narrowing the list right now. */
   const narrowing = $derived((store.showOnly ? 1 : 0) + (store.onlyCurrentVersion ? 1 : 0) + (store.sources.length < sources.length ? 1 : 0));
-  const currentLabel = $derived(choices.find((c) => c.id === store.showOnly)?.label ?? "All mods");
+  const currentLabel = $derived(choices.find((c) => c.id === store.showOnly)?.label ?? t("toolbar.show.all"));
   function toggleSource(s: Source) {
     store.sources = store.sources.includes(s) ? store.sources.filter((x) => x !== s) : [...store.sources, s];
   }
@@ -69,83 +70,83 @@
   {#if !store.splitMode}
     <!-- Side by side, the panes decide what is shown and these would decide nothing. -->
     <div class="seg" role="tablist">
-      {#each tabs as t}<button role="tab" class:on={store.tab === t.id} aria-selected={store.tab === t.id} onclick={() => (store.tab = t.id)}>{t.label} <span class="num">{t.count}</span></button>{/each}
+      {#each tabs as tab}<button role="tab" class:on={store.tab === tab.id} aria-selected={store.tab === tab.id} onclick={() => (store.tab = tab.id)}>{tab.label} <span class="num">{tab.count}</span></button>{/each}
     </div>
   {/if}
   {#if !store.splitMode && store.tab === "new"}
-    <button class="btn sm" onclick={() => store.markNewSeen()} title="Stop marking these as new. The dates they arrived stay.">Seen them</button>
+    <button class="btn sm" onclick={() => store.markNewSeen()} title={t("toolbar.seenThem.title")}>{t("toolbar.seenThem")}</button>
   {/if}
   {#if !store.splitMode && store.sorted}
     <!-- A sorted list is not the load order, and the way back has to be visible from the list
          rather than remembered as "click the same heading twice more". -->
-    <button class="btn sm sortoff" onclick={() => store.clearSort()} title="Back to the load order">{@html I.close}<span class="lbl">Sorted</span></button>
+    <button class="btn sm sortoff" onclick={() => store.clearSort()} title={t("toolbar.sorted.title")}>{@html I.close}<span class="lbl">{t("toolbar.sorted")}</span></button>
   {/if}
   {#if store.splitMode === "library" || (!store.splitMode && store.tab !== "inactive")}
-    <div class="seg arr" role="radiogroup" aria-label="Arrangement">
-      <button role="radio" class:on={!store.byPhase} aria-checked={!store.byPhase} title="The list exactly as ModsConfig.xml has it, top to bottom" onclick={() => store.byPhase && store.setByPhase(false)}><span class="lg">Load order</span><span class="sm">Order</span></button>
-      <button role="radio" class:on={store.byPhase} aria-checked={store.byPhase} title="The same mods, gathered under the phase HALO files them in" onclick={() => !store.byPhase && store.setByPhase(true)}><span class="lg">By phase</span><span class="sm">Phase</span></button>
+    <div class="seg arr" role="radiogroup" aria-label={t("toolbar.arrangement")}>
+      <button role="radio" class:on={!store.byPhase} aria-checked={!store.byPhase} title={t("toolbar.arr.order.title")} onclick={() => store.byPhase && store.setByPhase(false)}><span class="lg">{t("toolbar.arr.order")}</span><span class="sm">{t("toolbar.arr.order.short")}</span></button>
+      <button role="radio" class:on={store.byPhase} aria-checked={store.byPhase} title={t("toolbar.arr.phase.title")} onclick={() => !store.byPhase && store.setByPhase(true)}><span class="lg">{t("toolbar.arr.phase")}</span><span class="sm">{t("toolbar.arr.phase.short")}</span></button>
     </div>
   {/if}
-  <button class="btn split" class:on={store.splitMode === "library"} aria-pressed={store.splitMode === "library"} onclick={() => (store.split = store.split === "library" ? null : "library")} title="Show inactive and active mods in two panels, and drag between them">
-    {@html I.split}<span class="split-lbl">Inactive | Active</span>
+  <button class="btn split" class:on={store.splitMode === "library"} aria-pressed={store.splitMode === "library"} onclick={() => (store.split = store.split === "library" ? null : "library")} title={t("toolbar.split.title")}>
+    {@html I.split}<span class="split-lbl">{t("toolbar.split.label")}</span>
   </button>
   <div class="filter" bind:this={menu}>
-    <button class="btn" class:on={narrowing > 0} onclick={() => (open = !open)} aria-haspopup="menu" aria-expanded={open} title="Narrow the list to mods with errors, warnings, conflicts, HALO notes or changes">
-      {@html I.search}<span class="lbl">Show: {currentLabel}</span>{#if narrowing > 1}<span class="cnt">+{narrowing - 1}</span>{/if}
+    <button class="btn" class:on={narrowing > 0} onclick={() => (open = !open)} aria-haspopup="menu" aria-expanded={open} title={t("toolbar.show.title")}>
+      {@html I.search}<span class="lbl">{t("toolbar.show.label", { what: currentLabel })}</span>{#if narrowing > 1}<span class="cnt">+{narrowing - 1}</span>{/if}
     </button>
     {#if open}
       <div class="menu card" role="menu">
-        <div class="label">Show only</div>
+        <div class="label">{t("toolbar.show.only")}</div>
         {#each choices as c}
           <button class="opt" class:on={store.showOnly === c.id} role="menuitemradio" aria-checked={store.showOnly === c.id} onclick={() => { store.showOnly = c.id; open = false; }}>
             <span class="ico">{#if c.icon}{@html c.icon}{/if}</span><span class="t">{c.label}</span>{#if c.n != null}<span class="n num">{c.n}</span>{/if}
           </button>
         {/each}
-        <div class="label">Columns</div>
+        <div class="label">{t("toolbar.columns")}</div>
         <div class="chips">
-          <button class="chip" class:on={store.showWeight} onclick={() => store.updateSettings({ showWeight: !store.showWeight })} title="Share of frame time, once weights are loaded">Cost</button>
+          <button class="chip" class:on={store.showWeight} onclick={() => store.updateSettings({ showWeight: !store.showWeight })} title={t("toolbar.col.cost.title")}>{t("toolbar.col.cost")}</button>
           {#each columns as c}<button class="chip" class:on={store.listColumns.includes(c.key)} onclick={() => store.setListColumn(c.key, !store.listColumns.includes(c.key))} title={c.hint}>{c.label}</button>{/each}
         </div>
-        <div class="label">From</div>
+        <div class="label">{t("toolbar.from")}</div>
         <div class="chips">
-          {#each sources as s}<button class="chip" class:on={store.sources.includes(s)} onclick={() => toggleSource(s)}>{SOURCE_LABEL[s]}</button>{/each}
+          {#each sources as s}<button class="chip" class:on={store.sources.includes(s)} onclick={() => toggleSource(s)}>{t(`source.${s}`)}</button>{/each}
         </div>
-        <div class="label">Version</div>
-        <label class="switch sm"><input type="checkbox" bind:checked={store.onlyCurrentVersion} />Only mods made for {version}</label>
-        {#if narrowing}<button class="btn sm clear" onclick={() => { clearAll(); open = false; }}>Show everything</button>{/if}
+        <div class="label">{t("toolbar.version")}</div>
+        <label class="switch sm"><input type="checkbox" bind:checked={store.onlyCurrentVersion} />{t("toolbar.onlyThisVersion", { version })}</label>
+        {#if narrowing}<button class="btn sm clear" onclick={() => { clearAll(); open = false; }}>{t("toolbar.showEverything")}</button>{/if}
       </div>
     {/if}
   </div>
   <div class="filter sortm" bind:this={sortMenu}>
-    <button class="btn" class:on={store.sorted} onclick={() => (sortOpen = !sortOpen)} aria-haspopup="menu" aria-expanded={sortOpen} title="Order the list by something other than the load order">
-      {@html I.list}<span class="lbl">Sort: {sortLabel}</span>{#if store.sorted}<span class="cnt">{store.sortDir === 1 ? "↑" : "↓"}</span>{/if}
+    <button class="btn" class:on={store.sorted} onclick={() => (sortOpen = !sortOpen)} aria-haspopup="menu" aria-expanded={sortOpen} title={t("toolbar.sort.title")}>
+      {@html I.list}<span class="lbl">{t("toolbar.sort.label", { what: sortLabel })}</span>{#if store.sorted}<span class="cnt">{store.sortDir === 1 ? "↑" : "↓"}</span>{/if}
     </button>
     {#if sortOpen}
       <div class="menu card" role="menu">
-        <div class="label">Sort by</div>
-        {#each SORTS as s}
-          <button class="opt" class:on={store.sortKey === s.key} role="menuitemradio" aria-checked={store.sortKey === s.key} title={s.hint} onclick={() => { pickSort(s.key); sortOpen = false; }}>
-            <span class="ico"></span><span class="t">{s.label}</span>
-            {#if store.sortKey === s.key && s.key !== "order"}<span class="n">{store.sortDir === 1 ? "↑" : "↓"}</span>{/if}
+        <div class="label">{t("toolbar.sort.by")}</div>
+        {#each SORTS as k}
+          <button class="opt" class:on={store.sortKey === k} role="menuitemradio" aria-checked={store.sortKey === k} title={sortHint(k)} onclick={() => { pickSort(k); sortOpen = false; }}>
+            <span class="ico"></span><span class="t">{sortLabelOf(k)}</span>
+            {#if store.sortKey === k && k !== "order"}<span class="n">{store.sortDir === 1 ? "↑" : "↓"}</span>{/if}
           </button>
         {/each}
-        <p class="note">Dragging is refused while the list is sorted: a drop between two rows of a list ordered by name writes a position nobody chose.</p>
+        <p class="note">{t("toolbar.sort.dragNote")}</p>
       </div>
     {/if}
   </div>
   <span class="sp"></span>
-  <button class="btn" onclick={() => (store.showImport = true)} title="Import a mod list (Ctrl I)">{@html I.download}<span class="opt-lbl">Import</span></button>
-  <button class="btn" onclick={() => store.rescan(false)} title="Read the mod folders again">{@html I.refresh}<span class="opt-lbl">Refresh</span></button>
+  <button class="btn" onclick={() => (store.showImport = true)} title={t("toolbar.import.title")}>{@html I.download}<span class="opt-lbl">{t("toolbar.import")}</span></button>
+  <button class="btn" onclick={() => store.rescan(false)} title={t("toolbar.refresh.title")}>{@html I.refresh}<span class="opt-lbl">{t("toolbar.refresh")}</span></button>
   {#if store.preview}
     <span class="pair">
-      <button class="btn split" class:on={store.splitMode === "halo"} aria-pressed={store.splitMode === "halo"} onclick={() => (store.split = store.split === "halo" ? null : "halo")} title="Show which mods HALO would move, from where to where">
-        {@html I.change}<span class="split-lbl">What changes</span>
+      <button class="btn split" class:on={store.splitMode === "halo"} aria-pressed={store.splitMode === "halo"} onclick={() => (store.split = store.split === "halo" ? null : "halo")} title={t("toolbar.whatChanges.title")}>
+        {@html I.change}<span class="split-lbl">{t("toolbar.whatChanges")}</span>
       </button>
-      <button class="btn primary" onclick={() => store.haloApply()} title="Apply the {previewCount} move{previewCount === 1 ? '' : 's'} HALO proposes">{@html I.check}Apply<span class="cnt-lbl"> {previewCount} move{previewCount === 1 ? "" : "s"}</span></button>
-      <button class="btn" onclick={() => store.clearPreview()} title="Discard the preview; nothing moves" aria-label="Discard the preview">{@html I.close}<span class="opt-lbl">Discard</span></button>
+      <button class="btn primary" onclick={() => store.haloApply()} title={t("toolbar.apply.title", { n: previewCount })}>{@html I.check}{t("toolbar.apply")}<span class="cnt-lbl">{t("toolbar.apply.moves", { n: previewCount })}</span></button>
+      <button class="btn" onclick={() => store.clearPreview()} title={t("toolbar.discard.title")} aria-label={t("toolbar.discard.aria")}>{@html I.close}<span class="opt-lbl">{t("toolbar.discard")}</span></button>
     </span>
   {:else}
-    <button class="btn primary" onclick={() => store.haloPreview()} title="Preview the load order HALO would use, then apply it or discard it">{@html I.halo}Sort with HALO</button>
+    <button class="btn primary" onclick={() => store.haloPreview()} title={t("toolbar.sortWithHalo.title")}>{@html I.halo}{t("toolbar.sortWithHalo")}</button>
   {/if}
 </div>
 

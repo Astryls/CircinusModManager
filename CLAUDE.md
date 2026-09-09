@@ -185,6 +185,31 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   .NET runtime and without ever loading a mod's code. `harmony` caches those readings and groups
   them into what one mod patches and who else patches the same method.
 
+## Words a player reads
+
+- Everything a player reads is meant to come from `src/lib/locales/en.ts` through `t()` in
+  `src/lib/i18n.svelte.ts`. Keys are dotted and say *where* the string is, not what it says: a
+  key that is the English text makes a copy edit orphan every translation of it. One entry per
+  string somebody reads — a sentence pasted together from fragments cannot be translated, because
+  word order is not the same everywhere, so interpolate with `{n}`/`{name}` instead. Counts take
+  `{ one, other }`, and `plural()` is the one place that decides, so a language needing CLDR's
+  few/many is a change there rather than at two hundred call sites. A missing key returns the
+  key: loudly wrong beats quietly blank, because somebody reports `settings.updates.title`.
+- A module-level constant must not call `t()`. It would capture whatever locale was current when
+  the file first loaded and never change again, so `SORTS` holds keys and `sortLabel`/`sortHint`
+  do the lookup. Anything else with a table of text needs the same treatment.
+- `tools/i18n-check.mjs` (part of `npm run check`) fails on a user-facing literal in a converted
+  component, and carries `PENDING`: the files still holding their own English. **That list only
+  ever shrinks.** A file leaves it when converted and is guarded from then on; adding to it is how
+  the problem comes back, so a new component is guarded from the day it is written. It also fails
+  when a listed file has nothing left in it, since a ledger is only useful while it is true.
+  `npm run i18n` prints what is left, file by file — about 400 strings across 22 components at
+  the time of writing.
+- Not yet done, and each needs its own decision: the prose Rust produces and hands to the UI as
+  data (HALO's placement reasons, the log analyzer's findings, `Error::Other` messages) is still
+  English inside the payload, so translating it means those becoming keys rather than sentences.
+  There is also no second locale and so no picker; adding one is a data file plus the picker.
+
 ## The rule databases
 
 - They ship **off**. They are other people's collections of what should load before what, a rule
