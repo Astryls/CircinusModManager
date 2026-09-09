@@ -91,6 +91,16 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   many words: "Its placement relative to Harmony doesn't matter, it can be put below or above it."
   Being in the set puts a mod in the Prepatch phase, which is what floats it; among mods no rule
   separates the order stays the player's.
+- Bands of your own. `settings.halo_advanced` (off by default) reveals a card on the HALO page
+  for making a band that holds its own place in the load order, after a phase you choose. There
+  is no ninth `Phase` behind it and there does not need to be: a group with `section: true` and a
+  `phase` already *is* one — `section_rank` orders the bands that follow the same phase, and the
+  sort key is `(phase, section_rank, key)`. So this is a page onto machinery that worked, not a
+  model change, and rules still hold across a band's edges like any other.
+  An empty band draws no heading (`layout` skips a section with no members), which is deliberate:
+  a heading over nothing is noise. `store.addBand` exists because `addGroup` then `updateGroup`
+  are two round trips and the second starts from a user snapshot without the new group in it, so
+  the band silently never got its section — anything setting a group's fields at birth goes there.
 - New mods: `arrivals` records when Circinus first saw each folder, durably and per instance,
   because `changes` retakes its baseline on every scan and a mark on a row has to outlive the
   rescan the eight second folder poll runs a moment later. The first record stamps everything 0

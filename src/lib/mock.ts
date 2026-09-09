@@ -206,6 +206,7 @@ let settings: Settings = {
   alphabeticalWithinPhase: false,
   updateDatabasesOnStart: false,
   listByPhase: typeof location === "undefined" || !location.search.includes("plain"),
+  haloAdvanced: typeof location !== "undefined" && location.search.includes("advanced"),
   listColumns: ["time", "load", "versions"],
   settingsVersion: 3,
   dds: { alphaFormat: "bc7", quality: "balanced", mipmaps: true, threads: 0, auto: false },

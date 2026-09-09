@@ -1432,6 +1432,18 @@ class Store {
     });
     return id;
   }
+  /** A group that holds its own band in the load order, made in one update.
+   *
+   *  `addGroup` then `updateGroup` reads the user back between the two, and the second call
+   *  starts from a copy that does not have the new group in it, so the band silently never got
+   *  its section. Anything that has to set a group's fields at birth belongs here instead. */
+  addBand(name: string, after: Phase): string {
+    const clean = name.trim();
+    const id = (clean.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "band") + "-" + Math.random().toString(36).slice(2, 6);
+    const n = this.snap?.user.groups.length ?? 0;
+    this.updateUser((u) => ({ ...u, groups: [...u.groups, { id, name: clean, color: GROUP_COLORS[n % GROUP_COLORS.length], section: true, phase: after }] }));
+    return id;
+  }
   updateGroup(id: string, patch: Partial<Omit<Group, "id">>) {
     return this.updateUser((u) => ({ ...u, groups: u.groups.map((g) => (g.id === id ? { ...g, ...patch } : g)) }));
   }

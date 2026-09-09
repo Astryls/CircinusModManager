@@ -2,12 +2,34 @@
   import { onMount, tick } from "svelte";
   import { store } from "$lib/store.svelte";
   import { I } from "$lib/icons";
-  import { EMPTY_HALO, PHASES, type BuiltinRule, type Phase } from "$lib/types";
+  import { EMPTY_HALO, GROUP_COLORS, PHASES, type BuiltinRule, type Group, type Phase } from "$lib/types";
 
   store.loadHaloRules();
   const rules = $derived(store.haloRules);
   const halo = $derived(store.halo);
   const phaseOf = (id: Phase) => PHASES.find((p) => p.id === id)!;
+
+  // ---- bands of your own ----
+  /** A group with its own place in the order is, in every way that matters to the sort, a phase
+   *  the user invented: it holds a band between two of the built-in ones, several after the same
+   *  phase keep the order they are listed in, and rules still hold across the boundary. There is
+   *  no ninth `Phase` behind it and there does not need to be — `section_rank` does the work. */
+  const bands = $derived((store.snap?.user.groups ?? []).filter((g) => g.section && g.phase));
+  const advanced = $derived(store.snap?.settings.haloAdvanced ?? false);
+  let newBand = $state("");
+  let newBandAfter = $state<Phase>("content");
+  function addBand() {
+    const name = newBand.trim();
+    if (!name) return;
+    store.addBand(name, newBandAfter);
+    newBand = "";
+  }
+  /** Among the bands that follow one phase, the order they are listed in is the order they load
+   *  in, and that is the group order — so moving one here moves it in the load order. */
+  function moveBand(g: Group, dir: -1 | 1) {
+    store.moveGroup(g.id, dir);
+  }
+  const siblings = (g: Group) => bands.filter((b) => b.phase === g.phase);
   /** Where a built-in rule files mods right now: its own phase, or where the user sent it. */
   const targetOf = (r: BuiltinRule): Phase => halo.retarget[r.key] ?? r.phase;
   const isOff = (r: BuiltinRule) => halo.off.includes(r.key);
@@ -119,6 +141,36 @@
       <span class="ask">Put every mapping back?<button class="btn sm danger" onclick={resetAll}>Reset</button><button class="btn sm" onclick={() => (confirmReset = false)}>Keep</button></span>
     {:else}
       <button class="btn sm" disabled={!edits} onclick={() => (confirmReset = true)}>Reset to defaults{edits ? ` (${edits} edit${edits === 1 ? "" : "s"})` : ""}</button>
+    {/if}
+  </section>
+
+  <section class="card adv">
+    <label class="switch"><input type="checkbox" checked={advanced} onchange={(e) => store.updateSettings({ haloAdvanced: e.currentTarget.checked })} />Advanced: let me make bands of my own</label>
+    <p class="hint">The eight phases below are the answer for most lists. A band of your own sits between two of them — everything in it loads after the phase you pick and before the next one — which is worth having when a set of mods belongs together somewhere the eight do not describe.</p>
+    {#if advanced}
+      <form class="add" onsubmit={(e) => { e.preventDefault(); addBand(); }}>
+        <input class="input" placeholder="Name it, e.g. My overhauls" bind:value={newBand} maxlength="40" />
+        <span class="hint after">loads after</span>
+        <select class="sel" bind:value={newBandAfter}>{#each PHASES as p}<option value={p.id}>{p.name}</option>{/each}</select>
+        <button class="btn sm primary" type="submit" disabled={!newBand.trim()}>Add band</button>
+      </form>
+      <div class="rows">
+        {#each bands as g (g.id)}
+          <div class="row band">
+            <span class="dot c-{g.color}"></span>
+            <input class="input nm" value={g.name} onchange={(e) => store.updateGroup(g.id, { name: e.currentTarget.value.trim() || g.name })} maxlength="40" />
+            <span class="hint after">after</span>
+            <select class="sel" value={g.phase} onchange={(e) => store.updateGroup(g.id, { phase: e.currentTarget.value as Phase })}>{#each PHASES as p}<option value={p.id}>{p.name}</option>{/each}</select>
+            {#if siblings(g).length > 1}
+              <button class="x" aria-label="Earlier" title="Load this band before the others after {phaseOf(g.phase!).name}" onclick={() => moveBand(g, -1)}>{@html I.up}</button>
+              <button class="x down" aria-label="Later" title="Load this band after the others after {phaseOf(g.phase!).name}" onclick={() => moveBand(g, 1)}>{@html I.up}</button>
+            {/if}
+            <button class="x" aria-label="Remove" title="Remove the band. The mods in it keep their places; they lose the label." onclick={() => store.deleteGroup(g.id)}>{@html I.close}</button>
+          </div>
+        {:else}
+          <p class="hint">None yet. A band you make here shows up in the list as its own heading, and under a mod's <b>Sort it as</b>.</p>
+        {/each}
+      </div>
     {/if}
   </section>
 
@@ -244,6 +296,14 @@
   p:last-child { margin-bottom: 0; }
   .hint { color: var(--text-3); font-size: 12px; line-height: 1.45; margin: 0 0 8px; }
   .caution { display: flex; align-items: center; gap: 14px; background: var(--amber-soft); box-shadow: inset 0 0 0 1px rgba(233, 162, 59, 0.35); }
+  .adv .add { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; margin-bottom: 0; }
+  .adv .add .input { flex: 1 1 220px; min-width: 160px; }
+  .adv .after { flex: none; }
+  .adv .rows { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+  .adv .row.band { display: flex; gap: 8px; align-items: center; }
+  .adv .row.band .nm { flex: 1 1 auto; min-width: 120px; }
+  .adv .row.band .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c, var(--slate)); flex: none; }
+  .adv .row.band .x.down :global(svg) { transform: rotate(180deg); }
   .caution .ic :global(svg) { width: 26px; height: 26px; }
   .caution .txt { flex: 1; font-size: 13px; line-height: 1.5; color: var(--text); }
   .caution .ask { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-2); }

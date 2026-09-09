@@ -34,6 +34,11 @@ pub struct Settings {
     pub update_databases_on_start: bool,
     /// Show the active list in HALO's phase sections rather than as the plain load order.
     pub list_by_phase: bool,
+    /// Show the HALO page's advanced controls: making bands of your own in the load order, and
+    /// what fills them. Off by default because the eight phases are the answer for most lists,
+    /// and a page that opens with everything on it teaches nobody what the ordinary parts do.
+    #[serde(default)]
+    pub halo_advanced: bool,
     /// Column widths the user dragged in the list, in CSS pixels, by column key (`name`, `pkg`).
     pub columns: HashMap<String, u32>,
     /// The optional list columns that are shown: `load`, `versions`, `phase`, `group`.
@@ -59,7 +64,7 @@ pub fn default_list_columns() -> Vec<String> {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { locations: Locations::default(), db_sources: rules::default_sources(), show_weight: false, include_local_runs: true, alphabetical_within_phase: false, update_databases_on_start: false, list_by_phase: true, columns: HashMap::new(), list_columns: default_list_columns(), settings_version: SETTINGS_VERSION, dds: DdsSettings::default(), launch: LaunchSettings::default(), check_for_updates: true }
+        Settings { locations: Locations::default(), db_sources: rules::default_sources(), show_weight: false, include_local_runs: true, alphabetical_within_phase: false, update_databases_on_start: false, list_by_phase: true, halo_advanced: false, columns: HashMap::new(), list_columns: default_list_columns(), settings_version: SETTINGS_VERSION, dds: DdsSettings::default(), launch: LaunchSettings::default(), check_for_updates: true }
     }
 }
 

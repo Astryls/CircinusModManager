@@ -198,6 +198,8 @@ export interface Settings {
   updateDatabasesOnStart: boolean;
   /** Show the active list in HALO's phase sections rather than as the plain load order. */
   listByPhase: boolean;
+  /** Show the HALO page's advanced controls. */
+  haloAdvanced: boolean;
   /** Column widths dragged in the list, CSS px, by column key (`name`, `pkg`). */
   columns?: Record<string, number>;
   /** Optional list columns that are shown: `load`, `versions`, `phase`, `group`. */
