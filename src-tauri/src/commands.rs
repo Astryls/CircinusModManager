@@ -366,6 +366,53 @@ pub async fn detach_list(state: State<'_, Shared>) -> CmdResult<Snapshot> {
     .await
 }
 
+/// Keep your own copy of a Workshop mod, and load that instead of Steam's.
+///
+/// Steam owns the Workshop folder and rewrites it whenever the author publishes; a copy in the
+/// game's own Mods folder is yours, and Steam never touches it. It lands at `Mods/<workshop id>`
+/// with a `PublishedFileId.txt`, which is exactly the shape SteamCMD downloads have -- so it is
+/// the same mod to everything downstream, Force update included, and Circinus can still tell you
+/// when the author has published something newer without any of it arriving on its own.
+#[tauri::command]
+pub async fn localize_mod(app_handle: AppHandle, state: State<'_, Shared>, uid: String) -> CmdResult<(Snapshot, String)> {
+    let want = uid.clone();
+    let (src, dst, id, at) = with_app(&state, move |app| app.localize_plan(&want).map_err(err)).await?;
+    let (name, folder) = (dst.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(), dst.clone());
+    // Off the lock: a big mod is thousands of files and the window must stay alive.
+    let (files, bytes) = tauri::async_runtime::spawn_blocking(move || {
+        let copied = circinus_core::fsx::copy_tree(&src, &dst).map_err(|e| format!("Could not copy the mod: {e}"))?;
+        // A Workshop item is identified by the number on its folder; SteamCMD writes the id into
+        // About as well. The copy carries both, so nothing downstream has to guess.
+        let about = dst.join("About");
+        std::fs::create_dir_all(&about).map_err(|e| format!("Could not write to the copy: {e}"))?;
+        std::fs::write(about.join("PublishedFileId.txt"), format!("{id}\n")).map_err(|e| format!("Could not write the Workshop id into the copy: {e}"))?;
+        Ok::<_, String>(copied)
+    })
+    .await
+    .map_err(err)??;
+
+    // The same two-phase rescan the Rescan button runs, so the copy is a mod like any other.
+    let shared = state.inner().clone();
+    let handle = app_handle.clone();
+    let shallow = tauri::async_runtime::spawn_blocking(move || crate::scan_quick_phase(&handle, &shared, false)).await.map_err(err)??;
+    let shared = state.inner().clone();
+    let handle = app_handle.clone();
+    tauri::async_runtime::spawn_blocking(move || crate::inspect_phase(&handle, &shared, shallow));
+
+    with_app(&state, move |app| {
+        let took = app.localized_took_its_place(id, at);
+        let where_ = folder.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+        let mb = bytes as f64 / 1_048_576.0;
+        let msg = match (took.is_some(), at.is_some()) {
+            (true, true) => format!("Copied {files} files ({mb:.0} MB) to {name} in {where_}, and your list now loads that copy. Steam's copy stays subscribed and updated; it just is not the one the game reads."),
+            (true, false) => format!("Copied {files} files ({mb:.0} MB) to {name} in {where_}. Activate it and the game will load your copy rather than Steam's."),
+            _ => format!("Copied {files} files ({mb:.0} MB) to {name} in {where_}, but Circinus has not read the copy back yet. Rescan and it will be there."),
+        };
+        Ok((app.snapshot(), msg))
+    })
+    .await
+}
+
 /// Delete a mod's folder (recycle bin), or just the link when the entry is one.
 #[tauri::command]
 pub async fn delete_mod(state: State<'_, Shared>, uid: String) -> CmdResult<(Snapshot, String)> {

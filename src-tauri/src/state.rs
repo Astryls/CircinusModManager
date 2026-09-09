@@ -1116,6 +1116,47 @@ impl App {
         Ok(what)
     }
 
+    /// What a "keep a local copy" would copy, and to where.
+    ///
+    /// Separated from the copying so the app is not locked while thousands of files are written.
+    /// Returns the folder to read, the folder to write, the Workshop id and whether the Steam
+    /// copy is in the load order right now, since the local one has to take its place.
+    pub fn localize_plan(&self, uid: &str) -> Result<(PathBuf, PathBuf, u64, Option<usize>)> {
+        let m = self.mods.iter().find(|m| m.uid == uid).ok_or_else(|| circinus_core::Error::Other("No such mod".into()))?;
+        if m.source != Source::Workshop {
+            return Err(circinus_core::Error::Other(format!("{} is not a Steam Workshop mod, so there is nothing to copy: it is already on your disk to keep", m.name)));
+        }
+        let id = m.published_file_id.ok_or_else(|| circinus_core::Error::Other(format!("{} has no Workshop id, so Circinus cannot tell which item it is", m.name)))?;
+        let mods_dir = self.locations.local_mods_dir.clone().ok_or_else(|| circinus_core::Error::Other("Circinus has not found the game's Mods folder. Settings, Where RimWorld lives, will set it".into()))?;
+        let dst = mods_dir.join(id.to_string());
+        if dst.exists() {
+            return Err(circinus_core::Error::Other(format!("There is already a folder called {id} in Mods. Nothing was copied; look at it before deciding what to do with it")));
+        }
+        let at = self.active.iter().position(|u| u == uid);
+        Ok((circinus_core::fsx::real_root(&m.path), dst, id, at))
+    }
+
+    /// Put the copy in the load order where the Steam one was, so the game loads the copy.
+    ///
+    /// RimWorld's own rule does the rest: with the same packageId in Mods and in the Workshop
+    /// folder, the game postfixes the *Workshop* one with `_steam` and the local copy keeps the
+    /// plain id. ModsConfig.xml names the plain id, so the copy is what loads and Steam updating
+    /// its own folder cannot change what the game reads.
+    pub fn localized_took_its_place(&mut self, id: u64, at: Option<usize>) -> Option<String> {
+        let new_uid = self.mods.iter().find(|m| m.published_file_id == Some(id) && m.source != Source::Workshop).map(|m| m.uid.clone())?;
+        if let Some(i) = at {
+            let old = self.active.get(i).cloned();
+            self.active[i] = new_uid.clone();
+            // The Steam copy may also sit elsewhere in the list; it must not be in it twice.
+            if let Some(old) = old {
+                self.active.retain(|u| *u == new_uid || *u != old);
+            }
+            self.dirty = true;
+            self.recompile();
+        }
+        Some(new_uid)
+    }
+
     /// Workshop ids of every installed mod that came from the Workshop or SteamCMD.
     pub fn workshop_ids(&self) -> Vec<(String, u64)> {
         self.mods.iter().filter(|m| m.invalid.is_none()).filter_map(|m| m.published_file_id.map(|id| (m.uid.clone(), id))).collect()

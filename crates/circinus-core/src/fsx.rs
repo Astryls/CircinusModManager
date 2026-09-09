@@ -109,6 +109,33 @@ fn walk_into(dir: &Path, prefix: &Path, skip: &dyn Fn(&str) -> bool, stack: &mut
     stack.pop();
 }
 
+/// Copy a mod folder somewhere else, as the files the game would actually read.
+///
+/// `walk` resolves links on the way, which is the point: a mod deployed as a link to a workspace
+/// copies as the files it points at, not as a link that would dangle the moment the workspace
+/// moved. It also refuses to re-enter a folder already on its stack, so a link that loops back
+/// cannot run the copy away.
+///
+/// Returns how many files were written and how many bytes, for the sentence the user reads.
+pub fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<(usize, u64)> {
+    std::fs::create_dir_all(dst)?;
+    let (mut files, mut bytes) = (0usize, 0u64);
+    for f in walk(src, &|_| false) {
+        let to = dst.join(&f.rel);
+        if f.meta.is_dir() {
+            std::fs::create_dir_all(&to)?;
+            continue;
+        }
+        if let Some(parent) = to.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::copy(&f.path, &to)?;
+        files += 1;
+        bytes += f.meta.len();
+    }
+    Ok((files, bytes))
+}
+
 /// Forward-slash form of a relative path, for inventories and manifests.
 pub fn rel_str(rel: &Path) -> String {
     rel.iter().map(|s| s.to_string_lossy()).collect::<Vec<_>>().join("/")
@@ -116,6 +143,38 @@ pub fn rel_str(rel: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    /// A copy has to be the files the game would read, which is not the same as the bytes in the
+    /// folder: a mod deployed as a link to a workspace has to copy as its contents, or the copy
+    /// is a link that dangles the first time the workspace moves.
+    #[test]
+    fn a_copied_mod_holds_the_files_the_game_would_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(src.join("About")).unwrap();
+        std::fs::create_dir_all(src.join("Defs")).unwrap();
+        std::fs::write(src.join("About/About.xml"), "<ModMetaData><name>M</name></ModMetaData>").unwrap();
+        std::fs::write(src.join("Defs/Things.xml"), "<Defs/>").unwrap();
+
+        // A folder inside the mod that is really somewhere else.
+        let away = tmp.path().join("away");
+        std::fs::create_dir_all(&away).unwrap();
+        std::fs::write(away.join("Wall.png"), [1u8, 2, 3, 4]).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&away, src.join("Textures")).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(&away, src.join("Textures")).unwrap();
+
+        let dst = tmp.path().join("dst");
+        let (files, bytes) = copy_tree(&src, &dst).unwrap();
+        assert!(files >= 3, "About.xml, Things.xml and the linked texture: {files}");
+        assert!(bytes > 0);
+        assert_eq!(std::fs::read_to_string(dst.join("About/About.xml")).unwrap(), "<ModMetaData><name>M</name></ModMetaData>");
+        assert_eq!(std::fs::read(dst.join("Textures/Wall.png")).unwrap(), [1, 2, 3, 4]);
+        assert!(!std::fs::symlink_metadata(dst.join("Textures")).unwrap().file_type().is_symlink(), "the copy holds the files, not the link");
+    }
+
     use super::*;
     use std::fs;
 

@@ -151,6 +151,22 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   come back, and a filter or an activation makes it not — and falls back to the raw offset when
   that row has gone. `tools/loadtest/scroll.cjs` scrolls, leaves, returns and asserts the same row
   is at the same height.
+- Keeping your own copy. *Keep my own copy* on a Workshop mod copies Steam's folder into the
+  game's own `Mods/<workshop id>` and writes `About/PublishedFileId.txt`, which is exactly the
+  shape a SteamCMD download has — so it is the same mod to everything downstream, Force update
+  included. Steam never touches the Mods folder, so nothing overwrites it; and because the copy
+  keeps its Workshop id, `check_updates` still tells the user when the author has published
+  something newer without any of it arriving on its own. That is why the id is kept rather than
+  shed: there is no trade, only a loss, in throwing it away.
+  The "lock the launcher on the local version" half is RimWorld's own rule and needs no code:
+  with the same packageId in Mods and in the Workshop folder, the game postfixes the *Workshop*
+  one with `_steam` and the local copy keeps the plain id ModsConfig.xml names, so the copy is
+  what loads. `localize_plan` reads the state, the copy runs off the lock (a big mod is thousands
+  of files), then the ordinary two-phase rescan runs and `localized_took_its_place` puts the copy
+  in the load order where Steam's was. `fsx::copy_tree` copies through links, so a mod deployed as
+  a link to a workspace copies as its files rather than as a link that would dangle.
+  `Issue::DuplicatePackageId` had to change with it: two copies of one mod is now something a
+  user does on purpose, and "RimWorld picks one copy and ignores the rest" was never true of it.
 - `defs`: builds the document the game builds — every active mod's Defs merged in load order,
   every PatchOperation applied in load order, then Name/ParentName inheritance — with the origin
   of every node recorded, so "who wins this value" has an answer. `defs::xpath` is XPath 1.0 as

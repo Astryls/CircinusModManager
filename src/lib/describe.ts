@@ -60,8 +60,19 @@ export function describe(i: Issue, byUid: Map<string, ModInfo>, viewer?: string)
     }
     case "misplacedOptimization":
       return `Works best at the end of the list, but ${i.afterUids.length} other mod${i.afterUids.length === 1 ? "" : "s"} load after it (${i.afterUids.slice(0, 3).map(n).join(", ")}${i.afterUids.length > 3 ? " and more" : ""}). Sort with HALO to fix this.`;
-    case "duplicatePackageId":
-      return `${i.packageId} is installed ${i.uids.length} times. RimWorld picks one copy and ignores the rest.`;
+    case "duplicatePackageId": {
+      // A copy in Mods beside Steam's is not an accident, it is how you pin a version: RimWorld
+      // postfixes the *Workshop* one with `_steam` and the local copy keeps the plain packageId
+      // your list names, so the local one is what loads. Saying "RimWorld picks one and ignores
+      // the rest" of a state the user deliberately made is both wrong and alarming.
+      const copies = i.uids.map((u) => byUid.get(u)).filter(Boolean) as ModInfo[];
+      const steam = copies.filter((m) => m.source === "workshop");
+      const own = copies.filter((m) => m.source !== "workshop");
+      if (i.uids.length === 2 && steam.length === 1 && own.length === 1) {
+        return `${i.packageId} is installed twice: your own copy in the Mods folder, and Steam's. The game gives Steam's copy the _steam postfix and loads yours, which is what keeping a copy is for. Delete the one in Mods to go back to Steam's.`;
+      }
+      return `${i.packageId} is installed ${i.uids.length} times. RimWorld keeps one copy under the packageId your list names and postfixes the others, so which one loads is not obvious. Leave one.`;
+    }
     case "missingPackageId":
       return "About.xml has no packageId, so no rule can refer to it.";
     case "invalid":

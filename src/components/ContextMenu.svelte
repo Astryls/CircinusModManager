@@ -81,6 +81,8 @@
     close();
   }
   const canDelete = $derived(mods.length > 0 && mods.every((x) => x.source !== "ludeon" && x.source !== "workshop"));
+  /** Only Steam's own copies can be copied out of Steam's folder, and only once. */
+  const localizable = $derived(mods.filter((x) => x.source === "workshop" && x.publishedFileId));
   const workshopOnly = $derived(mods.length > 0 && mods.every((x) => x.source === "workshop"));
   /** Steam can only unsubscribe from what it put there, so only those are offered. */
   const subscribed = $derived(mods.filter((x) => x.publishedFileId && x.source === "workshop" && store.subscriptions[x.publishedFileId] !== "absent"));
@@ -164,7 +166,15 @@
       <button class="it" role="menuitem" onclick={() => run(() => copy(mods.map((x) => x.packageId || x.name).join("\n"), `${mods.length} packageIds`))}>{@html I.list}Copy packageIds</button>
     {/if}
 
-    {#if redownloadable.length || workshopOnly || canDelete}<div class="sep"></div>{/if}
+    {#if localizable.length || redownloadable.length || workshopOnly || canDelete}<div class="sep"></div>{/if}
+    {#if localizable.length}
+      <button
+        class="it"
+        role="menuitem"
+        title="Copies the mod's files from Steam's folder into your own Mods folder and loads that copy. Steam never touches the Mods folder, so an update to the Workshop item cannot change what your game reads. Circinus still tells you when the author has published something newer."
+        onclick={() => run(() => localizable.forEach((x) => store.localizeMod(x.uid)))}
+      >{@html I.save}Keep my own copy{localizable.length > 1 ? ` (${localizable.length})` : ""}</button>
+    {/if}
     {#if redownloadable.length}
       <button class="it" role="menuitem" title="Fetches a fresh copy from the Workshop with SteamCMD into your Mods folder. RimWorld prefers that copy over the Steam one." onclick={() => run(() => store.queueIds(redownloadable.map((x) => x.publishedFileId!)))}>{@html I.download}Force update: re-download{redownloadable.length > 1 ? ` (${redownloadable.length})` : ""}</button>
     {/if}

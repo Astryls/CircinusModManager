@@ -1244,6 +1244,21 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
       if (active.includes(m.uid)) { active = active.filter((u) => u !== m.uid); dirty = true; }
       return [snapshot(), m.linkTarget ? `Removed the link ${m.path.split("\\").pop()}; the folder it pointed at is untouched` : `Moved ${m.path.split("\\").pop()} to the recycle bin`] as T;
     }
+    case "localize_mod": {
+      const m = mods.find((m) => m.uid === A.uid);
+      if (!m) throw new Error("No such mod");
+      if (m.source !== "workshop") throw new Error(`${m.name} is not a Steam Workshop mod, so there is nothing to copy: it is already on your disk to keep`);
+      const uid = `C:\\Mods\\${m.publishedFileId}`;
+      if (mods.some((x) => x.uid === uid)) throw new Error(`There is already a folder called ${m.publishedFileId} in Mods. Nothing was copied; look at it before deciding what to do with it`);
+      const copy: ModInfo = { ...structuredClone(m), uid, path: uid, source: "steamcmd" };
+      mods.push(copy);
+      // byUid is built once at module load, and `placements` looks every active uid up in it
+      // without a guard. A mod that appears later has to be put there too.
+      byUid.set(uid, copy);
+      const at = active.indexOf(m.uid);
+      if (at >= 0) { active[at] = uid; dirty = true; }
+      return [snapshot(), `Copied 214 files (18 MB) to ${m.publishedFileId} in C:\\Mods, and your list now loads that copy. Steam's copy stays subscribed and updated; it just is not the one the game reads.`] as T;
+    }
     case "collection_track": {
       const id = Number(String(A.text).match(/\d{6,}/)?.[0]);
       if (!id) throw new Error("No Workshop link or id found");

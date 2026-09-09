@@ -260,6 +260,7 @@ pub fn run() {
             commands::rename_named_list,
             commands::detach_list,
             commands::delete_mod,
+            commands::localize_mod,
             commands::collection_track,
             commands::collection_refresh,
             commands::collection_acknowledge,

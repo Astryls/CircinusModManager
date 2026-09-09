@@ -1317,6 +1317,15 @@ class Store {
   }
 
   // ---- the mod itself ----
+  /** Keep your own copy of a Workshop mod in the Mods folder, and load that one. */
+  localizeMod(uid: string) {
+    const m = this.byUid.get(uid);
+    return this.run("Copying…", async () => {
+      const [snap, what] = await api.localizeMod(uid);
+      this.apply(snap);
+      this.say(`${m?.name ?? uid}: ${what}`);
+    });
+  }
   deleteMod(uid: string) {
     const m = this.byUid.get(uid);
     return this.run("Deleting…", async () => {

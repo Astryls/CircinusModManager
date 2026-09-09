@@ -76,6 +76,7 @@ export const api = {
   renameNamedList: (from: string, to: string) => invoke<Snapshot>("rename_named_list", { from, to }),
   detachList: () => invoke<Snapshot>("detach_list"),
   deleteMod: (uid: string) => invoke<[Snapshot, string]>("delete_mod", { uid }),
+  localizeMod: (uid: string) => invoke<[Snapshot, string]>("localize_mod", { uid }),
   collectionTrack: (text: string) => invoke<Snapshot>("collection_track", { text }),
   collectionRefresh: (id?: number) => invoke<Snapshot>("collection_refresh", { id: id ?? null }),
   collectionAcknowledge: (id: number) => invoke<Snapshot>("collection_acknowledge", { id }),
