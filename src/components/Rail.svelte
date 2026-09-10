@@ -1,6 +1,7 @@
 <script lang="ts">
   import { store, type View } from "$lib/store.svelte";
   import { I } from "$lib/icons";
+  import { keyLabel } from "$lib/keys.svelte";
   import GroupEditor from "./GroupEditor.svelte";
   import { openUrl } from "$lib/api";
   import { DISCORD, type Group } from "$lib/types";
@@ -76,6 +77,7 @@
     naming = null;
     listOpen = false;
   }
+  $effect(() => store.onEscape("lists-menu", 40, () => listOpen, () => (listOpen = false)));
   function onWindowClick(e: MouseEvent) {
     const t = e.target as Node | null;
     // A click inside the menu may replace the clicked element before this runs (an option
@@ -94,7 +96,7 @@
   }
 </script>
 
-<svelte:window onclick={onWindowClick} onkeydown={(e) => e.key === "Escape" && (listOpen = false)} />
+<svelte:window onclick={onWindowClick} />
 
 <aside class="rail">
   <section class="card inst">
@@ -125,7 +127,7 @@
               <button class="btn sm primary" type="submit">{naming === "rename" ? "Rename" : "Save"}</button>
             </form>
           {:else}
-            {#if store.currentList}<button class="opt" role="menuitem" onclick={() => { store.save(); listOpen = false; }}><span class="t">Save {store.currentList} and ModsConfig.xml</span><span class="kbd">Ctrl S</span></button>{/if}
+            {#if store.currentList}<button class="opt" role="menuitem" onclick={() => { store.save(); listOpen = false; }}><span class="t">Save {store.currentList} and ModsConfig.xml</span><span class="kbd">{keyLabel("Mod+s")}</span></button>{/if}
             <button class="opt" role="menuitem" onclick={() => { naming = "new"; newListName = ""; }}><span class="t">Save as a new list…</span></button>
             {#if store.currentList}
               <button class="opt" role="menuitem" onclick={() => { naming = "rename"; newListName = store.currentList ?? ""; }}><span class="t">Rename…</span></button>

@@ -20,6 +20,10 @@
   let filter = $state<"all" | "missing" | "changed">("all");
   const shown = $derived(filter === "all" ? rows : filter === "missing" ? rows.filter((r) => r.state === "missing") : rows.filter((r) => r.added));
 
+  // Escape closes the topmost thing; the store keeps the order. Import and Collection
+  // had no Escape at all before this.
+  $effect(() => store.onEscape("collection", 30, () => store.showCollection != null, close));
+
   function close() {
     store.showCollection = null;
   }

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { store } from "$lib/store.svelte";
+  import { actions, chord, matches } from "$lib/keys.svelte";
   import TitleBar from "./components/TitleBar.svelte";
   import Rail from "./components/Rail.svelte";
   import Stats from "./components/Stats.svelte";
@@ -17,6 +18,8 @@
   import DefsView from "./components/DefsView.svelte";
   import PatchesView from "./components/PatchesView.svelte";
   import AnnouncementsDialog from "./components/AnnouncementsDialog.svelte";
+  import CommandPalette from "./components/CommandPalette.svelte";
+  import ShortcutsDialog from "./components/ShortcutsDialog.svelte";
   import HaloView from "./components/HaloView.svelte";
   import Toast from "./components/Toast.svelte";
   import ContextMenu from "./components/ContextMenu.svelte";
@@ -42,21 +45,38 @@
     { pane: "active" as const, title: "Active", count: `${store.visibleActive.length}`, note: "your active list" }
   ]);
 
+  /** Is the caret in something a keystroke would type into?
+   *
+   *  The old guard asked only for the tag name and bailed on every INPUT, which is why Escape
+   *  did nothing in the search box and Ctrl+S did not save while you were typing -- the moment
+   *  you most want to save. What matters is not whether an input has focus but whether this
+   *  keystroke would otherwise be a character: a chord is safe in a text field, a bare key is
+   *  not. `isContentEditable` is here because the tag check never covered it. */
+  function typing(e: KeyboardEvent) {
+    const el = e.target as HTMLElement | null;
+    if (!el) return false;
+    return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable;
+  }
+
   function onKey(e: KeyboardEvent) {
-    const tag = (e.target as HTMLElement)?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-    const meta = e.ctrlKey || e.metaKey;
-    if (meta && e.key.toLowerCase() === "s") { e.preventDefault(); store.save(); }
-    else if (meta && e.key.toLowerCase() === "k") { e.preventDefault(); (document.getElementById("search") as HTMLInputElement)?.focus(); }
-    else if (meta && e.key.toLowerCase() === "i") { e.preventDefault(); store.showImport = true; }
-    else if (meta && e.key.toLowerCase() === "d") { e.preventDefault(); store.view = store.view === "downloads" ? "order" : "downloads"; }
-    else if (e.altKey && e.key === "ArrowUp") { e.preventDefault(); store.moveSelected(-1); }
-    else if (e.altKey && e.key === "ArrowDown") { e.preventDefault(); store.moveSelected(1); }
-    else if (e.key === "F8") { e.preventDefault(); store.reviewNext(); }
-    else if (e.key === "Delete" || e.key === "Backspace") {
-      const sel = store.selected.filter((u) => store.activeSet.has(u));
-      if (sel.length) { e.preventDefault(); store.deactivate(sel); }
-    } else if (e.key === "Escape") { if (store.showInstances) store.showInstances = false; else if (store.showAnnouncements) store.showAnnouncements = false; else if (store.showChanges) store.showChanges = false; else { store.selected = []; store.clearPreview(); } }
+    // Escape belongs to whatever is on top; the store keeps the order.
+    if (e.key === "Escape") {
+      // A text field handles its own Escape first -- clearing what you typed is what you meant,
+      // not closing the window behind it.
+      if (typing(e)) return;
+      if (store.escape()) e.preventDefault();
+      return;
+    }
+    const inText = typing(e);
+    for (const a of actions()) {
+      if (!a.keys || !matches(e, chord(a.keys))) continue;
+      // A bare key inside a text field is a character. A chord is not, and stays live.
+      if (inText && a.scope !== "always") return;
+      if (a.enabled && !a.enabled()) return;
+      e.preventDefault();
+      a.run();
+      return;
+    }
   }
 </script>
 
@@ -121,6 +141,8 @@
        a permanent nav entry reading zero is the thing the New tab was deliberately not. -->
   {#if store.showAnnouncements}<Panel name="Modpack updates"><AnnouncementsDialog /></Panel>{/if}
   {#if store.showInstances}<Panel name="Instances"><InstancesDialog /></Panel>{/if}
+  {#if store.showKeys}<Panel name="Shortcuts"><ShortcutsDialog /></Panel>{/if}
+  {#if store.showPalette}<Panel name="Commands"><CommandPalette /></Panel>{/if}
   <Panel name="Menu"><ContextMenu /></Panel>
   <Toast />
   {#if store.loading}

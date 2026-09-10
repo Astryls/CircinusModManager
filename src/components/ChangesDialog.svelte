@@ -33,6 +33,10 @@
   });
   const nameOf = (pkg: string) => store.byPackage.get(pkg.replace(/_steam$/, ""))?.name ?? pkg;
 
+  // Escape closes the topmost thing; the store keeps the order. Import and Collection
+  // had no Escape at all before this.
+  $effect(() => store.onEscape("changes", 30, () => store.showChanges, close));
+
   function close() {
     store.showChanges = false;
   }

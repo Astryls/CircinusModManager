@@ -89,6 +89,10 @@
   });
   const when = (t: number) => (t ? new Date(t * 1000).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "");
 
+  // Escape closes the topmost thing; the store keeps the order. Import and Collection
+  // had no Escape at all before this.
+  $effect(() => store.onEscape("instances", 30, () => store.showInstances, close));
+
   function close() {
     store.showInstances = false;
   }

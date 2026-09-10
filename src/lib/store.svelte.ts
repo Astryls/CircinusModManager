@@ -124,6 +124,44 @@ class Store {
   /** The collection panel, when open: which followed collection. */
   showCollection = $state<number | null>(null);
   showAnnouncements = $state(false);
+  showPalette = $state(false);
+  showKeys = $state(false);
+
+  /** What Escape closes, and in what order.
+   *
+   *  Escape used to be five `svelte:window` listeners in five files, each closing its own local
+   *  boolean, none of them stopping the others. Closing the sort menu with Escape therefore also
+   *  ran App's branch and cleared the selection behind it -- and, worse, silently discarded a
+   *  HALO preview, which is a destructive act on the most-pressed key in the application.
+   *
+   *  So: one handler, and things register what they are. The highest rank that is open wins and
+   *  Escape stops there. Deliberately not `$state`: it is a registry, read in an event handler,
+   *  and making it reactive would re-run every reader whenever a menu opened. */
+  readonly dismissers: { id: string; rank: number; open: () => boolean; close: () => void }[] = [];
+  /** Register while mounted; the returned function unregisters. (`dismiss` is taken: that one
+   *  hides a banner for the session, which is a different verb wearing the same word.) */
+  onEscape(id: string, rank: number, open: () => boolean, close: () => void) {
+    const row = { id, rank, open, close };
+    this.dismissers.push(row);
+    return () => {
+      const i = this.dismissers.indexOf(row);
+      if (i >= 0) this.dismissers.splice(i, 1);
+    };
+  }
+  /** Close the topmost open thing. True when something was closed, so the caller knows whether
+   *  to swallow the key. */
+  escape(): boolean {
+    const open = this.dismissers.filter((d) => d.open()).sort((a, b) => b.rank - a.rank);
+    if (open.length) {
+      open[0].close();
+      return true;
+    }
+    if (this.selected.length) {
+      this.selected = [];
+      return true;
+    }
+    return false;
+  }
   /** The instances dialog, when open. */
   showInstances = $state(false);
   /** Last Player.log analysis, and the logs RimWorld writes on this machine. */
@@ -1021,10 +1059,30 @@ class Store {
   });
   /** Go to the next thing to review, after whatever is selected; the first one otherwise. */
   reviewNext() {
+    this.reviewStep(1);
+  }
+  /** And back. Walking a list one way only is half a review: overshoot the mod you wanted and
+   *  the only way back was round the whole list. */
+  reviewPrev() {
+    this.reviewStep(-1);
+  }
+  private reviewStep(by: 1 | -1) {
     const list = this.reviewList;
     if (!list.length) return;
     const { at } = this.reviewPos;
-    this.reveal(list[(at + 1) % list.length]);
+    // -1 (nothing selected) steps to the first going forward and the last going back, which is
+    // what "the next thing to look at" means from outside the list in either direction.
+    this.reveal(list[(at + by + list.length) % list.length]);
+  }
+
+  /** Every row on screen in the list that has the keyboard, in the order it is drawn.
+   *
+   *  Registered by `ModList` because only it knows what its virtualiser has laid out, and read
+   *  by anything that has to act on "the list" without being it -- select-all, most obviously.
+   *  A function rather than an array so it is never a stale copy. */
+  visibleListFn: (() => string[]) | null = null;
+  visibleList(): string[] {
+    return this.visibleListFn?.() ?? this.visibleActive.map((m) => m.uid);
   }
   // ---- downloads ----
   async queueText(text: string) {

@@ -297,6 +297,31 @@
   function visibleList(): string[] {
     return items.filter((it) => it.kind === "row").map((it) => it.key);
   }
+  // Anything that has to act on "the list on screen" without being this component -- select-all,
+  // the search box handing over on Down -- reads it through here.
+  $effect(() => {
+    store.visibleListFn = visibleList;
+    return () => {
+      if (store.visibleListFn === visibleList) store.visibleListFn = null;
+    };
+  });
+
+  /** The row the keyboard is on.
+   *
+   *  Rows are `tabindex="0"` only while they are the cursor -- a roving tabindex. Every row being
+   *  tabbable meant Tab walked a thousand of them one at a time; worse, real DOM focus on a
+   *  virtualised row is destroyed the moment it scrolls out, and with it the only record of where
+   *  the keyboard was. Keeping the uid here outlives the element, and the effect below puts focus
+   *  back on the row when it returns. */
+  let cursor = $state<string | null>(null);
+  const cursorUid = $derived(cursor && visibleList().includes(cursor) ? cursor : (store.selected.find((u) => visibleList().includes(u)) ?? visibleList()[0] ?? null));
+  $effect(() => {
+    // Only when this list already has the keyboard: stealing focus because a row came back on
+    // screen would take it from whatever the user is actually typing in.
+    if (!cursorUid || !scroller?.contains(document.activeElement)) return;
+    const el = scroller.querySelector(`[data-uid="${CSS.escape(cursorUid)}"]`) as HTMLElement | null;
+    if (el && el !== document.activeElement) el.focus();
+  });
   function click(e: MouseEvent, m: ModInfo) {
     store.select(m.uid, { toggle: e.ctrlKey || e.metaKey, range: e.shiftKey, list: visibleList() });
   }
@@ -311,17 +336,56 @@
     if (store.activeSet.has(m.uid)) store.deactivate([m.uid]);
     else store.activate([m.uid]);
   }
-  function key(e: KeyboardEvent, m: ModInfo) {
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(m); }
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      e.preventDefault();
-      const list = visibleList();
-      const i = list.indexOf(m.uid) + (e.key === "ArrowDown" ? 1 : -1);
-      if (i >= 0 && i < list.length) {
-        store.select(list[i], { range: e.shiftKey, list });
-        scrollToUid(list[i], true);
+  /** Walking the list.
+   *
+   *  Two things were wrong with the version this replaces. It handled ArrowUp and ArrowDown
+   *  without stopping them, so Alt+ArrowDown moved the selection down a row *and* moved the mods
+   *  down a place -- one keystroke, two edits, one of them to the file. And it lived only on a
+   *  focused row: the list is virtualised, so scrolling with the wheel destroys the row that had
+   *  focus, and the next arrow press went to the window handler instead. Which is why arrow keys
+   *  felt broken after any scrolling. `cursor` below is the fix for the second; bailing on Alt is
+   *  the fix for the first.
+   *
+   *  Ctrl moves the cursor without taking the selection with it, which is how a list lets you
+   *  reach a distant row and add it with Ctrl+Space rather than dragging a range over everything
+   *  in between. */
+  function key(e: KeyboardEvent) {
+    // Alt+Arrow is "move the mods", and that belongs to one handler, not two.
+    if (e.altKey) return;
+    const list = visibleList();
+    // From the cursor, not from an event target: focus lands on the container after a wheel
+    // scroll destroys the focused row, and a list that only answers when a row is focused is a
+    // list whose arrow keys stop working the moment you scroll.
+    const from = list.indexOf(cursorUid ?? "");
+    const page = Math.max(1, Math.floor(viewport / ROW) - 1);
+    let to: number | null = null;
+    switch (e.key) {
+      case "Enter":
+      case " ": {
+        const m = cursorUid ? store.byUid.get(cursorUid) : null;
+        if (!m) return;
+        e.preventDefault();
+        e.stopPropagation();
+        toggle(m);
+        return;
       }
+      case "ArrowDown": to = from + 1; break;
+      case "ArrowUp": to = from - 1; break;
+      case "PageDown": to = from + page; break;
+      case "PageUp": to = from - page; break;
+      case "Home": to = 0; break;
+      case "End": to = list.length - 1; break;
+      default: return;
     }
+    e.preventDefault();
+    e.stopPropagation();
+    // Home and End should land somewhere even from an unknown row; the arrows should not wrap.
+    to = Math.max(0, Math.min(list.length - 1, to));
+    if (to === from || !list.length) return;
+    const uid = list[to];
+    cursor = uid;
+    if (!(e.ctrlKey || e.metaKey)) store.select(uid, { range: e.shiftKey, list });
+    scrollToUid(uid, true);
   }
   // ---- drag to reorder, driven by pointer events so it behaves the same in a browser and in
   // the Tauri webview (HTML5 drag and drop is unreliable there on Windows) ----
@@ -453,6 +517,9 @@
     // Read as a moment rather than a flag, so a drag that ends in the other pane cannot leave a
     // later, real click in this one swallowed.
     if (performance.now() - droppedAt < 120) return;
+    // A click is also where the keyboard now is: arrowing after clicking should carry on from
+    // the row that was clicked, not from wherever the cursor happened to be left.
+    cursor = m.uid;
     click(e, m);
   }
   const emptyText = $derived(
@@ -474,9 +541,11 @@
   bind:clientHeight={viewport}
   bind:clientWidth={listW}
   onscroll={onScroll}
+  onkeydown={key}
   role="listbox"
   aria-label={pane === "inactive" ? "Inactive mods" : "Load order"}
   aria-multiselectable="true"
+  aria-activedescendant={cursorUid ?? undefined}
   tabindex="-1"
   style="--cols: {template}"
 >
@@ -538,11 +607,11 @@
           data-uid={m.uid}
           role="option"
           aria-selected={store.selected.includes(m.uid)}
-          tabindex="0"
+          tabindex={m.uid === cursorUid ? 0 : -1}
           onclick={(e) => rowClick(e, m)}
+          onkeydown={key}
           oncontextmenu={(e) => contextMenu(e, m)}
           ondblclick={() => toggle(m)}
-          onkeydown={(e) => key(e, m)}
           onpointerdown={(e) => pointerDown(e, m)}
         >
           <span class="idx num"><span class="grip">{@html I.grip}</span>{it.inactive ? "" : (indexOf.get(m.uid) ?? 0) + 1}</span>

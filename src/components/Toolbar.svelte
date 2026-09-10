@@ -1,6 +1,7 @@
 <script lang="ts">
   import { SORTS, sortLabel as sortLabelOf, sortHint, store, type ShowOnly, type SortKey, type Tab } from "$lib/store.svelte";
   import { t } from "$lib/i18n.svelte";
+  import { keyLabel } from "$lib/keys.svelte";
   import { I } from "$lib/icons";
   import { SOURCE_LABEL, type Source } from "$lib/types";
 
@@ -58,13 +59,14 @@
     store.onlyCurrentVersion = false;
     store.sources = [...sources];
   }
+  $effect(() => store.onEscape("toolbar-menus", 40, () => open || sortOpen, () => { open = false; sortOpen = false; }));
   function onWindowClick(e: MouseEvent) {
     if (open && menu && !menu.contains(e.target as Node)) open = false;
     if (sortOpen && sortMenu && !sortMenu.contains(e.target as Node)) sortOpen = false;
   }
 </script>
 
-<svelte:window onclick={onWindowClick} onkeydown={(e) => e.key === "Escape" && ((open = false), (sortOpen = false))} />
+<svelte:window onclick={onWindowClick} />
 
 <div class="toolbar">
   {#if !store.splitMode}
@@ -135,7 +137,7 @@
     {/if}
   </div>
   <span class="sp"></span>
-  <button class="btn" onclick={() => (store.showImport = true)} title={t("toolbar.import.title")}>{@html I.download}<span class="opt-lbl">{t("toolbar.import")}</span></button>
+  <button class="btn" onclick={() => (store.showImport = true)} title={t("toolbar.import.title", { keys: keyLabel("Mod+i") })}>{@html I.download}<span class="opt-lbl">{t("toolbar.import")}</span></button>
   <button class="btn" onclick={() => store.rescan(false)} title={t("toolbar.refresh.title")}>{@html I.refresh}<span class="opt-lbl">{t("toolbar.refresh")}</span></button>
   {#if store.preview}
     <span class="pair">

@@ -58,10 +58,10 @@
   function onWindowDown(e: MouseEvent) {
     if (m && el && !el.contains(e.target as Node)) close();
   }
-  function onKey(e: KeyboardEvent) {
-    if (!m) return;
-    if (e.key === "Escape") { e.preventDefault(); close(); }
-  }
+  // Escape is one handler now, in the store, ordered by how close a thing is to the user. This
+  // menu is the closest there is, so it goes on top; before, five window listeners raced and
+  // closing this one also cleared the selection behind it.
+  $effect(() => store.onEscape("menu", 60, () => !!m, close));
   function copy(text: string, what: string) {
     navigator.clipboard?.writeText(text).then(() => store.say(`${what} copied`), () => store.say("Could not copy", "warn"));
   }
@@ -90,7 +90,7 @@
   const redownloadable = $derived(mods.filter((x) => x.publishedFileId && x.source !== "ludeon"));
 </script>
 
-<svelte:window onmousedown={onWindowDown} onkeydown={onKey} />
+<svelte:window onmousedown={onWindowDown} />
 
 {#if m && mods.length}
   <div class="menu card" bind:this={el} style="left: {pos.x}px; top: {pos.y}px" role="menu" aria-label="Actions for {label}">

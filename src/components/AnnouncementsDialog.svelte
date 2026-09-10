@@ -27,6 +27,10 @@
   // its own -- otherwise muting a curator also hides the only button that undoes it.
   const mutedPacks = $derived(store.collections.filter((c) => store.packsMuted.has(c.id)));
 
+  // Escape closes the topmost thing; the store keeps the order. Import and Collection
+  // had no Escape at all before this.
+  $effect(() => store.onEscape("announcements", 30, () => store.showAnnouncements, close));
+
   function close() {
     store.showAnnouncements = false;
   }

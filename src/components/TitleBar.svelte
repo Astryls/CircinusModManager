@@ -1,5 +1,7 @@
 <script lang="ts">
   import { store } from "$lib/store.svelte";
+  import { keyLabel } from "$lib/keys.svelte";
+  import { t } from "$lib/i18n.svelte";
   import { I } from "$lib/icons";
 
   const total = $derived(store.mods.length);
@@ -43,13 +45,41 @@
   function shortPath(p?: string | null) {
     return p ? p.split(/[\\/]/).filter(Boolean).slice(-2).join("\\") : "no folder set";
   }
+  $effect(() => store.onEscape("instance-menu", 40, () => open, () => (open = false)));
+
+  /** The search box answers for its own keys.
+   *
+   *  Escape here means "never mind what I typed", which is why it clears before it leaves: a
+   *  search box that closed something behind it while leaving the query in place would be
+   *  answering a question nobody asked. Empty, there is nothing to undo, so it hands focus back
+   *  to the list -- and the list is also where Down and Enter go, because typing a name and then
+   *  reaching for the mouse to click the one result is the thing people actually complain about.
+   *
+   *  This runs before the window handler and stops there, so Escape never reaches the Escape
+   *  stack while there is text to clear. */
+  function searchKey(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      if (store.query) store.query = "";
+      else (e.target as HTMLElement).blur();
+      return;
+    }
+    if (e.key === "ArrowDown" || e.key === "Enter") {
+      const first = store.visibleList()[0];
+      if (!first) return;
+      e.preventDefault();
+      e.stopPropagation();
+      store.scrollTo(first, { select: true, focus: true });
+    }
+  }
   function onWindowClick(e: MouseEvent) {
     const t = e.target as Node | null;
     if (open && box && t?.isConnected && !box.contains(t)) { open = false; ask = null; }
   }
 </script>
 
-<svelte:window onclick={onWindowClick} onkeydown={(e) => e.key === "Escape" && (open = false)} />
+<svelte:window onclick={onWindowClick} />
 
 <header class="title">
   <div class="brand">
@@ -97,8 +127,8 @@
   </div>
   <div class="search">
     {@html I.search}
-    <input id="search" type="search" placeholder="Search {total} mods by name, author, packageId or workshop id" aria-label="Search mods" bind:value={store.query} />
-    <kbd>Ctrl K</kbd>
+    <input id="search" type="search" placeholder="Search {total} mods by name, author, packageId or workshop id" aria-label="Search mods" bind:value={store.query} onkeydown={searchKey} />
+    <kbd>{keyLabel("Mod+k")}</kbd>
   </div>
   <div class="actions">
     {#if store.busy}<span class="busy">{store.busy}</span>{/if}
@@ -109,11 +139,11 @@
       <!-- A small mark that outlives the banner's Not now: the banner is only on the load order, and this is everywhere. -->
       <button class="chip up" title="Circinus {store.update.version} is available. Settings, Updates has Install and restart." onclick={() => (store.view = "settings")}>{@html I.up}<span class="lbl">{store.update.version} available</span></button>
     {/if}
-    <button class="chip" class:on={store.view === "downloads"} title={dl.title} aria-label="Downloads (Ctrl D)" onclick={() => (store.view = store.view === "downloads" ? "order" : "downloads")}>
+    <button class="chip" class:on={store.view === "downloads"} title={dl.title} aria-label={t("titlebar.downloads.aria", { keys: keyLabel("Mod+3") })} onclick={() => (store.view = store.view === "downloads" ? "order" : "downloads")}>
       <span class="dot" class:pulse={dl.pulse} style="--c: {dl.color}"></span>{@html I.cloud}<span class="lbl">{dl.label}</span>
     </button>
     <button class="ib" class:on={store.view === "settings"} aria-label="Settings" title="Settings" onclick={() => (store.view = store.view === "settings" ? "order" : "settings")}>{@html I.gear}</button>
-    <button class="btn" class:save={store.snap?.dirty} disabled={!store.snap?.dirty} onclick={() => store.save()} title="Write ModsConfig.xml (Ctrl S)">{@html I.save}Save</button>
+    <button class="btn" class:save={store.snap?.dirty} disabled={!store.snap?.dirty} onclick={() => store.save()} title={t("titlebar.save.title", { keys: keyLabel("Mod+s") })}>{@html I.save}Save</button>
     <button class="btn" onclick={() => store.launch()} disabled={!!store.busy} title={store.snap?.settings.launch.method === "executable" ? "Start RimWorld from its executable (see Settings, Launching RimWorld)" : "Start RimWorld. Through Steam when it lives in a Steam library, otherwise from its executable."}>{@html I.play}Play</button>
   </div>
 </header>

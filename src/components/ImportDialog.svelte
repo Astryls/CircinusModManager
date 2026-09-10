@@ -23,6 +23,10 @@
     if (/rentry\.(co|org)/i.test(l) || (!l.includes("/") && !/^\d+$/.test(l) && !l.includes("."))) store.importRentry(l);
     else store.importCollection(l);
   }
+  // Escape closes the topmost thing; the store keeps the order. Import and Collection
+  // had no Escape at all before this.
+  $effect(() => store.onEscape("import", 30, () => store.showImport, close));
+
   function close() {
     store.showImport = false;
     store.importPreview = null;

@@ -179,6 +179,42 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   everything local to the component is thrown away on the way to it. `tools/loadtest/patches.cjs`
   covers all of it, and the mock carries a synthetic bulk of patches on top of its named ones
   because thirty targets cannot show whether a window over three thousand rows lines up.
+- Keys are a table, not a chain. `src/lib/keys.svelte.ts` holds every action as
+  `{ id, section, name, keys, enabled, run }`; `src/lib/chord.ts` is the rules for reading a
+  keystroke, kept rune-free and store-free so it can be bundled and tested directly, with the
+  platform as a parameter rather than a sniffed global (which is the only way this machine can
+  check what a Mac would be told to press). The chain it replaces could not be enumerated, so F8
+  walked the review list and was advertised nowhere; could not be labelled, so five components
+  carried "Ctrl S" as a literal and a Mac was told to press Ctrl; and duplicated its own actions,
+  the Downloads toggle existing character for character in two files.
+  Matching is *exact*. `ctrlKey || metaKey` with nothing said about the rest is why Ctrl+Shift+I
+  — devtools, on every browser there is — opened the Import dialog. A chord that does not name a
+  modifier requires it to be up. Shift is the exception: a single character that is not a
+  lowercase letter carries Shift in itself, so `?` binds as `?`.
+  The guard is about the keystroke, not the element. The old one returned early for any INPUT,
+  which is why Escape did nothing in the search box and Ctrl+S did not save while you were
+  typing. A chord is safe in a text field; a bare key is not.
+- Escape belongs to whatever is on top. It used to be five `svelte:window` listeners in five
+  files, each closing its own local boolean and none stopping the others, so closing the sort
+  menu also cleared the selection behind it and — worse — silently discarded a HALO preview, on
+  the most-pressed key in the application. `store.onEscape(id, rank, open, close)` registers;
+  `store.escape()` closes the highest-ranked open thing and stops. Ranks: context menu 60,
+  palette 50, dropdown menus 40, dialogs 30. Import and Collection had no Escape at all before
+  this, and a bare Escape no longer touches a preview.
+- The list is a listbox with a roving tabindex, and the keys live on the container rather than on
+  each row. Both parts matter: every row being `tabindex="0"` made Tab walk a thousand of them,
+  and real DOM focus on a *virtualised* row is destroyed the moment it scrolls out — which is why
+  arrow keys stopped working after any wheel scroll, the row that had focus having ceased to
+  exist. `cursor` keeps the uid, which outlives the element; `aria-activedescendant` says where
+  it is. Rows keep a handler as well only because `key` stops propagation on anything it handles,
+  so the two never both fire. It bails on Alt outright: Alt+Arrow is "move the mods" and belongs
+  to one handler, not to two that each did half of it.
+- The palette (`Mod+Shift+P`) is the honest answer to reaching things by keyboard: thirty chords
+  is thirty things to memorise and thirty chances to collide with something the webview wants.
+  Every row shows its own binding, so finding a command is also how its shortcut is learnt, and
+  an unavailable one is greyed rather than hidden — a command that quietly stops matching sends
+  somebody looking for a word that no longer exists. `ShortcutsDialog` (`?`) is the same table as
+  a reference. Neither can disagree with the handler, because there is one table.
 - What a curator said. A followed collection reports *what* changed — these mods arrived, those
   left — and can say nothing about why, or that a save needs a mod removed before it will load.
   Curators say that on Discord, and a player who follows the pack here and not there never hears

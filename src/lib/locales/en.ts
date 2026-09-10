@@ -149,7 +149,7 @@ export const EN: Catalogue = {
   "toolbar.sortWithHalo": "Sort with HALO",
   "toolbar.sortWithHalo.title": "Preview the load order HALO would use, then apply it or discard it",
   "toolbar.import": "Import",
-  "toolbar.import.title": "Import a mod list (Ctrl I)",
+  "toolbar.import.title": "Import a mod list ({keys})",
 
   // ---- the sidebar --------------------------------------------------------------------------
   "rail.views": "Views",
@@ -164,6 +164,45 @@ export const EN: Catalogue = {
   "rail.nav.settings": "Settings",
   "rail.help": "Help on Discord",
   "rail.help.title": "Ask for help, or say a mod sorted somewhere odd",
+
+  // ---- keyboard shortcuts and the command palette ---------------------------------------------
+  // These name actions, so they read as commands: "Save the mod list", not "Saving" or "Save?".
+  // The chords themselves are not translated -- Ctrl is Ctrl everywhere -- and the labels are
+  // built from the binding, so a Mac shows the Command symbol without a second string here.
+  "keys.section.list": "Your list",
+  "keys.section.review": "Problems",
+  "keys.section.go": "Getting around",
+  "keys.save": "Save the mod list",
+  "keys.search": "Search mods",
+  "keys.import": "Import a list",
+  "keys.refresh": "Read the mod folders again",
+  "keys.play": "Play",
+  "keys.halo": "Preview the order HALO would use",
+  "keys.halo.apply": "Apply the previewed order",
+  "keys.halo.discard": "Discard the preview",
+  "keys.selectAll": "Select everything on screen",
+  "keys.deactivate": "Deactivate the selection",
+  "keys.moveUp": "Move the selection up",
+  "keys.moveDown": "Move the selection down",
+  "keys.reviewNext": "Go to the next problem",
+  "keys.reviewPrev": "Go to the previous problem",
+  "keys.palette": "Find a command",
+  "keys.shortcuts": "Keyboard shortcuts",
+  "keys.view": "Go to {name}",
+
+  "titlebar.downloads.aria": "Downloads ({keys})",
+  "titlebar.save.title": "Write ModsConfig.xml ({keys})",
+
+  "palette.title": "Find a command",
+  "palette.placeholder": "Type what you want to do",
+  "palette.none": "Nothing matches that.",
+  "palette.hint": "Enter runs it. Escape closes.",
+  "palette.unavailable": "not available right now",
+
+  "shortcuts.title": "Keyboard shortcuts",
+  "shortcuts.lead": "Anything with a name can also be found by pressing {palette}.",
+  "shortcuts.section.inlist": "In the list",
+  "shortcuts.list": "In the list, with a row selected: arrow keys move, Shift and an arrow extends the selection, Home and End jump to the ends, Page Up and Page Down move a screenful, Enter activates or deactivates.",
 
   // ---- what a modpack's curator said ---------------------------------------------------------
   // These words wrap somebody else's writing. "Pack" is the curator's Steam collection; keep the
