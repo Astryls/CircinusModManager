@@ -146,19 +146,16 @@
      what this did -- never matched anything, and the one breakpoint it declared never fired.
      One element exists solely so the grid has something to ask about its own width. */
   .strip { container-type: inline-size; }
-  /* Five cards, and never four columns: 4+1 leaves a card orphaned beside a full row, which
-     reads as a layout that broke. 5, 3, 2 and 1 all divide five into rows nobody reads as a
-     mistake. `auto-fit` cannot express that -- its column count passes through 4 on the way down
-     -- so the counts are named.
-     The threshold for staying on one row is 180px a card, lower than a card wants, because the
-     second row is not free: it costs the mod list under it about 113 pixels, at every width, for
-     ever. A slightly tight card beats a permanently shorter list. Below that the cards would be
-     cramped enough to be worse than the trade, and it wraps. */
+  /* One row, always. A second row is not free: it costs the mod list under it about 113 pixels,
+     at every width, for ever -- and the list is what the window is for. So the strip never wraps,
+     and the cards give way instead. Each is its own container (a container query matches
+     *descendants*, so a card can ask about its own width and style what is inside it) and sheds
+     what it can afford to as it narrows.
+     What it never sheds is the caption, because on the load-time card that is the word
+     "Estimated" or "Measured" -- the difference between a fact and a model. Clamped to one line
+     when there is no room for two; never hidden. */
   .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
-  @container (max-width: 947px) { .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-  @container (max-width: 619px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  @container (max-width: 429px) { .stats { grid-template-columns: minmax(0, 1fr); } }
-  .stat { padding: 12px 14px; min-width: 0; overflow: hidden; display: block; text-align: left; color: inherit; font: inherit; cursor: pointer; transition: background 0.12s, box-shadow 0.12s; }
+  .stat { padding: 12px 14px; min-width: 0; overflow: hidden; display: block; text-align: left; color: inherit; font: inherit; cursor: pointer; transition: background 0.12s, box-shadow 0.12s; container-type: inline-size; }
   .stat:hover { background: var(--surface-2); }
   .stat.on { box-shadow: 0 0 0 1.5px var(--amber) inset; }
   .stat .l { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; }
@@ -169,5 +166,26 @@
   .stat .cap { font-size: 12px; color: var(--text-3); display: flex; align-items: flex-start; gap: 6px; min-height: 34px; line-height: 1.4; }
   .stat .cap .flag { margin-top: 1px; }
   .stat .cap .t { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+  /* Narrowing, in the order a card can least afford to lose things. The label wraps above its
+     value on its own (the row is `flex-wrap: wrap`), which is why nothing here has to touch it.
+     These widths are the card's *content* box, which is what `container-type: inline-size`
+     measures -- 28px narrower than the card, at this padding. Reading them as card widths is how
+     the caption came to be clamped to one line a full 30px earlier than intended. */
+  @container (max-width: 150px) {
+    .stat { padding: 11px 12px; }
+    .stat .cap { min-height: 0; }
+    .stat .cap .t { -webkit-line-clamp: 1; line-clamp: 1; }
+  }
+  @container (max-width: 120px) {
+    .stat { padding: 10px 10px; }
+    .stat .l span:first-child { font-size: 12px; }
+    .stat .v { font-size: 15px; }
+    .stat .meter { margin: 7px 0 6px; }
+    .stat .cap { font-size: 11.5px; }
+    /* The flag icon is a second way of saying what the caption says; the caption is the one that
+       survives, since a coloured dot at this size is decoration. */
+    .stat .cap .flag { display: none; }
+  }
 
 </style>

@@ -294,15 +294,20 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   larger half of the number on a small list. `VANILLA_SECS` is the stand-in until a log carries
   Prepatcher's real figure, deliberately round so nobody reads it as measured. The card also
   notices when the measurement was taken with a different list than the one on screen.
-- The summary strip names its column counts: 5, 3, 2, 1, and **never 4**. Five cards over four
-  columns leaves one orphaned beside a full row, which reads as a layout that broke, and
-  `auto-fit` cannot avoid it — its column count passes through 4 on the way down. The threshold
-  for staying on one row is a tighter card than a card wants, because the second row is not free:
-  it costs the mod list under it about 113 pixels, at every width, for ever. Two loadtests failed
-  on exactly that when the strip first went to two rows, which is how the cost got measured rather
-  than argued about. The wrapper `.strip` exists because a container query matches *descendants*
-  of a container — `.stats` carrying `container-type` and then querying `.stats` never matched
-  anything, and the one breakpoint the file declared had never fired.
+- The summary strip is **one row at every width**, and the cards give way instead of the grid
+  wrapping. A second row is not free: it costs the mod list under it about 113 pixels, at every
+  width, for ever, and the list is what the window is for. Two loadtests failed the moment the
+  strip first took a second row, which is how that cost got measured rather than argued about.
+  So each card is its own container and sheds what it can afford as it narrows — padding, then
+  type size, then the flag icon. What it never sheds is the caption, because on the load-time
+  card that word is "Measured" or "Estimated", the difference between a fact and a model; it
+  clamps to one line and is never hidden.
+  Two traps here, both paid for once. A container query matches *descendants* of a container, so
+  `.stats` carrying `container-type` and then querying `.stats` matched nothing — the breakpoint
+  that file declared had never fired, which is why the wrapper `.strip` exists. And the query
+  measures the **content** box, 28px narrower than the card at this padding, so thresholds read
+  as card widths fire about 30px early; that is what clamped the caption to one line at a width
+  where two lines cost nothing.
 - Keeping your own copy. *Keep my own copy* on a Workshop mod copies Steam's folder into the
   game's own `Mods/<workshop id>` and writes `About/PublishedFileId.txt`, which is exactly the
   shape a SteamCMD download has — so it is the same mod to everything downstream, Force update

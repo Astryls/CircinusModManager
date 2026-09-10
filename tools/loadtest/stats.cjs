@@ -3,10 +3,11 @@
 // Two things worth checking, and the geometry is the one that would otherwise be checked by
 // squinting. The strip was `repeat(4, …)` with one breakpoint to `repeat(2, …)`; a fifth card
 // against that leaves an orphan on its own row at wide widths and 2+2+1 at narrow. It is
-// So the column counts are named -- 5, 3, 2, 1, never 4 -- and this sweeps real widths and
-// asserts the cards stay whole rows of equal boxes with nothing clipped, and that the strip stays
-// one row wherever it can, because a second row costs the mod list under it about 113 pixels at
-// every width for ever.
+// The strip is one row at every width, because a second row costs the mod list under it about
+// 113 pixels for ever, and the list is what the window is for. The cards give way instead. So
+// this sweeps real widths and asserts one row of equal boxes with nothing clipped -- and that the
+// load card still says whether its number is measured or modelled at the narrowest of them,
+// because that is the one thing it must not shed on the way down.
 //
 // The other is honesty. The load-time card shows a measurement when the log carried one and a
 // model when it did not, and the two must not read the same: `?noload` is the case most people
@@ -98,9 +99,13 @@ const cards = (page) =>
     const counts = [...rows.values()].map((r) => r.length);
     const orphan = counts.length > 1 && counts[counts.length - 1] === 1 && counts[0] > 2;
     ok(`${width}px: no card orphaned on a row of its own`, !orphan, counts.join('+'));
-    ok(`${width}px: cards are wide enough to read`, c.every((x) => x.w >= 180), `narrowest ${Math.min(...c.map((x) => x.w))}px`);
-    // The second row costs the mod list under it about 113px, so one row is worth a tight card.
-    ok(`${width}px: the strip stays one row where it can`, rows.size === 1 || c[0].stripW < 948, `${rows.size} rows at ${c[0].stripW}px of strip`);
+    ok(`${width}px: cards are wide enough to read`, c.every((x) => x.w >= 125), `narrowest ${Math.min(...c.map((x) => x.w))}px`);
+    // The point of the whole layout: a second row costs the mod list under it about 113 pixels,
+    // so the strip never takes one and the cards give way instead.
+    ok(`${width}px: one row, always`, rows.size === 1, `${rows.size} rows at ${c[0].stripW}px of strip`);
+    // What a card must never shed on the way down: whether its number is measured or modelled.
+    const lt = c.find((x) => x.title === 'Load time');
+    ok(`${width}px: the load card still says which kind of number it is`, /Measured|Estimated/.test(lt.cap), `"${lt.cap}"`);
   }
   await page.setViewportSize({ width: 1100, height: 950 });
   await page.waitForTimeout(300);
