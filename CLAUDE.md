@@ -300,14 +300,19 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   strip first took a second row, which is how that cost got measured rather than argued about.
   So each card is its own container and sheds what it can afford as it narrows — padding, then
   type size, then the flag icon. What it never sheds is the caption, because on the load-time
-  card that word is "Measured" or "Estimated", the difference between a fact and a model; it
-  clamps to one line and is never hidden.
+  card that word is "Measured" or "Estimated", the difference between a fact and a model. It
+  wraps to as many lines as it needs and is never clamped: an ellipsis eats the half of a caption
+  that says what the number *means* — "Measured yesterday, from…" loses the name of whoever
+  measured it — and a sentence you have to hover to finish is not a sentence the card said. Cards
+  in a row are as tall as the tallest, so the strip grows a little at narrow widths (about 30px
+  below 900) instead. That is cheap; a second row is not. `stats.cjs` asserts at every swept width
+  that no label or caption is cut, vertically or horizontally.
   Two traps here, both paid for once. A container query matches *descendants* of a container, so
   `.stats` carrying `container-type` and then querying `.stats` matched nothing — the breakpoint
   that file declared had never fired, which is why the wrapper `.strip` exists. And the query
   measures the **content** box, 28px narrower than the card at this padding, so thresholds read
-  as card widths fire about 30px early; that is what clamped the caption to one line at a width
-  where two lines cost nothing.
+  as card widths fire about 30px early; that is what once clamped the caption at a width where
+  two lines cost nothing.
 - Keeping your own copy. *Keep my own copy* on a Workshop mod copies Steam's folder into the
   game's own `Mods/<workshop id>` and writes `About/PublishedFileId.txt`, which is exactly the
   shape a SteamCMD download has — so it is the same mod to everything downstream, Force update

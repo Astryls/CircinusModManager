@@ -152,20 +152,26 @@
      *descendants*, so a card can ask about its own width and style what is inside it) and sheds
      what it can afford to as it narrows.
      What it never sheds is the caption, because on the load-time card that is the word
-     "Estimated" or "Measured" -- the difference between a fact and a model. Clamped to one line
-     when there is no room for two; never hidden. */
+     "Estimated" or "Measured" -- the difference between a fact and a model. It wraps to as many
+     lines as it needs; it is never clamped and never hidden. */
   .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
   .stat { padding: 12px 14px; min-width: 0; overflow: hidden; display: block; text-align: left; color: inherit; font: inherit; cursor: pointer; transition: background 0.12s, box-shadow 0.12s; container-type: inline-size; }
   .stat:hover { background: var(--surface-2); }
   .stat.on { box-shadow: 0 0 0 1.5px var(--amber) inset; }
   .stat .l { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; }
-  .stat .l span:first-child { font-weight: 600; font-size: 13px; }
+  .stat .l span:first-child { font-weight: 600; font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
   .stat .v { font-weight: 800; font-size: 17px; letter-spacing: -0.02em; white-space: nowrap; margin-left: auto; }
 
   .stat .meter { margin: 8px 0 7px; }
   .stat .cap { font-size: 12px; color: var(--text-3); display: flex; align-items: flex-start; gap: 6px; min-height: 34px; line-height: 1.4; }
-  .stat .cap .flag { margin-top: 1px; }
-  .stat .cap .t { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .stat .cap .flag { margin-top: 1px; flex: none; }
+  /* Wrapped, never cut. A caption clamped to two lines with an ellipsis is a sentence the reader
+     has to hover to finish, and the thing it cuts off is usually the half that says what the
+     number means -- "Measured yesterday, from…" loses the name of whoever measured it. Cards in a
+     grid row are all as tall as the tallest, so the strip grows a little instead; it is still one
+     row, which is the part that costs the list underneath. `anywhere` because a mod name or a
+     path has no spaces to break at and would otherwise push the card wider than its column. */
+  .stat .cap .t { min-width: 0; overflow-wrap: anywhere; }
 
   /* Narrowing, in the order a card can least afford to lose things. The label wraps above its
      value on its own (the row is `flex-wrap: wrap`), which is why nothing here has to touch it.
@@ -175,7 +181,6 @@
   @container (max-width: 150px) {
     .stat { padding: 11px 12px; }
     .stat .cap { min-height: 0; }
-    .stat .cap .t { -webkit-line-clamp: 1; line-clamp: 1; }
   }
   @container (max-width: 120px) {
     .stat { padding: 10px 10px; }

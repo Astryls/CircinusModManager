@@ -38,8 +38,13 @@ const cards = (page) =>
         value: v?.textContent.trim(),
         cap: cap?.textContent.trim() ?? '',
         x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width),
-        // Anything sticking out of its own card is clipped text a player cannot read.
-        clipped: c.scrollWidth > c.clientWidth + 1,
+        // Anything sticking out of its own card is text a player cannot read. Both directions:
+        // the caption used to be clamped with an ellipsis, which cut the half that says what the
+        // number means.
+        clipped: c.scrollWidth > c.clientWidth + 1 || c.scrollHeight > c.clientHeight + 1,
+        // And nothing inside may be cut either, which is what a line clamp does.
+        cut: [...c.querySelectorAll('.l span, .cap .t')].some((e) => e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1),
+        h: Math.round(b.height),
         stripW: Math.round(strip.getBoundingClientRect().width)
       };
     });
@@ -95,6 +100,9 @@ const cards = (page) =>
     const even = [...rows.values()].every((r) => new Set(r.map((x) => x.w)).size === 1);
     ok(`${width}px: every row is equal boxes`, even, [...rows.values()].map((r) => r.map((x) => x.w).join('/')).join('  |  '));
     ok(`${width}px: nothing is clipped inside its card`, c.every((x) => !x.clipped), c.filter((x) => x.clipped).map((x) => x.title).join(', '));
+    // The caption wraps rather than being cut: the half that gets cut is the half that says what
+    // the number means.
+    ok(`${width}px: no label or caption is cut short`, c.every((x) => !x.cut), c.filter((x) => x.cut).map((x) => `${x.title}: "${x.cap}"`).join(' | '));
     // The failure the old grid would have had: one card alone on a row while others share.
     const counts = [...rows.values()].map((r) => r.length);
     const orphan = counts.length > 1 && counts[counts.length - 1] === 1 && counts[0] > 2;
