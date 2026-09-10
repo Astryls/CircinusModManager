@@ -149,14 +149,22 @@ export async function appVersion(): Promise<string> {
   return b.dev ? `${b.version} · development build` : b.version;
 }
 
+/** Open the thing itself: a folder opens *as* the window, a file opens in whatever handles it.
+ *
+ *  This is what "Open folder" means everywhere in the app. `revealPath` is the other one, and the
+ *  two are easy to swap by accident because both end up in a file manager. */
 export async function openPath(path: string) {
-  if (!inTauri) return;
+  if (!inTauri) return console.info("[circinus] open", path);
   const opener = await import("@tauri-apps/plugin-opener");
   await opener.openPath(path);
 }
 
+/** Open the folder that *contains* the thing, with the thing selected in it.
+ *
+ *  Right for a file — you asked about that file and want to see it among its neighbours — and
+ *  wrong for a folder, where it leaves you one level above the folder you asked for. */
 export async function revealPath(path: string) {
-  if (!inTauri) return;
+  if (!inTauri) return console.info("[circinus] reveal", path);
   const opener = await import("@tauri-apps/plugin-opener");
   await opener.revealItemInDir(path);
 }

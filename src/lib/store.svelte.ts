@@ -1,7 +1,7 @@
 // Application state for the UI (Svelte 5 runes). One snapshot from the backend, derived
 // indexes for fast lookups, and the actions the components call.
 
-import { api, appVersion, listen } from "./api";
+import { api, appVersion, listen, openPath } from "./api";
 import { t } from "./i18n.svelte";
 import type { AuditReport, BuiltinRule, CollectionPreview, DefMatch, DefQuery, DefsState, DefTree, Group, HaloRules, ImportPreview, Instance, Issue, ItemState, LaunchSettings, Locations, LogAnalysis, LogFile, ModChange, ModInfo, ModPatchDetail, ModTextures, PatchJob, PatchReport, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamClientStatus, SteamCmdStatus, SubscribeOutcome, SubscriptionProgress, TexState, TrackedCollection, UpdateCheck, UpdateProgress, UserData, Weight } from "./types";
 import { EMPTY_HALO, GROUP_COLORS, loadBand, PHASES, primaryUid, severityOf, type LoadBand, type Severity } from "./types";
@@ -805,6 +805,26 @@ class Store {
       this.say(fresh.length === 1 ? what : `${what} and ${fresh.length - 1} more changed`, "warn");
     } else if (this.listChange && JSON.stringify(this.listChange) !== beforeList) {
       this.say("ModsConfig.xml was changed outside Circinus", "warn");
+    }
+  }
+
+  /** Open a folder in the file manager — the folder itself, not the one holding it.
+   *
+   *  Every "Open folder" in the app used `revealItemInDir`, which opens a thing's *parent* and
+   *  selects it. That is the right gesture for a file and the wrong one for a folder: asked to
+   *  open a mod's folder it opened the Mods folder with the mod highlighted, one level above the
+   *  thing that was asked for, and in a folder of five hundred mods that is not a small
+   *  difference. Reveal is still what a file gets (a log, an executable), where seeing it among
+   *  its neighbours is the point.
+   *
+   *  One method rather than four call sites because the folder can be gone — a mod unsubscribed,
+   *  a drive unplugged — and a button that does nothing at all when pressed is worse than one
+   *  that says why. */
+  async openFolder(path: string) {
+    try {
+      await openPath(path);
+    } catch {
+      this.say(t("folder.failed"), "err");
     }
   }
 

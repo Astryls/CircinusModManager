@@ -1,6 +1,6 @@
 <script lang="ts">
   import { store } from "$lib/store.svelte";
-  import { api, pickFile, pickFolder, inTauri, openUrl, revealPath } from "$lib/api";
+  import { api, pickFile, pickFolder, inTauri, openUrl } from "$lib/api";
   import { I } from "$lib/icons";
   import { DISCORD, type LaunchInfo, type LaunchMethod, type Locations } from "$lib/types";
 
@@ -155,7 +155,7 @@
       {:else if q?.steamcmdInstalled}
         <div class="loc">
           <div class="lt"><b>Installed at</b><span>steamcmd.exe / steamcmd.sh</span></div>
-          <div class="lv"><span class="path mono" title={st?.exe ?? ""}>{st?.exe ?? "…"}</span>{#if st}<button class="btn sm" onclick={() => revealPath(st.root)}>Open</button>{/if}</div>
+          <div class="lv"><span class="path mono" title={st?.exe ?? ""}>{st?.exe ?? "…"}</span>{#if st}<button class="btn sm" onclick={() => store.openFolder(st.root)}>Open</button>{/if}</div>
         </div>
         <div class="loc">
           <div class="lt"><b>Downloads go to</b><span>they move into your Mods folder when done</span></div>

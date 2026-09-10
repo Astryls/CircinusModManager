@@ -48,7 +48,7 @@
         <div class="ctl">
           <button class="btn sm" disabled={q.running || q.installing} title="Runs +login anonymous +quit and shows the output below" onclick={() => store.testSteamCmd()}>{@html I.terminal}Test SteamCMD</button>
           <button class="btn sm" disabled={q.running || q.installing} title="Download SteamCMD again and let it update itself" onclick={() => store.installSteamCmd()}>{@html I.refresh}Reinstall</button>
-          {#if st}<button class="btn sm" onclick={() => revealPath(st.root)}>{@html I.folder}Open folder</button>{/if}
+          {#if st}<button class="btn sm" onclick={() => store.openFolder(st.root)}>{@html I.folder}Open folder</button>{/if}
         </div>
       {:else if q?.installing}
         <div class="row"><span class="spin"></span><span>Installing. SteamCMD downloads itself and updates on first run. The output appears below.</span></div>
@@ -125,7 +125,7 @@
             <span class="nm"><b>{it.name ?? `Workshop item ${it.id}`}</b><span class="mono">{it.id}{it.attempts ? ` · attempt ${it.attempts}` : ""}{it.error ? ` · ${it.error}` : ""}{it.bytes ? ` · ${formatBytes(it.bytes)}` : ""}</span></span>
             <span class="acts">
               <button class="ib" title="Workshop page" onclick={() => openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${it.id}`)}>{@html I.link}</button>
-              {#if it.path}<button class="ib" title="Open folder" onclick={() => revealPath(it.path!)}>{@html I.folder}</button>{/if}
+              {#if it.path}<button class="ib" title="Open folder" onclick={() => store.openFolder(it.path!)}>{@html I.folder}</button>{/if}
               <button class="ib" title="Remove" onclick={() => store.removeDownloads([it.id])}>{@html I.close}</button>
             </span>
           </div>

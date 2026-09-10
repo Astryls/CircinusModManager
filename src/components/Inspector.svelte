@@ -2,7 +2,7 @@
   import { store } from "$lib/store.svelte";
   import { I, sevIcon } from "$lib/icons";
   import { describe, explainLoad } from "$lib/describe";
-  import { api, assetUrl, openUrl, revealPath } from "$lib/api";
+  import { api, assetUrl, openUrl } from "$lib/api";
   import { BAND_LABEL, describeChange, formatBytes, initials, LOAD_BAND_LABEL, PHASES, severityOf, SOURCE_LABEL, splitTarget, type Issue, type Phase, type Rule } from "$lib/types";
 
   const m = $derived(store.selectedMod);
@@ -293,7 +293,7 @@
     <section class="card">
       <h3>Actions</h3>
       <div class="acts">
-        <button class="btn" title={m.linkTarget ? "Shows the folder the link points at, where the files are" : "Shows the mod's folder in your file manager"} onclick={() => revealPath(m.linkTarget ?? m.path)}>{@html I.folder}Open folder</button>
+        <button class="btn" title={m.linkTarget ? "Opens the folder the link points at, where the files are" : "Opens the mod's own folder in your file manager"} onclick={() => store.openFolder(m.linkTarget ?? m.path)}>{@html I.folder}Open folder</button>
         <button class="btn" disabled={!workshopUrl()} onclick={() => openUrl(workshopUrl()!)}>Workshop page</button>
         {#if canRedownload && !change && !update}<button class="btn" title="Fetch a fresh copy from the Workshop with SteamCMD, into your Mods folder" onclick={() => store.queueIds([m.publishedFileId!])}>{@html I.download}Re-download</button>{/if}
         {#if m.contents.textures > 0 && !ddsExcluded && m.source !== "ludeon"}<button class="btn" title="Convert this mod's PNG textures to DDS" disabled={store.tex?.running} onclick={() => store.optimizeTextures([m.uid])}>{@html I.image}Make DDS</button>{/if}

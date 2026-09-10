@@ -179,6 +179,15 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   everything local to the component is thrown away on the way to it. `tools/loadtest/patches.cjs`
   covers all of it, and the mock carries a synthetic bulk of patches on top of its named ones
   because thirty targets cannot show whether a window over three thousand rows lines up.
+- Open folder opens *that* folder. The opener plugin has two calls and they are easy to swap:
+  `openPath` opens the thing itself, `revealItemInDir` opens the folder containing it with the
+  thing selected. Every "Open folder" in the app used reveal, so asking for a mod's folder opened
+  the Mods folder with the mod highlighted — one level above what was asked for, which in a folder
+  of five hundred mods is not a small difference. Folders open, files still reveal (a log, an
+  executable: seeing it among its neighbours is the point). `store.openFolder` is the one place,
+  because the folder can be gone — unsubscribed, drive unplugged — and a button that does nothing
+  when pressed is worse than one that says why. `tools/loadtest/openfolder.cjs` reads it off the
+  console line the browser mock prints instead of calling a plugin that is not there.
 - Keeping your own copy. *Keep my own copy* on a Workshop mod copies Steam's folder into the
   game's own `Mods/<workshop id>` and writes `About/PublishedFileId.txt`, which is exactly the
   shape a SteamCMD download has — so it is the same mod to everything downstream, Force update

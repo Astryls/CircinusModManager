@@ -4,7 +4,7 @@
   import { tick } from "svelte";
   import { store } from "$lib/store.svelte";
   import { I } from "$lib/icons";
-  import { openUrl, revealPath } from "$lib/api";
+  import { openUrl } from "$lib/api";
   import { PHASES, SOURCE_LABEL, type ModInfo } from "$lib/types";
 
   const m = $derived(store.menu);
@@ -148,7 +148,7 @@
 
     <div class="sep"></div>
     {#if one}
-      <button class="it" role="menuitem" onclick={() => run(() => revealPath(one.linkTarget ?? one.path))}>{@html I.folder}Open folder</button>
+      <button class="it" role="menuitem" onclick={() => run(() => store.openFolder(one.linkTarget ?? one.path))}>{@html I.folder}Open folder</button>
       {#if workshopUrl(one)}<button class="it" role="menuitem" onclick={() => run(() => openUrl(workshopUrl(one)!))}>{@html I.cloud}Workshop page</button>{/if}
       <div class="sub" role="presentation" onmouseenter={() => (open = "copy")}>
         <button class="it" role="menuitem" aria-haspopup="menu" aria-expanded={open === "copy"} onclick={() => (open = open === "copy" ? null : "copy")}>{@html I.list}Copy<span class="arrow">›</span></button>

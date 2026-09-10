@@ -165,6 +165,9 @@ export const EN: Catalogue = {
   "rail.help": "Help on Discord",
   "rail.help.title": "Ask for help, or say a mod sorted somewhere odd",
 
+  // ---- opening things on disk -----------------------------------------------------------------
+  "folder.failed": "Could not open that folder. It may have been moved or removed since Circinus last looked.",
+
   // ---- the patch report ------------------------------------------------------------------------
   // Four questions, four tabs. "Contested" is the word the report uses for a method two mods both
   // want to decide; if a language has a better one for a tug of war, use that rather than a
