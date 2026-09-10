@@ -10,6 +10,10 @@
 // That is what this reads: press the button, and check the app asked to *open* the mod's own
 // path rather than to reveal it.
 //
+// Worth knowing what this does NOT prove, because a version of it passed while the feature was
+// broken for every user: the mock short-circuits before the call, so this checks the call site
+// and never the call. `tools/commands-check.mjs` is what checks the other half.
+//
 //   npm run build && npx vite preview --port 4173 --strictPort
 //   node tools/loadtest/openfolder.cjs
 const { chromium } = require('playwright');

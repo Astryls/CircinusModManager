@@ -250,8 +250,24 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   of five hundred mods is not a small difference. Folders open, files still reveal (a log, an
   executable: seeing it among its neighbours is the point). `store.openFolder` is the one place,
   because the folder can be gone — unsubscribed, drive unplugged — and a button that does nothing
-  when pressed is worse than one that says why. `tools/loadtest/openfolder.cjs` reads it off the
-  console line the browser mock prints instead of calling a plugin that is not there.
+  when pressed is worse than one that says why.
+  **It goes through our own `open_folder` command, not the plugin's `open_path`.** The first
+  version called the plugin from the window, on the strength of `opener:allow-open-path` already
+  being in the capability file. That permission enables the command and grants it an *empty*
+  scope, and `is_path_allowed` on an empty scope is false for every path, so the button failed
+  for every user on every machine. Reading a permission's name is not reading what it permits.
+  Rust also gets to check `is_dir` first, which the plugin call could not: `open_path` hands a
+  path to the system's default handler, the default handler for an executable is to run it, and a
+  mod folder can contain links its author chose. Widening the scope to `**` would have worked and
+  would also have handed the window that.
+  The other half of the lesson is that `tools/loadtest/openfolder.cjs` passed the whole time. The
+  browser mock short-circuits before the call, so it proved the call site and could never prove
+  the call. `tools/commands-check.mjs` (part of `npm run check`) is what covers the gap: every
+  `invoke` in `api.ts` names a command in `generate_handler!`, and reaching for the plugin's
+  `openPath` from the window fails outright.
+  A failure now says what actually happened. The first version caught every error and printed
+  "it may have been moved or removed", which was a guess, and the guess was wrong: it sent people
+  to look at a folder sitting exactly where they left it. Errors name the thing that went wrong.
 - Keeping your own copy. *Keep my own copy* on a Workshop mod copies Steam's folder into the
   game's own `Mods/<workshop id>` and writes `About/PublishedFileId.txt`, which is exactly the
   shape a SteamCMD download has — so it is the same mod to everything downstream, Force update

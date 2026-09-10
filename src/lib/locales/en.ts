@@ -230,9 +230,6 @@ export const EN: Catalogue = {
   "packs.unmuted": "You will hear from {name} again.",
   "packs.by": "{name}, curator of {pack}",
 
-  // ---- opening things on disk -----------------------------------------------------------------
-  "folder.failed": "Could not open that folder. It may have been moved or removed since Circinus last looked.",
-
   // ---- the patch report ------------------------------------------------------------------------
   // Four questions, four tabs. "Contested" is the word the report uses for a method two mods both
   // want to decide; if a language has a better one for a tug of war, use that rather than a

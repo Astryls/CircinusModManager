@@ -152,14 +152,18 @@ export async function appVersion(): Promise<string> {
   return b.dev ? `${b.version} · development build` : b.version;
 }
 
-/** Open the thing itself: a folder opens *as* the window, a file opens in whatever handles it.
+/** Open a folder itself, rather than the folder above it.
  *
- *  This is what "Open folder" means everywhere in the app. `revealPath` is the other one, and the
- *  two are easy to swap by accident because both end up in a file manager. */
-export async function openPath(path: string) {
+ *  Goes through our own `open_folder` command, not the opener plugin's `openPath`. That one is
+ *  scope-checked against the capability file, and a permission listed with no `allow` list has an
+ *  empty scope -- it refuses every path on every machine. Rust also gets to check that the thing
+ *  is a folder before handing it to the system, which the plugin call could not.
+ *
+ *  `revealPath` below is the other one, and the two are easy to swap by accident because both end
+ *  up in a file manager. */
+export async function openFolder(path: string) {
   if (!inTauri) return console.info("[circinus] open", path);
-  const opener = await import("@tauri-apps/plugin-opener");
-  await opener.openPath(path);
+  await invoke<void>("open_folder", { path });
 }
 
 /** Open the folder that *contains* the thing, with the thing selected in it.

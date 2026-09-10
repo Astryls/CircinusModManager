@@ -8,7 +8,6 @@
     "core:window:allow-set-title",
     "dialog:default",
     "opener:default",
-    "opener:allow-open-path",
     {
       "identifier": "opener:allow-open-url",
       "allow": [{ "url": "https://*" }, { "url": "http://*" }, { "url": "steam://*" }, { "url": "mailto:*" }]

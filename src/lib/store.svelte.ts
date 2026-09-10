@@ -1,7 +1,7 @@
 // Application state for the UI (Svelte 5 runes). One snapshot from the backend, derived
 // indexes for fast lookups, and the actions the components call.
 
-import { api, appVersion, listen, openPath } from "./api";
+import { api, appVersion, listen, openFolder } from "./api";
 import { t } from "./i18n.svelte";
 import type { AuditReport, BuiltinRule, CollectionPreview, DefMatch, DefQuery, DefsState, DefTree, Group, HaloRules, ImportPreview, Instance, Issue, ItemState, LaunchSettings, Locations, LogAnalysis, LogFile, ModChange, ModInfo, ModPatchDetail, ModTextures, PatchJob, PatchReport, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamClientStatus, SteamCmdStatus, SubscribeOutcome, SubscriptionProgress, TexState, TrackedCollection, UpdateCheck, UpdateProgress, UserData, Weight } from "./types";
 import { EMPTY_HALO, GROUP_COLORS, loadBand, PHASES, primaryUid, severityOf, type LoadBand, type Severity } from "./types";
@@ -861,9 +861,13 @@ class Store {
    *  that says why. */
   async openFolder(path: string) {
     try {
-      await openPath(path);
-    } catch {
-      this.say(t("folder.failed"), "err");
+      await openFolder(path);
+    } catch (e) {
+      // Say what actually went wrong, not what probably did. The first version of this guessed
+      // "it may have been moved or removed" for every failure, and the failure it was actually
+      // catching was a permission scope refusing every path -- so it sent people to look at a
+      // folder that was sitting right where they left it.
+      this.say(String(e), "err");
     }
   }
 

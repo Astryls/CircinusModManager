@@ -269,6 +269,7 @@ pub fn run() {
             commands::collection_refresh,
             commands::collection_acknowledge,
             commands::collection_untrack,
+            commands::open_folder,
             commands::announcements_refresh,
             commands::announcements_seen,
             commands::announcements_mute,

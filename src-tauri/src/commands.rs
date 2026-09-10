@@ -524,6 +524,48 @@ pub async fn collection_untrack(state: State<'_, Shared>, id: u64) -> CmdResult<
     .await
 }
 
+// ---------------------------------------------------------------- opening a folder
+
+/// The folder to hand the file manager, or why it cannot be handed one.
+///
+/// Separate from the command so it can be tested: a command needs an `AppHandle` and this is the
+/// part with the decisions in it.
+///
+/// `is_dir` follows links, which is what a player means -- a mod deployed as a link to a
+/// workspace is a folder as far as anyone opening it is concerned. It also refuses anything that
+/// is *not* a folder, which matters more than it looks: `open_path` hands a path to the system's
+/// default handler, and the default handler for an executable is to run it. Nothing here should
+/// ever be able to start a program, and a mod folder can contain links a mod author chose.
+fn folder_to_open(path: &str) -> std::result::Result<PathBuf, String> {
+    let p = PathBuf::from(path);
+    if !p.exists() {
+        return Err(format!("{path} is not there any more. It may have been moved, renamed or removed since Circinus last read the folders."));
+    }
+    if !p.is_dir() {
+        return Err(format!("{path} is a file, not a folder. Circinus only opens folders."));
+    }
+    Ok(p)
+}
+
+/// Open a folder in the file manager -- that folder, not the one above it.
+///
+/// This is a command of our own rather than the opener plugin's `open_path` called from the
+/// window, because that one is scope-checked against the capability file and a permission listed
+/// without an `allow` list has an *empty* scope: it refuses every path, on every machine,
+/// always. Listing `opener:allow-open-path` and expecting it to work is the mistake this exists
+/// to stop being possible. Widening that scope to `**` would work and would also let the window
+/// ask the system to open any path at all, including an executable; going through Rust means the
+/// check is `is_dir` and the answer is a real reason rather than a guess.
+#[tauri::command]
+pub async fn open_folder(app_handle: AppHandle, path: String) -> CmdResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let dir = folder_to_open(&path)?;
+    app_handle
+        .opener()
+        .open_path(dir.to_string_lossy().to_string(), None::<&str>)
+        .map_err(|e| format!("Could not open {path}: {e}"))
+}
+
 // ---------------------------------------------------------------- what a curator said
 
 /// Fetch every followed pack's announcements.
@@ -1101,4 +1143,37 @@ pub async fn check_updates(state: State<'_, Shared>) -> CmdResult<usize> {
     let client = reqwest::Client::builder().user_agent(circinus_core::weight::USER_AGENT).build().map_err(err)?;
     let items = webapi::published_file_details(&client, &ids).await.map_err(err)?;
     with_app(&state, move |app| Ok(app.apply_update_check(&items))).await
+}
+
+#[cfg(test)]
+mod open_folder_tests {
+    use super::folder_to_open;
+
+    #[test]
+    fn a_folder_opens() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(folder_to_open(&dir.path().display().to_string()).is_ok());
+    }
+
+    #[test]
+    fn a_file_does_not() {
+        // `open_path` hands a path to the system's default handler, and the default handler for an
+        // executable is to run it. A mod folder can contain links its author chose, so "is this a
+        // folder" is a safety check and not a tidiness one.
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("mod.dll");
+        std::fs::write(&f, b"MZ").unwrap();
+        let err = folder_to_open(&f.display().to_string()).unwrap_err();
+        assert!(err.contains("not a folder"), "{err}");
+    }
+
+    #[test]
+    fn a_folder_that_is_gone_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        let gone = dir.path().join("unsubscribed");
+        let err = folder_to_open(&gone.display().to_string()).unwrap_err();
+        assert!(err.contains("not there any more"), "{err}");
+        // And names the path, because "a folder" is not something anyone can go and look at.
+        assert!(err.contains("unsubscribed"), "{err}");
+    }
 }
