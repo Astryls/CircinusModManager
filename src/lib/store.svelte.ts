@@ -123,6 +123,7 @@ class Store {
   menu = $state<{ x: number; y: number; uids: string[] } | null>(null);
   /** The collection panel, when open: which followed collection. */
   showCollection = $state<number | null>(null);
+  showAnnouncements = $state(false);
   /** The instances dialog, when open. */
   showInstances = $state(false);
   /** Last Player.log analysis, and the logs RimWorld writes on this machine. */
@@ -1305,6 +1306,47 @@ class Store {
     const active = installed.filter((id) => this.activeSet.has(this.byPfid.get(id)!.uid));
     return { installed, missing, added, removed, active };
   }
+  // ---- what a curator said ----
+  //
+  // A collection says what changed. It cannot say why, or that a save needs a mod removed before
+  // it will load. Curators say that on Discord, and a player who follows the pack here and not
+  // there never hears it. The feed comes from circinus.sh; the app has no idea Discord exists.
+  announcements = $derived(this.snap?.announcements ?? []);
+  /** Per pack: how far down the user has read. */
+  packsRead = $derived(this.snap?.user.packsRead ?? {});
+  packsMuted = $derived(new Set(this.snap?.user.packsMuted ?? []));
+  /** The posts newer than the mark on their pack. What the banner counts. */
+  unreadAnnouncements = $derived(this.announcements.filter((a) => a.at > (this.packsRead[String(a.pack)] ?? 0)));
+  packName(id: number) {
+    return this.collections.find((c) => c.id === id)?.name ?? String(id);
+  }
+  refreshAnnouncements() {
+    return this.run("Asking circinus.sh…", async () => this.apply(await api.announcementsRefresh()));
+  }
+  /** Mark one pack read up to its newest post. */
+  readAnnouncements(pack: number) {
+    const newest = this.announcements.filter((a) => a.pack === pack).reduce((n, a) => Math.max(n, a.at), 0);
+    if (!newest) return;
+    return this.run("…", async () => this.apply(await api.announcementsSeen(pack, newest)));
+  }
+  /** Mark every pack read, which is what closing the panel means. */
+  readAllAnnouncements() {
+    const packs = [...new Set(this.unreadAnnouncements.map((a) => a.pack))];
+    if (!packs.length) return;
+    return this.run("…", async () => {
+      for (const p of packs) {
+        const newest = this.announcements.filter((a) => a.pack === p).reduce((n, a) => Math.max(n, a.at), 0);
+        this.apply(await api.announcementsSeen(p, newest));
+      }
+    });
+  }
+  mutePack(pack: number, muted: boolean) {
+    return this.run("…", async () => {
+      this.apply(await api.announcementsMute(pack, muted));
+      this.say(muted ? t("packs.muted", { name: this.packName(pack) }) : t("packs.unmuted", { name: this.packName(pack) }));
+    });
+  }
+
   trackCollection(text: string) {
     return this.run("Asking Steam about the collection…", async () => {
       this.apply(await api.collectionTrack(text));

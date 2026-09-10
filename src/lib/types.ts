@@ -267,6 +267,10 @@ export interface UserData {
   autoGroupsAdopted?: boolean;
   /** Edits to HALO's classification made on the HALO page. */
   halo?: HaloRules;
+  /** Collection id → the timestamp of the newest announcement read from that pack. */
+  packsRead?: Record<string, number>;
+  /** Collections whose curator the user would rather not hear from. Still followed. */
+  packsMuted?: number[];
 }
 
 /** The user's own HALO rules: portable statements about mods, not folders. */
@@ -361,6 +365,10 @@ export interface Snapshot {
   namedLists?: NamedList[];
   /** The instance these folders and lists belong to. */
   instance?: Instance;
+  /** What the curators of followed packs have said, newest first. Muted packs are absent. */
+  announcements?: Announcement[];
+  /** Unix seconds of the last successful fetch (0 = never asked). */
+  announcementsCheckedAt?: number;
 }
 
 export interface SavedList {
@@ -392,6 +400,21 @@ export interface TrackedCollection {
   checkedAt: number;
   addedAt: number;
   timeUpdated: number;
+}
+
+/** Something a modpack's curator said, fetched from circinus.sh for a followed collection.
+ *
+ *  `author` is the curator, and the UI must say so: this is somebody else's text shown inside
+ *  Circinus, and a player deciding whether to act on it needs to know whose words they are. */
+export interface Announcement {
+  id: string;
+  /** The Workshop collection id. */
+  pack: number;
+  /** Unix seconds. */
+  at: number;
+  author: string;
+  text: string;
+  link?: string | null;
 }
 
 export interface ListReset {

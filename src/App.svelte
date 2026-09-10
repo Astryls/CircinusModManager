@@ -16,6 +16,7 @@
   import TexturesView from "./components/TexturesView.svelte";
   import DefsView from "./components/DefsView.svelte";
   import PatchesView from "./components/PatchesView.svelte";
+  import AnnouncementsDialog from "./components/AnnouncementsDialog.svelte";
   import HaloView from "./components/HaloView.svelte";
   import Toast from "./components/Toast.svelte";
   import ContextMenu from "./components/ContextMenu.svelte";
@@ -55,7 +56,7 @@
     else if (e.key === "Delete" || e.key === "Backspace") {
       const sel = store.selected.filter((u) => store.activeSet.has(u));
       if (sel.length) { e.preventDefault(); store.deactivate(sel); }
-    } else if (e.key === "Escape") { if (store.showInstances) store.showInstances = false; else if (store.showChanges) store.showChanges = false; else { store.selected = []; store.clearPreview(); } }
+    } else if (e.key === "Escape") { if (store.showInstances) store.showInstances = false; else if (store.showAnnouncements) store.showAnnouncements = false; else if (store.showChanges) store.showChanges = false; else { store.selected = []; store.clearPreview(); } }
   }
 </script>
 
@@ -116,6 +117,9 @@
   {#if store.showImport}<ImportDialog />{/if}
   {#if store.showChanges}<Panel name="Changes"><ChangesDialog /></Panel>{/if}
   {#if store.showCollection != null}<Panel name="Collection"><CollectionDialog /></Panel>{/if}
+  <!-- A dialog rather than a view with a rail row of its own: most installs follow no packs, and
+       a permanent nav entry reading zero is the thing the New tab was deliberately not. -->
+  {#if store.showAnnouncements}<Panel name="Modpack updates"><AnnouncementsDialog /></Panel>{/if}
   {#if store.showInstances}<Panel name="Instances"><InstancesDialog /></Panel>{/if}
   <Panel name="Menu"><ContextMenu /></Panel>
   <Toast />

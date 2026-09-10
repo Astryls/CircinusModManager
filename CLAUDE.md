@@ -179,6 +179,34 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   everything local to the component is thrown away on the way to it. `tools/loadtest/patches.cjs`
   covers all of it, and the mock carries a synthetic bulk of patches on top of its named ones
   because thirty targets cannot show whether a window over three thousand rows lines up.
+- What a curator said. A followed collection reports *what* changed — these mods arrived, those
+  left — and can say nothing about why, or that a save needs a mod removed before it will load.
+  Curators say that on Discord, and a player who follows the pack here and not there never hears
+  it. So the app reads a feed per followed collection from circinus.sh (`announce.rs`), and
+  deliberately knows nothing about Discord: no account, no token, nothing to hold. Whatever
+  writes the feed on the far side can change without an app release, and `docs/announcements.md`
+  is the contract plus the intended writer (a bot in the *curator's* server, publishing through
+  an `/announce` slash command — which needs no Message Content intent at any scale, and makes
+  publishing an act rather than a channel that quietly ships everything said in it).
+  **Every failure is an empty list.** The endpoint is not served yet, so every copy of 1.4.0
+  ships into the empty case, and `?nopacks` in the mock is that case: no banner, nothing in the
+  sidebar, no toast. A curator's note is never worth an error in front of somebody trying to
+  launch a game.
+  The text is somebody else's and the screen says so — the author on every post, a line saying
+  Circinus passes these along without checking them, rendered as text and never as markup, and a
+  `link` dropped unless it is `https://`. Unread is per pack, so catching up on one curator does
+  not silence another; muting one is separate from unfollowing the pack, and the sidebar keeps
+  offering the way in on an empty feed because the unmute rows live inside that panel.
+- Followed packs refresh themselves. `packs.rs` asks twenty seconds after launch and every six
+  hours: what each collection holds, and what its curator has said. Unlike `watch.rs`, which
+  polls four local mtimes every eight seconds because a stat call costs nothing — this one goes
+  over the network to two services that owe us nothing, for a signal that moves maybe weekly, so
+  it is slow, sequential and silent about every failure. It is banner-only for the same reason: a
+  mod changing under a running game is worth interrupting for, a note about it is not. It reads
+  Steam's `time_updated` — stored since collections were added and never read until now — to skip
+  the expensive call when a collection cannot have changed, and it never touches `known`, which
+  is the user's own "I have seen this" mark and would be silently swallowed by the poll that
+  found the change.
 - Open folder opens *that* folder. The opener plugin has two calls and they are easy to swap:
   `openPath` opens the thing itself, `revealItemInDir` opens the folder containing it with the
   thing selected. Every "Open folder" in the app used reveal, so asking for a mod's folder opened

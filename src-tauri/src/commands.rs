@@ -450,7 +450,7 @@ pub async fn collection_track(state: State<'_, Shared>, text: String) -> CmdResu
 }
 
 /// Items and titles of a collection, one level of sub-collections included.
-async fn fetch_collection(client: &reqwest::Client, id: u64) -> CmdResult<(Vec<u64>, HashMap<u64, String>)> {
+pub(crate) async fn fetch_collection(client: &reqwest::Client, id: u64) -> CmdResult<(Vec<u64>, HashMap<u64, String>)> {
     let items = webapi::collection_items(client, id).await.map_err(err)?;
     let mut names = HashMap::new();
     if let Ok(details) = webapi::published_file_details(client, &items).await {
@@ -518,6 +518,77 @@ pub async fn collection_acknowledge(state: State<'_, Shared>, id: u64) -> CmdRes
 pub async fn collection_untrack(state: State<'_, Shared>, id: u64) -> CmdResult<Snapshot> {
     with_app(&state, move |app| {
         app.user.collections.retain(|c| c.id != id);
+        app.persist().map_err(err)?;
+        Ok(app.snapshot())
+    })
+    .await
+}
+
+// ---------------------------------------------------------------- what a curator said
+
+/// Fetch every followed pack's announcements.
+///
+/// One call per pack, and every failure is silence: `announce::fetch_pack` turns a 404, a dead
+/// endpoint and a broken connection all into an empty list, so this cannot put an error in front
+/// of somebody who only wanted to launch a game. The endpoint is not served yet at the time of
+/// writing, and that is exactly the case this has to survive.
+///
+/// Muted packs are not asked about at all. Muting is meant to mean "leave me alone", and a
+/// request that only gets thrown away afterwards does not honour that.
+#[tauri::command]
+pub async fn announcements_refresh(state: State<'_, Shared>) -> CmdResult<Snapshot> {
+    let packs: Vec<(u64, i64)> = with_app(&state, |app| {
+        Ok(app
+            .user
+            .collections
+            .iter()
+            .filter(|c| !app.user.packs_muted.contains(&c.id))
+            // Everything the site will give, rather than only what is new: the panel shows a
+            // curator's recent posts, not a queue that empties itself as you read it.
+            .map(|c| (c.id, 0i64))
+            .collect())
+    })
+    .await?;
+    if packs.is_empty() {
+        return with_app(&state, |app| {
+            app.announcements.clear();
+            Ok(app.snapshot())
+        })
+        .await;
+    }
+    let client = reqwest::Client::builder().user_agent(circinus_core::weight::USER_AGENT).build().map_err(err)?;
+    let got = circinus_core::announce::fetch_all(&client, &packs).await;
+    with_app(&state, move |app| {
+        app.announcements = got;
+        app.announcements_checked_at = crate::state::now_secs();
+        Ok(app.snapshot())
+    })
+    .await
+}
+
+/// The user has read this pack's announcements up to `at` (unix seconds).
+#[tauri::command]
+pub async fn announcements_seen(state: State<'_, Shared>, pack: u64, at: i64) -> CmdResult<Snapshot> {
+    with_app(&state, move |app| {
+        // Never backwards: reading an old post after a new one must not make the new one unread
+        // again, and two windows racing must not lose the further of the two.
+        let e = app.user.packs_read.entry(pack).or_insert(0);
+        *e = (*e).max(at);
+        app.persist().map_err(err)?;
+        Ok(app.snapshot())
+    })
+    .await
+}
+
+/// Stop, or resume, hearing from one pack's curator. Following the pack is untouched.
+#[tauri::command]
+pub async fn announcements_mute(state: State<'_, Shared>, pack: u64, muted: bool) -> CmdResult<Snapshot> {
+    with_app(&state, move |app| {
+        if muted {
+            app.user.packs_muted.insert(pack);
+        } else {
+            app.user.packs_muted.remove(&pack);
+        }
         app.persist().map_err(err)?;
         Ok(app.snapshot())
     })

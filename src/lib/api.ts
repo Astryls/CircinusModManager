@@ -81,6 +81,9 @@ export const api = {
   collectionRefresh: (id?: number) => invoke<Snapshot>("collection_refresh", { id: id ?? null }),
   collectionAcknowledge: (id: number) => invoke<Snapshot>("collection_acknowledge", { id }),
   collectionUntrack: (id: number) => invoke<Snapshot>("collection_untrack", { id }),
+  announcementsRefresh: () => invoke<Snapshot>("announcements_refresh"),
+  announcementsSeen: (pack: number, at: number) => invoke<Snapshot>("announcements_seen", { pack, at }),
+  announcementsMute: (pack: number, muted: boolean) => invoke<Snapshot>("announcements_mute", { pack, muted }),
   // instances
   instances: () => invoke<Instance[]>("instances_list"),
   instanceCurrent: () => invoke<Instance>("instance_current"),

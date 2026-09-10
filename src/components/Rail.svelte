@@ -197,6 +197,13 @@
     {#if !store.collections.length && !newCol}
       <p class="ghint">Follow a Steam collection to see what of it you have, download the rest, and hear when the curator adds or removes mods.</p>
     {:else if store.collections.length}
+      <!-- Also when everything is muted: the unmute rows live inside that panel, so hiding the
+           way in on an empty feed would make muting every curator a one-way door. -->
+      {#if store.announcements.length || store.packsMuted.size}
+        <button class="clear" class:att={store.unreadAnnouncements.length > 0} onclick={() => (store.showAnnouncements = true)}>
+          {store.unreadAnnouncements.length ? `${store.unreadAnnouncements.length} unread from curators` : "What curators have said"}
+        </button>
+      {/if}
       <button class="clear" onclick={() => store.refreshCollections()}>Check all for changes</button>
     {/if}
   </section>
@@ -271,4 +278,5 @@
   .groups .g .ov.auto :global(svg) { width: 12px; height: 12px; opacity: 0.8; }
   .clear { margin-top: 6px; font-size: 12px; color: var(--text-3); font-weight: 600; }
   .clear:hover { color: var(--text); }
+  .clear.att { color: var(--amber); }
 </style>

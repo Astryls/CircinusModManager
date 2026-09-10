@@ -165,6 +165,32 @@ export const EN: Catalogue = {
   "rail.help": "Help on Discord",
   "rail.help.title": "Ask for help, or say a mod sorted somewhere odd",
 
+  // ---- what a modpack's curator said ---------------------------------------------------------
+  // These words wrap somebody else's writing. "Pack" is the curator's Steam collection; keep the
+  // author's name and the pack's name distinct, because the whole point of the screen is that a
+  // player can tell whose words they are reading.
+  "packs.banner.title": { one: "{n} update from a modpack you follow", other: "{n} updates from modpacks you follow" },
+  "packs.banner.detail": "Posted by {name}",
+  "packs.banner.detail.many": "From {names}",
+  "packs.banner.action": "Read",
+  "packs.title": "Modpack updates",
+  "packs.close": "Close",
+  "packs.lead": "Written by the people who curate the packs you follow, and shown here as they wrote it. Circinus passes these along and does not check them: treat anything asking you to install, delete or move files the way you would treat a message from a stranger.",
+  "packs.empty": "Nothing from your curators yet.",
+  "packs.empty.none": "Follow a Steam collection from the sidebar and anything its curator posts turns up here.",
+  "packs.unread": "New",
+  "packs.checked": "Checked {when}",
+  "packs.checked.never": "Not asked yet",
+  "packs.refresh": "Check now",
+  "packs.markread": "Mark all read",
+  "packs.open": "Open link",
+  "packs.mute": "Mute this curator",
+  "packs.unmute": "Unmute",
+  "packs.muted.note": "Muted. You still follow the pack; you will not see what its curator posts.",
+  "packs.muted": "Muted {name}. You still follow the pack.",
+  "packs.unmuted": "You will hear from {name} again.",
+  "packs.by": "{name}, curator of {pack}",
+
   // ---- opening things on disk -----------------------------------------------------------------
   "folder.failed": "Could not open that folder. It may have been moved or removed since Circinus last looked.",
 

@@ -1,7 +1,7 @@
 // Browser-only stand-in for the Rust backend: lets `npm run dev` show the UI with example data.
 // Nothing here ships in the Tauri build path (api.ts only imports it outside Tauri).
 
-import type { BuiltinRule, Chain, ChainStep, Instance, Issue, LaunchSettings, Locations, ModChange, ModInfo, ModPatchDetail, ModPatches, Patcher, PatchJob, PatchReport, PatchSummary, PatchTarget, Phase, Placement, QueueState, Rule, Settings, Snapshot, SortResult, Source, TargetGroup, TexState, UserData, Weight } from "./types";
+import type { Announcement, BuiltinRule, Chain, ChainStep, Instance, Issue, LaunchSettings, Locations, ModChange, ModInfo, ModPatchDetail, ModPatches, Patcher, PatchJob, PatchReport, PatchSummary, PatchTarget, Phase, Placement, QueueState, Rule, Settings, Snapshot, SortResult, Source, TargetGroup, TexState, UserData, Weight } from "./types";
 import { patchTargetName, PHASES } from "./types";
 
 type Seed = [name: string, author: string, pkg: string, pfid: string | null, src: Source, phase: Phase, group: string, ver: string[], size: number, flags?: string];
@@ -183,6 +183,8 @@ let user: UserData = {
   notes: {},
   muted: [],
   ddsExcluded: [],
+  packsRead: {},
+  packsMuted: [],
   halo: { packagePhases: { "jaxe.rimhud": "content" }, namePhases: [{ needle: "Retro", phase: "texture" }], off: [], retarget: {} },
   collections: [
     (() => {
@@ -192,6 +194,18 @@ let user: UserData = {
     })()
   ]
 };
+
+/** What a curator would have posted, if circinus.sh were serving the feed yet.
+ *
+ *  The unserved case is the one the release ships in, so it is a switch rather than an
+ *  assumption: `?nopacks` empties this, and the app has to look deliberate with nothing in it. */
+let packsCheckedAt = 1_757_005_000;
+
+const PACK_POSTS: Announcement[] = [
+  { id: "p3", pack: 2932138122, at: 1_757_004_800, author: "Curator", text: "1.6 patch is live. Update everything before loading a save — the Anomaly patch changed a def name and an old save will throw on load.", link: "https://example.com/patchnotes" },
+  { id: "p2", pack: 2932138122, at: 1_756_940_000, author: "Curator", text: "Dropping Rimatomics from the pack next week. It is not the mod's fault; the CE patch has not been updated and I would rather not ship something that throws in combat.\n\nIf you are mid-colony, keep it — nothing will remove it for you." },
+  { id: "p1", pack: 2932138122, at: 1_756_500_000, author: "Curator", text: "Welcome. Load order matters here: let HALO sort it rather than dragging things around, and read the pinned post before asking why a pawn is on fire." }
+];
 
 let settings: Settings = {
   locations: { gameDir: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld", configDir: "C:\\Users\\Player\\AppData\\LocalLow\\Ludeon Studios\\RimWorld by Ludeon Studios\\Config", localModsDir: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld\\Mods", workshopDir: "C:\\Program Files (x86)\\Steam\\steamapps\\workshop\\content\\294100" },
@@ -327,6 +341,8 @@ function snapshot(): Snapshot {
     currentList: currentList() ?? undefined,
     namedLists: namedLists().map((l) => ({ name: l.name, path: `C:\\Users\\Player\\AppData\\Local\\Circinus\\lists\\named\\${current}\\${l.name}.xml`, count: l.uids.length, updatedAt: l.updatedAt, gameVersion: "1.6.4530 rev1235" })),
     instance: instances.find((i) => i.id === current)!,
+    announcements: (new URLSearchParams(location.search).has("nopacks") ? [] : PACK_POSTS).filter((a) => !(user.packsMuted ?? []).includes(a.pack)),
+    announcementsCheckedAt: packsCheckedAt,
     // Only what is switched on, the way the backend now reports it: a source that is off is not
     // read and does not claim to be loaded. The mock said both were loaded whatever the switches
     // did, which is exactly the bug it should have been showing.
@@ -1351,6 +1367,22 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
     case "collection_untrack":
       user.collections = (user.collections ?? []).filter((c) => c.id !== A.id);
       return snapshot() as T;
+    case "announcements_refresh":
+      packsCheckedAt = Math.floor(Date.now() / 1000);
+      return snapshot() as T;
+    case "announcements_seen": {
+      const at = Number(A.at);
+      const pack = String(A.pack);
+      user.packsRead = { ...(user.packsRead ?? {}), [pack]: Math.max(at, user.packsRead?.[pack] ?? 0) };
+      return snapshot() as T;
+    }
+    case "announcements_mute": {
+      const set = new Set(user.packsMuted ?? []);
+      if (A.muted) set.add(Number(A.pack));
+      else set.delete(Number(A.pack));
+      user.packsMuted = [...set];
+      return snapshot() as T;
+    }
     case "get_launch_info": {
       const args = mockLaunchArgs();
       return { executable: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld\\RimWorldWin64.exe", executableExists: true, steamInstall: true, autoResolvesTo: "steam", args, saveDataFolder: mockSaveDataFolder() } as T;

@@ -4,6 +4,7 @@ pub mod diag;
 pub mod downloads;
 pub mod instances;
 pub mod logs;
+pub mod packs;
 pub mod patches;
 pub mod state;
 pub mod subscribe;
@@ -193,6 +194,9 @@ pub fn run() {
             tauri::async_runtime::spawn_blocking(move || run_scan(handle, st, false));
             // Then keep an eye on Steam and the game while we are open.
             watch::start(app.handle().clone(), shared.clone());
+            // And, more slowly, keep followed modpacks current: what they hold, and what their
+            // curators have said.
+            packs::start(app.handle().clone(), shared.clone());
             // And, a few seconds in, ask circinus.sh whether there is a newer build.
             let up = updater::Updater::new(app.handle().clone(), shared.clone());
             up.start();
@@ -265,6 +269,9 @@ pub fn run() {
             commands::collection_refresh,
             commands::collection_acknowledge,
             commands::collection_untrack,
+            commands::announcements_refresh,
+            commands::announcements_seen,
+            commands::announcements_mute,
             commands::instances_list,
             commands::instance_current,
             commands::instance_create,

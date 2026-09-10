@@ -1,5 +1,6 @@
 <script lang="ts">
   import { store } from "$lib/store.svelte";
+  import { t } from "$lib/i18n.svelte";
   import { headline, headlineFor } from "$lib/describe";
   import { severityOf } from "$lib/types";
   import { I } from "$lib/icons";
@@ -53,6 +54,21 @@
       });
     } else if (l) {
       out.push({ id: "changes", kind: "warning", title: "Your active list was changed outside Circinus", detail: `${listBits} in ModsConfig.xml, by RimWorld or another manager`, action: "Show", run: () => (store.showChanges = true), dismissable: true });
+    }
+    // What a curator said. Below the mods-changed notice on purpose: what changed on this
+    // machine is a fact about the install, and someone's note about it is commentary on that.
+    const unread = store.unreadAnnouncements;
+    if (unread.length) {
+      const names = [...new Set(unread.map((a) => a.author || store.packName(a.pack)))];
+      out.push({
+        id: "packs",
+        kind: "note",
+        title: t("packs.banner.title", { n: unread.length }),
+        detail: names.length === 1 ? t("packs.banner.detail", { name: names[0] }) : t("packs.banner.detail.many", { names: names.slice(0, 3).join(", ") }),
+        action: t("packs.banner.action"),
+        run: () => (store.showAnnouncements = true),
+        dismissable: true
+      });
     }
     if (missing.length) {
       const ready = store.steamcmdReady;

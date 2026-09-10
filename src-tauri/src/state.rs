@@ -2,6 +2,7 @@
 //! No Tauri types here so it stays testable.
 
 use crate::instances::{self, Instance};
+use circinus_core::announce::Announcement;
 use circinus_core::arrivals::Arrivals;
 use circinus_core::cache::Cache;
 use circinus_core::changes::{self, Baseline, ListChange, ModChange};
@@ -233,6 +234,17 @@ pub struct UserData {
     pub groups_seeded: bool,
     /// The user's edits to HALO's classification, from the HALO page.
     pub halo: HaloRules,
+    /// Collection id → the timestamp of the newest announcement the user has read.
+    ///
+    /// Read state and not the announcements themselves: the feed is the site's copy and is
+    /// refetched, so the only thing worth keeping here is how far down it somebody got. Kept per
+    /// pack rather than as one number, because catching up on one curator should not silence
+    /// another.
+    pub packs_read: HashMap<u64, i64>,
+    /// Collections whose curator the user would rather not hear from. Following a pack to see
+    /// what mods it holds and not wanting a running commentary is a reasonable position, and the
+    /// alternative to allowing it is people unfollowing the pack.
+    pub packs_muted: HashSet<u64>,
 }
 
 /// A Steam Workshop collection the user follows. `items` is what it holds now (last fetch);
@@ -372,6 +384,11 @@ pub struct Snapshot {
     pub named_lists: Vec<NamedList>,
     /// The instance these folders and lists belong to.
     pub instance: Instance,
+    /// What the curators of the followed packs have said, newest first, muted packs left out.
+    #[serde(default)]
+    pub announcements: Vec<Announcement>,
+    /// Unix seconds of the last successful announcement fetch (0 = never asked).
+    pub announcements_checked_at: i64,
 }
 
 /// RimWorld gave up loading and wrote a Core-only list; here is what to put back.
@@ -424,6 +441,10 @@ pub struct App {
     pub unreadable: Vec<Unreadable>,
     pub updates: Vec<UpdateInfo>,
     pub updates_checked_at: i64,
+    /// The curator feed as last fetched. Not persisted: it is the site's copy, and a stale one
+    /// shown at launch before the refresh lands would be worse than an empty panel for a moment.
+    pub announcements: Vec<Announcement>,
+    pub announcements_checked_at: i64,
     /// What the previous session last saw; `changes` is the diff against it.
     pub baseline: Option<Baseline>,
     /// When each mod folder was first seen, and which of those are still marked new. Unlike the
@@ -541,6 +562,8 @@ impl App {
             unreadable: Vec::new(),
             updates: Vec::new(),
             updates_checked_at: 0,
+            announcements: Vec::new(),
+            announcements_checked_at: 0,
             baseline,
             arrivals,
             changes: Vec::new(),
@@ -989,6 +1012,8 @@ impl App {
             current_list: self.current_list.clone(),
             named_lists: self.named_lists(),
             instance: self.instance.clone(),
+            announcements: self.announcements.iter().filter(|a| !self.user.packs_muted.contains(&a.pack)).cloned().collect(),
+            announcements_checked_at: self.announcements_checked_at,
         }
     }
 
