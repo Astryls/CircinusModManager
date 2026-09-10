@@ -31,6 +31,16 @@ const DLL_MS_PER_MB: f64 = 60.0;
 const SOUND_MS_PER_MB: f64 = 8.0;
 
 /// The estimate for a folder's contents, in milliseconds.
+/// What the game takes to load with no mods at all, when nothing has measured it here.
+///
+/// `score` sums *mods*, so a total built from it alone is short by however long RimWorld takes to
+/// start on its own -- which is the larger half of the number for a small list. A real figure
+/// arrives from the log whenever Prepatcher is installed (`playerlog::LoadRun::vanilla_secs`) and
+/// is preferred over this the moment it does; this is the stand-in until then, from the same
+/// machine the coefficients came from, and it is deliberately a round number so nobody mistakes
+/// it for a measurement.
+pub const VANILLA_SECS: f64 = 40.0;
+
 pub fn score(c: &Contents) -> u64 {
     let l = &c.load;
     let kb = |b: u64| b as f64 / 1024.0;

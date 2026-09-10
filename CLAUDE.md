@@ -280,6 +280,29 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   read the same opened both. `tools/each-key-check.mjs` (part of `npm run check`) refuses a key
   built by concatenation unless it includes the block's own index, and the mock now carries two
   chains that agree on def and path so `tools/loadtest/defs.cjs` fails without the fix.
+- How long the game takes to start, in the summary strip. Two different numbers, and saying which
+  is which is the whole feature. `playerlog::load_run_of` reads the game's own log for a real
+  measurement: RimWorld never times itself, but Prepatcher prints the vanilla load and the
+  def-cache mods print their pipeline, so a figure is there for most lists big enough to care.
+  The longest reported stage wins, because these stages nest and the outermost is closest to what
+  a player calls loading, and `source` carries whoever measured it — the card names them, since
+  this is somebody else's number and passing it off as Circinus's own would be a lie about where
+  it came from. It is read at launch from paths taken under the lock and files read outside it: a
+  Player.log runs to tens of megabytes.
+  With no measurement the card shows the model, and says so. `loadcost::score` sums *mods*, so a
+  total built from it alone is short by however long RimWorld takes to start on its own — the
+  larger half of the number on a small list. `VANILLA_SECS` is the stand-in until a log carries
+  Prepatcher's real figure, deliberately round so nobody reads it as measured. The card also
+  notices when the measurement was taken with a different list than the one on screen.
+- The summary strip names its column counts: 5, 3, 2, 1, and **never 4**. Five cards over four
+  columns leaves one orphaned beside a full row, which reads as a layout that broke, and
+  `auto-fit` cannot avoid it — its column count passes through 4 on the way down. The threshold
+  for staying on one row is a tighter card than a card wants, because the second row is not free:
+  it costs the mod list under it about 113 pixels, at every width, for ever. Two loadtests failed
+  on exactly that when the strip first went to two rows, which is how the cost got measured rather
+  than argued about. The wrapper `.strip` exists because a container query matches *descendants*
+  of a container — `.stats` carrying `container-type` and then querying `.stats` never matched
+  anything, and the one breakpoint the file declared had never fired.
 - Keeping your own copy. *Keep my own copy* on a Workshop mod copies Steam's folder into the
   game's own `Mods/<workshop id>` and writes `About/PublishedFileId.txt`, which is exactly the
   shape a SteamCMD download has — so it is the same mod to everything downstream, Force update

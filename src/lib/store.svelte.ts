@@ -4,7 +4,7 @@
 import { api, appVersion, listen, openFolder } from "./api";
 import { t } from "./i18n.svelte";
 import type { AuditReport, BuiltinRule, CollectionPreview, DefMatch, DefQuery, DefsState, DefTree, Group, HaloRules, ImportPreview, Instance, Issue, ItemState, LaunchSettings, Locations, LogAnalysis, LogFile, ModChange, ModInfo, ModPatchDetail, ModTextures, PatchJob, PatchReport, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamClientStatus, SteamCmdStatus, SubscribeOutcome, SubscriptionProgress, TexState, TrackedCollection, UpdateCheck, UpdateProgress, UserData, Weight } from "./types";
-import { EMPTY_HALO, GROUP_COLORS, loadBand, PHASES, primaryUid, severityOf, type LoadBand, type Severity } from "./types";
+import { EMPTY_HALO, GROUP_COLORS, loadBand, PHASES, primaryUid, severityOf, VANILLA_SECS, type LoadBand, type Severity } from "./types";
 
 export type View = "order" | "library" | "downloads" | "textures" | "defs" | "patches" | "analyzer" | "halo" | "settings";
 
@@ -259,11 +259,36 @@ class Store {
     return out;
   });
   loadOf = (uid: string) => this.loadShares.get(uid);
-  /** Total estimated loading time of the active list, in seconds; a model, not a measurement. */
+  /** Total estimated loading time of the active list, in seconds; a model, not a measurement.
+   *
+   *  Mods only — this is the number the Time column adds up to, and the denominator every
+   *  per-mod share is taken against, so it must stay the sum of the parts. */
   loadTotalSeconds = $derived.by(() => {
     let total = 0;
     for (const uid of this.active) total += this.byUid.get(uid)?.contents.load?.scoreMs ?? 0;
     return total / 1000;
+  });
+
+  // ---- how long the game takes to start ----
+  //
+  // Two different numbers, and the difference is the whole point of showing either. `loadRun` is
+  // what the game's own log recorded last time: a real measurement of a real load, taken by
+  // somebody else's mod, which the screen attributes. `loadEstimate` is the model -- nine
+  // hand-rounded coefficients over what the folders hold -- and it is what shows when no log has
+  // said. The card says which it is, because a guess in large type reads as a fact.
+  loadRun = $derived(this.snap?.loadRun ?? null);
+  loadRunAt = $derived(this.snap?.loadRunAt ?? 0);
+  /** Vanilla's own load: measured when Prepatcher said so, a round stand-in otherwise. */
+  vanillaSeconds = $derived(this.loadRun?.vanillaSecs ?? VANILLA_SECS);
+  /** The list *and* the game under it. `loadTotalSeconds` is mods alone, which as a total would
+   *  be short by the larger half of the number on a small list. */
+  loadEstimateSeconds = $derived(this.vanillaSeconds + this.loadTotalSeconds);
+  /** Was the measurement taken with roughly the list that is on screen now? A figure from a run
+   *  with two hundred fewer mods is a fact about a different list. */
+  loadRunMatchesList = $derived.by(() => {
+    const n = this.loadRun?.mods ?? null;
+    if (n == null) return true;
+    return Math.abs(n - this.active.length) <= Math.max(5, this.active.length * 0.1);
   });
   /** The user's HALO rules, always present. */
   halo = $derived<HaloRules>(this.snap?.user.halo ?? EMPTY_HALO);

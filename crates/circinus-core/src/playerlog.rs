@@ -92,6 +92,95 @@ pub struct Timing {
     pub line: usize,
 }
 
+/// How long the game actually took to load, the last time it did.
+///
+/// RimWorld's own log has no timestamps and never says. What it does carry are lines other mods
+/// print -- Prepatcher announces the vanilla load, and the def-cache mods announce their pipeline
+/// -- so a measured figure is available to anybody running one of them, which on a list big
+/// enough to care about load time is nearly everybody.
+///
+/// `source` is the line's own label and is shown beside the number. This is somebody else's
+/// measurement of somebody else's stage, not a stopwatch Circinus held, and the screen says which
+/// mod said it rather than presenting it as the app's own finding.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadRun {
+    pub total_secs: f64,
+    /// What in the log reported it.
+    pub source: String,
+    /// Vanilla's own load, when Prepatcher printed it: the floor under any list.
+    pub vanilla_secs: Option<f64>,
+    /// Mods active in that run, when a line happened to say. Lets the screen notice that the
+    /// measurement was taken with a different list than the one on screen now.
+    pub mods: Option<usize>,
+}
+
+/// The best measurement of a whole load in a parsed log, if it holds one.
+///
+/// "Best" is the longest, which is the honest choice: these lines report *stages*, the stages
+/// nest, and the outermost is the one closest to what a player experiences as loading. Taking
+/// the first, or the last, would report whichever stage happened to print.
+pub fn load_run(r: &LogReport) -> Option<LoadRun> {
+    pick(&r.timings, r.prepatcher_vanilla_load_secs)
+}
+
+/// The same, from raw text, without building the rest of the report.
+///
+/// The full parse gathers exceptions, textures, XML problems and stacks; this runs at every
+/// launch on a log that can be tens of megabytes, and none of that is wanted. Two rules and a
+/// linear pass.
+pub fn load_run_of(text: &str) -> Option<LoadRun> {
+    let mut timings: Vec<Timing> = Vec::new();
+    let mut vanilla = None;
+    for (i, line) in text.lines().enumerate() {
+        if let Some(rest) = line.strip_prefix("Prepatcher: Starting... (vanilla load took ") {
+            vanilla = parse_secs(rest.trim_end_matches(')'));
+        } else if line.contains("Total pipeline time") || (line.starts_with('[') && (line.contains(" took ") || line.contains("Loaded in "))) {
+            if let Some(secs) = timing_in(line) {
+                if secs >= 1.0 {
+                    timings.push(Timing { label: strip_ref(line), seconds: secs, line: i + 1 });
+                }
+            }
+        }
+    }
+    pick(&timings, vanilla)
+}
+
+fn pick(timings: &[Timing], vanilla: Option<f64>) -> Option<LoadRun> {
+    let biggest = timings.iter().max_by(|a, b| a.seconds.total_cmp(&b.seconds));
+    // Prepatcher's vanilla figure is a real whole-load measurement too, and on a log with no
+    // other timing it is the only one -- but it measures the game *without* the list, so it is
+    // never the answer when a longer stage was also reported.
+    match (biggest, vanilla) {
+        (Some(t), v) if t.seconds >= v.unwrap_or(0.0) => Some(LoadRun { total_secs: t.seconds, source: label_of(&t.label), vanilla_secs: v, mods: mods_in(&t.label) }),
+        (_, Some(v)) => Some(LoadRun { total_secs: v, source: "Prepatcher, before your mods loaded".into(), vanilla_secs: Some(v), mods: None }),
+        _ => None,
+    }
+}
+
+/// `[DefLoadCache] Cache saved, 83603 defs from 708 mods (12777 KB) in 1803ms. Total…` → the
+/// bracketed name, which is the mod that measured it.
+fn label_of(line: &str) -> String {
+    let t = line.trim();
+    if let Some(rest) = t.strip_prefix('[') {
+        if let Some(i) = rest.find(']') {
+            return rest[..i].trim().to_string();
+        }
+    }
+    t.chars().take(40).collect()
+}
+
+/// "from 708 mods" anywhere on the line.
+fn mods_in(line: &str) -> Option<usize> {
+    let i = line.find(" mods")?;
+    let head = &line[..i];
+    let digits: String = head.chars().rev().take_while(|c| c.is_ascii_digit()).collect();
+    if digits.is_empty() {
+        return None;
+    }
+    digits.chars().rev().collect::<String>().parse().ok()
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogReport {
@@ -576,3 +665,53 @@ SymInit: Symbol-SearchPath: '.;C:\x'
     }
 }
 
+#[cfg(test)]
+mod load_run_tests {
+    use super::*;
+
+    const REAL: &str = "Prepatcher: Starting... (vanilla load took 43.40687s)\n[DefLoadCache] Cache saved, 83603 defs from 708 mods (12777 KB) in 1803ms. Total pipeline time: 462986ms\n";
+
+    #[test]
+    fn reads_a_real_load_from_a_real_log() {
+        let run = load_run(&parse(REAL)).expect("a log with both lines has a load");
+        assert!((run.total_secs - 462.986).abs() < 0.01, "{}", run.total_secs);
+        assert_eq!(run.source, "DefLoadCache", "the mod that measured it is named");
+        assert!((run.vanilla_secs.unwrap() - 43.40687).abs() < 0.001);
+        assert_eq!(run.mods, Some(708));
+    }
+
+    #[test]
+    fn the_longest_stage_wins_whatever_order_it_printed_in() {
+        // Stages nest, so the outermost is the one closest to what a player calls loading.
+        let text = "[A] step took 12s\n[Big] whole thing took 300s\n[B] step took 4s\n";
+        let run = load_run(&parse(text)).unwrap();
+        assert_eq!(run.source, "Big");
+        assert!((run.total_secs - 300.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn prepatcher_alone_is_still_a_measurement() {
+        let run = load_run(&parse("Prepatcher: Starting... (vanilla load took 41.5s)\n")).unwrap();
+        assert!((run.total_secs - 41.5).abs() < 0.01);
+        assert!(run.source.contains("Prepatcher"));
+        assert_eq!(run.mods, None);
+    }
+
+    #[test]
+    fn a_log_with_no_timings_has_no_load() {
+        assert!(load_run(&parse("RimWorld 1.6.4530 rev1235\nsomething happened\n")).is_none());
+    }
+
+    #[test]
+    fn the_light_scan_agrees_with_the_full_parse() {
+        // Two readers of one log that disagreed would be worse than one that was wrong.
+        assert_eq!(load_run_of(REAL), load_run(&parse(REAL)));
+        assert_eq!(load_run_of(""), None);
+    }
+
+    #[test]
+    fn a_line_without_a_mod_count_says_so_rather_than_guessing() {
+        let run = load_run(&parse("[Slow] everything took 90s\n")).unwrap();
+        assert_eq!(run.mods, None);
+    }
+}

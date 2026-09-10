@@ -1,0 +1,114 @@
+// The summary strip, and the fifth card in it.
+//
+// Two things worth checking, and the geometry is the one that would otherwise be checked by
+// squinting. The strip was `repeat(4, …)` with one breakpoint to `repeat(2, …)`; a fifth card
+// against that leaves an orphan on its own row at wide widths and 2+2+1 at narrow. It is
+// So the column counts are named -- 5, 3, 2, 1, never 4 -- and this sweeps real widths and
+// asserts the cards stay whole rows of equal boxes with nothing clipped, and that the strip stays
+// one row wherever it can, because a second row costs the mod list under it about 113 pixels at
+// every width for ever.
+//
+// The other is honesty. The load-time card shows a measurement when the log carried one and a
+// model when it did not, and the two must not read the same: `?noload` is the case most people
+// are in, and there the caption has to say the number is an estimate.
+//
+//   npm run build && npx vite preview --port 4173 --strictPort
+//   node tools/loadtest/stats.cjs [outdir]
+const { chromium } = require('playwright');
+
+const BASE = process.env.BASE || 'http://127.0.0.1:4173';
+const OUT = process.argv[2] || '/tmp/stats';
+
+let failures = 0;
+function ok(label, cond, detail = '') {
+  if (!cond) failures++;
+  console.log(`${cond ? 'ok  ' : 'FAIL'}  ${label}${detail ? '  — ' + detail : ''}`);
+}
+
+const cards = (page) =>
+  page.evaluate(() => {
+    const strip = document.querySelector('.stats');
+    return [...document.querySelectorAll('.stats .stat')].map((c) => {
+      const b = c.getBoundingClientRect();
+      const v = c.querySelector('.v');
+      const cap = c.querySelector('.cap .t');
+      return {
+        title: c.querySelector('.l span')?.textContent.trim(),
+        value: v?.textContent.trim(),
+        cap: cap?.textContent.trim() ?? '',
+        x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width),
+        // Anything sticking out of its own card is clipped text a player cannot read.
+        clipped: c.scrollWidth > c.clientWidth + 1,
+        stripW: Math.round(strip.getBoundingClientRect().width)
+      };
+    });
+  });
+
+(async () => {
+  const browser = await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 1600, height: 950 } });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('PAGEERROR ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text().slice(0, 200)); });
+
+  await page.goto(BASE, { waitUntil: 'load' });
+  await page.waitForSelector('.stats .stat', { timeout: 15000 });
+  await page.waitForTimeout(500);
+
+  // ---- the measured case -----------------------------------------------------------------------
+  let c = await cards(page);
+  ok('there are five cards', c.length === 5, c.map((x) => x.title).join(' | '));
+  const load = c.find((x) => x.title === 'Load time');
+  ok('one of them is the load time', !!load, c.map((x) => x.title).join(' | '));
+  // 462.986s from the mock's log line.
+  ok('and it reads as a clock, not as raw seconds', load.value === '7m 43s', load.value);
+  ok('the caption says it was measured', /Measured/i.test(load.cap), load.cap);
+  ok('and names who measured it', /DefLoadCache/.test(load.cap), load.cap);
+  await page.locator('.strip').screenshot({ path: `${OUT}/stats-measured.png` });
+
+  // ---- the case most people are in --------------------------------------------------------------
+  await page.goto(`${BASE}/?noload`, { waitUntil: 'load' });
+  await page.waitForSelector('.stats .stat', { timeout: 15000 });
+  await page.waitForTimeout(500);
+  const est = (await cards(page)).find((x) => x.title === 'Load time');
+  ok('with no measurement there is still a figure', !!est && !!est.value, est?.value ?? 'none');
+  // The whole point: a model and a measurement must not look alike.
+  ok('and the caption calls it an estimate', /Estimated/i.test(est.cap), est.cap);
+  ok('which is a different number from the measured one', est.value !== load.value, `${est.value} vs ${load.value}`);
+  // Mods alone would read absurdly low, so the game's own load is in it.
+  ok('and it includes the game itself, not only the mods', /for the game/.test(est.cap), est.cap);
+  await page.locator('.strip').screenshot({ path: `${OUT}/stats-estimated.png` });
+
+  // ---- geometry, swept ---------------------------------------------------------------------------
+  await page.goto(BASE, { waitUntil: 'load' });
+  await page.waitForSelector('.stats .stat', { timeout: 15000 });
+  for (const width of [2200, 1800, 1600, 1400, 1240, 1100, 980, 860, 760]) {
+    await page.setViewportSize({ width, height: 950 });
+    await page.waitForTimeout(250);
+    c = await cards(page);
+    if (!c.length) { ok(`${width}px: the strip is on screen`, false); continue; }
+
+    // Cards on one row share a top edge and a width; that is what "a row of cards" means.
+    const rows = new Map();
+    for (const x of c) rows.set(x.y, [...(rows.get(x.y) ?? []), x]);
+    const even = [...rows.values()].every((r) => new Set(r.map((x) => x.w)).size === 1);
+    ok(`${width}px: every row is equal boxes`, even, [...rows.values()].map((r) => r.map((x) => x.w).join('/')).join('  |  '));
+    ok(`${width}px: nothing is clipped inside its card`, c.every((x) => !x.clipped), c.filter((x) => x.clipped).map((x) => x.title).join(', '));
+    // The failure the old grid would have had: one card alone on a row while others share.
+    const counts = [...rows.values()].map((r) => r.length);
+    const orphan = counts.length > 1 && counts[counts.length - 1] === 1 && counts[0] > 2;
+    ok(`${width}px: no card orphaned on a row of its own`, !orphan, counts.join('+'));
+    ok(`${width}px: cards are wide enough to read`, c.every((x) => x.w >= 180), `narrowest ${Math.min(...c.map((x) => x.w))}px`);
+    // The second row costs the mod list under it about 113px, so one row is worth a tight card.
+    ok(`${width}px: the strip stays one row where it can`, rows.size === 1 || c[0].stripW < 948, `${rows.size} rows at ${c[0].stripW}px of strip`);
+  }
+  await page.setViewportSize({ width: 1100, height: 950 });
+  await page.waitForTimeout(300);
+  await page.locator('.strip').screenshot({ path: `${OUT}/stats-narrow.png` });
+
+  console.log('errors:', errors.length ? errors.join('\n') : 'none');
+  if (errors.length) failures += errors.length;
+  await browser.close();
+  console.log(failures ? `\n${failures} failed.` : '\nall good');
+  process.exit(failures ? 1 : 0);
+})();

@@ -56,6 +56,33 @@ pub fn default_paths(app: &App) -> Vec<PathBuf> {
     out
 }
 
+/// Read the newest Player.log for one thing only: how long the last load took.
+///
+/// Runs at launch, so it is deliberately cheap -- `playerlog::load_run_of` is a linear pass with
+/// two rules, not the full analysis, which gathers exceptions and stacks nobody asked for here.
+/// Returns the figure and the log's own modified time, so the screen can say how old it is.
+///
+/// Takes paths rather than the `App` on purpose: a log is tens of megabytes and this must not run
+/// with the state locked, which is what taking `&App` would have meant.
+///
+/// Every failure is `None`. A log that is missing, locked by a running game or unreadable is not
+/// worth a word: the estimate is what shows instead, which is what showed before this existed.
+pub fn last_load(paths: &[PathBuf]) -> Option<(circinus_core::playerlog::LoadRun, i64)> {
+    let mut best: Option<(circinus_core::playerlog::LoadRun, i64)> = None;
+    for path in paths {
+        let Ok(md) = std::fs::metadata(path) else { continue };
+        let Ok(text) = std::fs::read_to_string(path) else { continue };
+        let Some(run) = circinus_core::playerlog::load_run_of(&text) else { continue };
+        let at = md.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs() as i64).unwrap_or(0);
+        // Player.log and Player-prev.log are this run and the one before; take whichever was
+        // written last rather than whichever the path list happened to name first.
+        if best.as_ref().is_none_or(|(_, b)| at > *b) {
+            best = Some((run, at));
+        }
+    }
+    best
+}
+
 struct Index<'a> {
     mods: &'a [ModInfo],
     files: &'a HashMap<String, ModFiles>,

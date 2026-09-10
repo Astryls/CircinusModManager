@@ -343,6 +343,11 @@ function snapshot(): Snapshot {
     instance: instances.find((i) => i.id === current)!,
     announcements: (new URLSearchParams(location.search).has("nopacks") ? [] : PACK_POSTS).filter((a) => !(user.packsMuted ?? []).includes(a.pack)),
     announcementsCheckedAt: packsCheckedAt,
+    // The measured load, from the shape a real Player.log carries. `?noload` is the other case
+    // and the more common one: no mod that reports a timing is installed, so the card has to fall
+    // back to the estimate and say that is what it is.
+    loadRun: new URLSearchParams(location.search).has("noload") ? null : { totalSecs: 462.986, source: "DefLoadCache", vanillaSecs: 43.40687, mods: 44 },
+    loadRunAt: Math.floor(Date.now() / 1000) - 86400,
     // Only what is switched on, the way the backend now reports it: a source that is off is not
     // read and does not claim to be loaded. The mock said both were loaded whatever the switches
     // did, which is exactly the bug it should have been showing.

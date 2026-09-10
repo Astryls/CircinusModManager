@@ -48,6 +48,37 @@
   });
   const warnTip = $derived(perfTip);
 
+  // ---- how long the game takes to start ----
+  //
+  // The other four cards state facts. This one states either a measurement somebody else's mod
+  // took, or a model made of nine hand-rounded coefficients -- so unlike the others it has to say
+  // which, in the caption, where the eye lands after the number. A guess set in 17px bold with
+  // the hedge hidden in a tooltip is a guess people will quote back as a fact.
+  const run = $derived(store.loadRun);
+  const loadSecs = $derived(run ? run.totalSecs : store.loadEstimateSeconds);
+  /** Minutes and seconds past a minute: "7m 43s" reads; "462.99 s" does not. */
+  const clock = (secs: number) => (secs >= 60 ? `${Math.floor(secs / 60)}m ${Math.round(secs % 60)}s` : `${Math.round(secs)}s`);
+  const ago = (at: number) => {
+    if (!at) return "";
+    const days = Math.floor((Date.now() / 1000 - at) / 86400);
+    return days <= 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`;
+  };
+  const loadCap = $derived.by(() => {
+    if (!run) return `Estimated: ${clock(store.vanillaSeconds)} for the game plus ${clock(store.loadTotalSeconds)} for your mods`;
+    if (!store.loadRunMatchesList) return `Measured ${ago(store.loadRunAt)} with ${run.mods?.toLocaleString()} mods, not the ${store.active.length.toLocaleString()} active now`;
+    return `Measured ${ago(store.loadRunAt)}, from ${run.source}`;
+  });
+  const loadTip = $derived.by(() => {
+    const est = `Circinus estimates ${clock(store.loadEstimateSeconds)}: ${clock(store.vanillaSeconds)} for RimWorld itself${run?.vanillaSecs ? " (measured)" : " (a stand-in until a log says)"} and ${clock(store.loadTotalSeconds)} for the ${store.active.length.toLocaleString()} active mods. That second figure is a ranking model, not a stopwatch.`;
+    if (!run) return `No load has been measured yet.\n\n${est}\n\nRimWorld's own log carries no timings. A figure appears here when a mod that reports one is installed -- Prepatcher, or a def-cache mod.\n\nClick to show the mods slowest to load.`;
+    const which = store.loadRunMatchesList ? "" : `\n\nThat run had ${run.mods?.toLocaleString()} mods and you have ${store.active.length.toLocaleString()} active now, so it describes a different list.`;
+    return `${clock(run.totalSecs)} the last time the game loaded, ${ago(store.loadRunAt)}.\n\nMeasured by ${run.source} and read out of the game's log; Circinus did not time it.${which}\n\n${est}\n\nClick to show the mods slowest to load.`;
+  });
+  // Nothing about seconds is a percentage, so the meter needs a scale invented for it. Ten
+  // minutes is the top: past that the bar is full and the number is the thing being read anyway.
+  const loadPct = $derived(Math.min(100, (loadSecs / 600) * 100));
+  const loadColor = $derived(loadSecs < 120 ? "green" : loadSecs < 360 ? "amber" : "red");
+
   function narrow(what: ShowOnly) {
     store.view = "order";
     store.showOnly = store.showOnly === what ? null : what;
@@ -71,7 +102,8 @@
   }
 </script>
 
-<div class="stats">
+<div class="strip">
+  <div class="stats">
   <button class="card stat" class:on={store.showOnly === "conflict"} title={rulesTip} onclick={onRules}>
     <div class="l"><span>Rules met</span><span class="v num" class:pos={s.pct === 100} class:att={s.pct < 100}>{s.pct} %</span></div>
     <div class="meter" style="--c: var(--{s.pct === 100 ? 'green' : s.pct >= 90 ? 'amber' : 'red'}); --v:{s.pct}%"><i></i></div>
@@ -87,6 +119,11 @@
     <div class="meter c-amber" style="--v:{Math.min(100, s.collisions * 4)}%"><i></i></div>
     <div class="cap">{#if s.collisions}<span class="flag">{@html I.note}</span>{/if}<span class="t">{s.collisions ? `${s.collidingMods} mods replace the same files. The later mod wins.${store.snap?.issuesTruncated ? ` Only the first ${s.collisions.toLocaleString()} are listed.` : ""}` : "No texture is replaced by two mods"}</span></div>
   </button>
+  <button class="card stat" class:on={store.showOnly === "slow"} title={loadTip} onclick={() => narrow("slow")}>
+    <div class="l"><span>Load time</span><span class="v num" class:att={loadSecs >= 120} class:neg={loadSecs >= 360}>{clock(loadSecs)}</span></div>
+    <div class="meter" style="--c: var(--{loadColor}); --v:{loadPct}%"><i></i></div>
+    <div class="cap">{#if !run}<span class="flag">{@html I.note}</span>{/if}<span class="t">{loadCap}</span></div>
+  </button>
   {#if store.showWeight}
     <button class="card stat" class:on={store.showOnly === "heavy"} title={perfTip} onclick={onPerf}>
       <div class="l"><span>Performance</span><span class="v num" class:att={s.share >= 10} class:neg={s.share >= 25}>{s.withShare ? `${s.share.toFixed(1)} %` : s.measured ? `${s.measured} rated` : "no figures"}</span></div>
@@ -100,17 +137,34 @@
       <div class="cap">{#if s.warnings}<span class="flag">{@html I.warn}</span>{/if}<span class="t">{s.warnings ? "Order, version and duplicate notes" : "Nothing to review"}</span></div>
     </button>
   {/if}
+  </div>
 </div>
 
 <style>
-  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; container-type: inline-size; }
+  /* The wrapper is the container, not the grid itself. A container query matches *descendants*
+     of a container, so `.stats` carrying `container-type` and then querying `.stats` -- which is
+     what this did -- never matched anything, and the one breakpoint it declared never fired.
+     One element exists solely so the grid has something to ask about its own width. */
+  .strip { container-type: inline-size; }
+  /* Five cards, and never four columns: 4+1 leaves a card orphaned beside a full row, which
+     reads as a layout that broke. 5, 3, 2 and 1 all divide five into rows nobody reads as a
+     mistake. `auto-fit` cannot express that -- its column count passes through 4 on the way down
+     -- so the counts are named.
+     The threshold for staying on one row is 180px a card, lower than a card wants, because the
+     second row is not free: it costs the mod list under it about 113 pixels, at every width, for
+     ever. A slightly tight card beats a permanently shorter list. Below that the cards would be
+     cramped enough to be worse than the trade, and it wraps. */
+  .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+  @container (max-width: 947px) { .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @container (max-width: 619px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @container (max-width: 429px) { .stats { grid-template-columns: minmax(0, 1fr); } }
   .stat { padding: 12px 14px; min-width: 0; overflow: hidden; display: block; text-align: left; color: inherit; font: inherit; cursor: pointer; transition: background 0.12s, box-shadow 0.12s; }
   .stat:hover { background: var(--surface-2); }
   .stat.on { box-shadow: 0 0 0 1.5px var(--amber) inset; }
   .stat .l { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; }
   .stat .l span:first-child { font-weight: 600; font-size: 13px; }
   .stat .v { font-weight: 800; font-size: 17px; letter-spacing: -0.02em; white-space: nowrap; margin-left: auto; }
-  @container (max-width: 900px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
   .stat .meter { margin: 8px 0 7px; }
   .stat .cap { font-size: 12px; color: var(--text-3); display: flex; align-items: flex-start; gap: 6px; min-height: 34px; line-height: 1.4; }
   .stat .cap .flag { margin-top: 1px; }

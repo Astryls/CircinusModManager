@@ -3,6 +3,7 @@
 
 use crate::instances::{self, Instance};
 use circinus_core::announce::Announcement;
+use circinus_core::playerlog::LoadRun;
 use circinus_core::arrivals::Arrivals;
 use circinus_core::cache::Cache;
 use circinus_core::changes::{self, Baseline, ListChange, ModChange};
@@ -384,6 +385,11 @@ pub struct Snapshot {
     pub named_lists: Vec<NamedList>,
     /// The instance these folders and lists belong to.
     pub instance: Instance,
+    /// How long the game took to load the last time the log recorded it, when it did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub load_run: Option<LoadRun>,
+    /// Unix seconds of the log that figure came from, so the screen can say how old it is.
+    pub load_run_at: i64,
     /// What the curators of the followed packs have said, newest first, muted packs left out.
     #[serde(default)]
     pub announcements: Vec<Announcement>,
@@ -445,6 +451,10 @@ pub struct App {
     /// shown at launch before the refresh lands would be worse than an empty panel for a moment.
     pub announcements: Vec<Announcement>,
     pub announcements_checked_at: i64,
+    /// The load the game's own log last recorded. Not persisted: it is read from the log at
+    /// launch, and the log is the record -- keeping a copy would only let the two disagree.
+    pub load_run: Option<LoadRun>,
+    pub load_run_at: i64,
     /// What the previous session last saw; `changes` is the diff against it.
     pub baseline: Option<Baseline>,
     /// When each mod folder was first seen, and which of those are still marked new. Unlike the
@@ -564,6 +574,8 @@ impl App {
             updates_checked_at: 0,
             announcements: Vec::new(),
             announcements_checked_at: 0,
+            load_run: None,
+            load_run_at: 0,
             baseline,
             arrivals,
             changes: Vec::new(),
@@ -1014,6 +1026,8 @@ impl App {
             instance: self.instance.clone(),
             announcements: self.announcements.iter().filter(|a| !self.user.packs_muted.contains(&a.pack)).cloned().collect(),
             announcements_checked_at: self.announcements_checked_at,
+            load_run: self.load_run.clone(),
+            load_run_at: self.load_run_at,
         }
     }
 

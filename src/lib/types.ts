@@ -369,6 +369,10 @@ export interface Snapshot {
   announcements?: Announcement[];
   /** Unix seconds of the last successful fetch (0 = never asked). */
   announcementsCheckedAt?: number;
+  /** The load the game's own log last recorded, when it holds one. */
+  loadRun?: LoadRun | null;
+  /** Unix seconds of the log that came from. */
+  loadRunAt?: number;
 }
 
 export interface SavedList {
@@ -415,6 +419,25 @@ export interface Announcement {
   author: string;
   text: string;
   link?: string | null;
+}
+
+/** What the game takes to load with no mods, when nothing has measured it here.
+ *
+ *  Mirrors `loadcost::VANILLA_SECS`. A round number on purpose: it is a stand-in until a log
+ *  carries Prepatcher's real figure, and nobody should mistake it for a measurement. */
+export const VANILLA_SECS = 40;
+
+/** How long the game took to load, the last time its log recorded it.
+ *
+ *  RimWorld itself never says. These figures come from lines other mods print — Prepatcher's
+ *  vanilla load, the def-cache mods' pipeline — so `source` names whoever measured it and the
+ *  screen shows that beside the number rather than passing it off as Circinus's own. */
+export interface LoadRun {
+  totalSecs: number;
+  source: string;
+  vanillaSecs?: number | null;
+  /** Mods active in that run, when a line happened to say. */
+  mods?: number | null;
 }
 
 export interface ListReset {
