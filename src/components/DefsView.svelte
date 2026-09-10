@@ -29,15 +29,23 @@
 
   /** The histories the backend followed by node: who shipped a value, then everyone who changed it. */
   const chains = $derived(r?.chains ?? []);
-  /** Rows opened to show every step. */
-  let opened = $state(new Set<string>());
-  const keyOf = (c: Chain) => `${c.def}\u0000${c.path}`;
-  function toggle(c: Chain) {
-    const k = keyOf(c);
+  /** Rows opened to show every step, by their place in the filtered list.
+   *
+   *  By position, for the same reason the rows are: `def` and `path` together do not identify a
+   *  chain -- two mods overwriting the same field of the same def make two chains that agree on
+   *  both -- so opening one of them used to open the other as well. Filtering resets what is
+   *  open, which is the right behaviour anyway: the rows underneath are different rows. */
+  let opened = $state(new Set<number>());
+  function toggle(i: number) {
     const next = new Set(opened);
-    next.has(k) ? next.delete(k) : next.add(k);
+    next.has(i) ? next.delete(i) : next.add(i);
     opened = next;
   }
+  $effect(() => {
+    // What is open is a set of positions, so it has to be dropped when the positions move.
+    void shownChains;
+    opened = new Set();
+  });
   const opName = (how: string) => (how === "Defs" ? "shipped it" : how.replace(/^PatchOperation/, "").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase());
   let contestedQuery = $state("");
   const shownChains = $derived.by(() => {
@@ -150,13 +158,18 @@
       {:else}
         <div class="hdr ch"><span>Def</span><span>Value</span><span>Shipped by</span><span></span><span>What the game gets</span></div>
         <div class="rows">
-          {#each shownChains.slice(0, 200) as c (c.def + c.path)}
+          <!-- Keyed by position, not by the row's contents. Two overwrites of the same field of
+               the same def are two chains with the same `def` and the same `path`, and gluing
+               those together made a key that was not unique -- which Svelte treats as fatal, so
+               the whole report went to the error screen on any real load order. The rows are
+               replaced wholesale whenever the report changes, so position *is* their identity. -->
+          {#each shownChains.slice(0, 200) as c, i (i)}
             {@const first = c.steps[0]}
             {@const last = c.steps[c.steps.length - 1]}
             {@const between = c.steps.length - 2}
-            {@const isOpen = opened.has(keyOf(c))}
+            {@const isOpen = opened.has(i)}
             <div class="ch-row" class:open={isOpen}>
-              <button class="row ch" onclick={() => toggle(c)} title={isOpen ? "Hide the history" : "Show every step"} aria-expanded={isOpen}>
+              <button class="row ch" onclick={() => toggle(i)} title={isOpen ? "Hide the history" : "Show every step"} aria-expanded={isOpen}>
                 <span class="def"><b>{c.defName || c.def}</b><span class="ty">{c.defType}</span></span>
                 <span class="mono path">{c.path}{#if c.removed?.length}<span class="cnt">{c.removed.length} items</span>{/if}</span>
                 <span class="step" title={whereOf(first.origin)}><span class="dot c-{originColor(first.origin)}"></span><i>{modOf(first.origin)}</i>{#if !c.removed?.length}<b class="num">{first.value}</b>{/if}</span>
@@ -240,7 +253,7 @@
       {:else}
         <p class="lead">The same def name from two mods is not merged: the one that loads last replaces the other outright, with everything it does not repeat lost.</p>
         <div class="rows">
-          {#each r.duplicates.slice(0, 200) as dup (dup.defType + dup.defName)}
+          {#each r.duplicates.slice(0, 200) as dup, i (i)}
             <button class="row dp" onclick={() => open(dup.defType, dup.defName)} title="Open {dup.defType}/{dup.defName} in the inspector below">
               <span class="def"><b>{dup.defName}</b><span class="ty">{dup.defType}</span></span>
               <span class="from">{dup.origins.map(modOf).join(", ")}</span>

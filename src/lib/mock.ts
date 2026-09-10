@@ -778,6 +778,14 @@ const OVERWRITES = [
   { def: "ThingDef/AA_Xenoloxodon", path: "statBases/MoveSpeed", from: ALPHA, to: AACE, oldValue: "4.2", newValue: "3.1", how: "PatchOperationReplace" },
   { def: "ThingDef/AA_Xenoloxodon", path: "tools/li[1]/power", from: ALPHA, to: AACE, oldValue: "22", newValue: "18", how: "PatchOperationReplace" },
   { def: "TerrainDef/Concrete", path: "statBases/Beauty", from: CORE_B, to: VEF, oldValue: "0", newValue: "2", how: "PatchOperationReplace" },
+  // Two mods that both overwrite the same field of the same def without either continuing from
+  // the other -- so `build_chains` makes two chains that agree on `def` *and* `path`. Kept here
+  // deliberately: the report used to key its rows on those two glued together, which is unique
+  // on a small list and not unique on a real one, and Svelte treats a repeated key as fatal. So
+  // every real load order showed an error page instead of the Defs report, and the mock could
+  // not have caught it because the mock had no two chains alike.
+  { def: "ThingDef/Wall", path: "graphicData/color", from: CORE_B, to: VEF, oldValue: "(1,1,1)", newValue: "(0.9,0.9,0.9)", how: "PatchOperationReplace" },
+  { def: "ThingDef/Wall", path: "graphicData/color", from: CORE_B, to: RETRO, oldValue: "(1,1,1)", newValue: "(0.8,0.8,0.8)", how: "PatchOperationReplace" },
   // one value that changed hands many times — the case that has to stay readable
   { def: "ThingDef/Human", path: "statBases/MarketValue", from: CORE_B, to: VEF, oldValue: "1750", newValue: "1800", how: "PatchOperationReplace" },
   { def: "ThingDef/Human", path: "statBases/MarketValue", from: VEF, to: VFE, oldValue: "1800", newValue: "1900", how: "PatchOperationReplace" },

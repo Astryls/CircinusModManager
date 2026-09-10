@@ -268,6 +268,18 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   A failure now says what actually happened. The first version caught every error and printed
   "it may have been moved or removed", which was a guess, and the guess was wrong: it sent people
   to look at a folder sitting exactly where they left it. Errors name the thing that went wrong.
+- A key made by gluing two fields together is not a key. Svelte treats a repeated key in a keyed
+  `{#each}` as fatal — the block throws, the boundary catches it, and the whole screen becomes an
+  error page — so a key that is *usually* unique is a screen that usually works. The Defs report
+  keyed its overwrite chains on `(c.def + c.path)`, which identifies a chain right up until two
+  mods overwrite the same field of the same def. That is ordinary on a real load order and absent
+  from a forty-mod mock, so the report was unreachable for anybody actually using it while every
+  check passed. These report rows are keyed by position now, which is honest: they are replaced
+  wholesale whenever the report changes, so position *is* their identity. What is open is keyed
+  by position too, and reset when a filter moves the rows — before, opening one of two rows that
+  read the same opened both. `tools/each-key-check.mjs` (part of `npm run check`) refuses a key
+  built by concatenation unless it includes the block's own index, and the mock now carries two
+  chains that agree on def and path so `tools/loadtest/defs.cjs` fails without the fix.
 - Keeping your own copy. *Keep my own copy* on a Workshop mod copies Steam's folder into the
   game's own `Mods/<workshop id>` and writes `About/PublishedFileId.txt`, which is exactly the
   shape a SteamCMD download has — so it is the same mod to everything downstream, Force update

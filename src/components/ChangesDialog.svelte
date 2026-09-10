@@ -78,7 +78,7 @@
             {#if moves.length}
               <p class="hint">The fewest moves that explain the new order, by their new place. Positions are the file's own numbering.</p>
               <div class="rows">
-                {#each moves as mv (mv.packageId)}
+                {#each moves as mv, i (i)}
                   <div class="row moved">
                     <span class="k">{@html mv.to < mv.from ? I.up : I.down}</span>
                     <span class="nm"><b>{nameOf(mv.packageId)}</b><span class="mono">{mv.packageId}</span></span>
