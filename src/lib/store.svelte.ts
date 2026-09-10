@@ -10,6 +10,16 @@ export type View = "order" | "library" | "downloads" | "textures" | "defs" | "pa
 
 export type Tab = "active" | "inactive" | "all" | "new";
 
+/** Which part of the patch report is on screen. The report answers four different questions and
+ *  each answer is a list of thousands, so they are four screens rather than one page nobody can
+ *  find the bottom of. It lives here rather than in the component because leaving the view
+ *  destroys the component, and coming back to a different tab than you left is the same
+ *  complaint as coming back to the top of a list you were halfway down. */
+export type PatchesTab = "overview" | "contested" | "methods" | "permod" | "manual";
+
+/** What the per-mod table is ordered by. */
+export type PatchesCol = "name" | "patches" | "prefixes" | "postfixes" | "transpilers" | "manual";
+
 /** What the list is ordered by. `order` is the load order, which is the only one that is real:
  *  every other value sorts the view without touching what the game will read. */
 export type SortKey = "order" | "name" | "pkg" | "versions" | "time" | "load" | "cost" | "phase" | "group" | "arrived" | "modified" | "updated" | "steamid";
@@ -63,6 +73,13 @@ class Store {
    *  reactivity would buy nothing and cost a re-run of every reader per wheel tick. */
   readonly scrollMemory = new Map<string, { anchor: string | null; delta: number; top: number }>();
   tab = $state<Tab>("active");
+  // The patch report's own place: which tab, what was typed in its filter, which mod was open
+  // and how its table was sorted. Same reason as `scrollMemory` -- the view is destroyed on the
+  // way to a mod and rebuilt on the way back, and none of this is worth doing twice.
+  patchesTab = $state<PatchesTab>("overview");
+  patchesQuery = $state("");
+  patchesSort = $state<{ by: PatchesCol; desc: boolean }>({ by: "patches", desc: true });
+  patchesOpen = $state<string | null>(null);
   query = $state("");
   group = $state<string | null>(null);
   sources = $state<Source[]>([...ALL_SOURCES]);

@@ -571,6 +571,32 @@ function mockTarget(target: string, kind: string, priority: number | null, decla
   return { declaringType: declaring, method, kind, targetType: type, targetMethod, targetKind, argumentTypes: null, priority, before: [], after: [], source: "attribute" };
 }
 
+/** Real RimWorld types and methods, so the bulk reads like a report rather than like filler. */
+const BULK_TYPES = [
+  "Verse.Pawn", "Verse.Pawn_HealthTracker", "Verse.Thing", "Verse.ThingWithComps", "Verse.Map", "Verse.MapDrawer", "Verse.TickManager", "Verse.Game",
+  "Verse.GenSpawn", "Verse.DamageWorker", "Verse.DamageWorker_AddInjury", "Verse.Verb", "Verse.Verb_LaunchProjectile", "Verse.Projectile",
+  "Verse.PawnGenerator", "Verse.PawnRenderer", "Verse.PawnGraphicSet", "Verse.GenDraw", "Verse.Widgets", "Verse.Listing_Standard",
+  "Verse.AI.Pawn_PathFollower", "Verse.AI.PathFinder", "Verse.AI.JobDriver", "Verse.AI.Toils_Haul", "Verse.AI.ThinkNode_Priority",
+  "RimWorld.Pawn_JobTracker", "RimWorld.Pawn_WorkSettings", "RimWorld.Pawn_NeedsTracker", "RimWorld.Pawn_SkillTracker", "RimWorld.Pawn_StoryTracker",
+  "RimWorld.Building_Bed", "RimWorld.Building_WorkTable", "RimWorld.CompRefuelable", "RimWorld.CompPowerTrader", "RimWorld.WorkGiver_Scanner",
+  "RimWorld.StoreUtility", "RimWorld.HaulAIUtility", "RimWorld.FoodUtility", "RimWorld.TradeUtility", "RimWorld.CaravanFormingUtility",
+  "RimWorld.GenRecipe", "RimWorld.RecipeWorker", "RimWorld.IncidentWorker", "RimWorld.Storyteller", "RimWorld.StatWorker",
+  "RimWorld.Planet.WorldGrid", "RimWorld.Planet.Settlement", "RimWorld.MainTabWindow_Inspect", "RimWorld.ITab_Pawn_Gear", "RimWorld.Dialog_ModSettings"
+];
+const BULK_METHODS = [
+  "Tick", "TickRare", "TickLong", "SpawnSetup", "DeSpawn", "Destroy", "ExposeData", "PostMake", "PostLoad", "Notify_Spawned",
+  "GetGizmos", "GetInspectString", "GetFloatMenuOptions", "DrawAt", "DrawGUIOverlay", "Print", "DrawExtraSelectionOverlays",
+  "get_Label", "get_LabelCap", "set_Label", "get_MarketValue", "get_HitPoints", "set_HitPoints", "get_MaxHitPoints",
+  "TryStartJob", "StartJob", "EndCurrentJob", "DetermineNextJob", "CleanupCurrentJob", "TryFindAndStartJob",
+  "TryDegradeJob", "HasJobOnThing", "JobOnThing", "PotentialWorkThingsGlobal", "ShouldSkip",
+  "TryFindBestBetterStoreCellFor", "TryFindStoreCellNearColonyDesperate", "HaulToStorageJob", "TryOpportunisticJob",
+  "GenerateNewPawnInternal", "GeneratePawn", "TryGenerateNewPawnInternal", "GenerateTraits", "GenerateSkills",
+  "RenderPawnAt", "RenderPawnInternal", "DrawEquipment", "ResolveAllGraphics", "ResolveApparelGraphics",
+  "FindPath", "NeedNewPath", "StartPath", "PatherTick", "CostToMoveIntoCell",
+  "ApplyDamageToPart", "Apply", "ApplyMeleeDamageToTarget", "TryCastShot", "Launch",
+  "DoWindowContents", "DoRow", "Label", "CheckboxLabeled", "ButtonText", "FinalizeInit", "DoSingleTick", "DrawMapMesh"
+];
+
 /** The report the backend would build: per mod, per method, contested first. */
 function patchReport(): PatchReport {
   const perMod: ModPatches[] = [];
@@ -589,6 +615,43 @@ function patchReport(): PatchReport {
     }
     perMod.push(row);
   }
+  // Volume, on top of the named patches.
+  //
+  // The shape of the Patches screen is a volume problem: a real list is thousands of methods, and
+  // that is why it is a virtualised list on a tab of its own rather than four hundred rows and an
+  // apology. Thirty hand-written targets cannot show whether the window drawn over three thousand
+  // rows lines up with the rows under it, or whether coming back lands where you left. So the mock
+  // carries a synthetic bulk as well. Deterministic, so a failing assertion means a change.
+  for (const m of mods) {
+    if (!active.includes(m.uid) || m.packageId.startsWith("ludeon.")) continue;
+    const h = hash(m.uid);
+    const row = perMod.find((r) => r.uid === m.uid) ?? { uid: m.uid, name: m.name, assemblies: 1, patches: 0, prefixes: 0, postfixes: 0, transpilers: 0, manual: 0, harmonyIds: [m.packageId], unreadable: [] };
+    if (!perMod.includes(row)) perMod.push(row);
+    const n = 10 + (h % 46);
+    for (let i = 0; i < n; i++) {
+      // Real reports are lumpy: a few dozen methods every mod wants a piece of, and a long tail
+      // nobody else touches. A flat spread would make contested methods almost impossible, which
+      // is the opposite of the problem this screen exists for.
+      const hot = i % 5 < 3;
+      const pick = hash(`${m.uid}:${i}`);
+      const type = BULK_TYPES[(hot ? pick % 14 : pick % BULK_TYPES.length)];
+      const method = BULK_METHODS[(hot ? (pick >>> 8) % 12 : (pick >>> 8) % BULK_METHODS.length)];
+      const kind = hot ? ((h + i) % 4 === 0 ? "transpiler" : (h + i) % 2 === 0 ? "prefix" : "postfix") : (h + i) % 7 === 0 ? "transpiler" : (h + i) % 3 === 0 ? "prefix" : "postfix";
+      const target = `${type}::${method}`;
+      const declaring = `${m.packageId.split(".").pop()}.Patches.${type.split(".").pop()}`;
+      if (kind === "prefix") row.prefixes++;
+      else if (kind === "postfix") row.postfixes++;
+      else row.transpilers++;
+      row.patches++;
+      const list = byTarget.get(target) ?? [];
+      if (list.some((p) => p.uid === m.uid)) continue;
+      list.push({ uid: m.uid, modName: m.name, kind, declaringType: declaring, method: kind[0].toUpperCase() + kind.slice(1), priority: i % 9 === 0 ? 300 + (i % 5) * 100 : null, before: [], after: [] });
+      byTarget.set(target, list);
+    }
+    // A couple of mods that could not be read at all, so that tab has something in it.
+    if (h % 23 === 0) row.unreadable.push(`${m.packageId}.dll: not a managed assembly`);
+  }
+
   // One mod prefixing its own target twice is its own business; two mods is a fight.
   const targets: TargetGroup[] = [...byTarget.entries()].map(([target, patchers]) => ({ target, patchers, contested: new Set(patchers.filter((p) => p.kind === "prefix" || p.kind === "transpiler").map((p) => p.uid)).size > 1 }));
   targets.sort((a, b) => Number(b.contested) - Number(a.contested) || b.patchers.length - a.patchers.length || a.target.localeCompare(b.target));
@@ -609,7 +672,11 @@ function patchesForMod(uid: string): ModPatchDetail | null {
   const summary = report.perMod.find((m) => m.uid === uid);
   if (!summary) return null;
   const seed = PATCH_SEED.find(([pkg]) => mods.find((m) => m.packageId === pkg)?.uid === uid);
-  const targets = (seed?.[2] ?? []).map(([t, k, p, d, me]) => mockTarget(t, k, p ?? null, d ?? "", me ?? "")).sort((a, b) => patchTargetName(a).localeCompare(patchTargetName(b)));
+  // Read back out of the report rather than only out of the seed, so a mod carrying the synthetic
+  // bulk opens onto its own methods instead of onto nothing.
+  const targets = report.targets
+    .flatMap((g) => g.patchers.filter((p) => p.uid === uid).map((p) => mockTarget(g.target, p.kind, p.priority, p.declaringType, p.method)))
+    .sort((a, b) => patchTargetName(a).localeCompare(patchTargetName(b)));
   const manual = (seed?.[3] ?? []).map(([declaringType, method, detail]) => ({ declaringType, method, detail }));
   return { summary, targets, manual, contested: report.targets.filter((t) => t.contested && t.patchers.some((p) => p.uid === uid)) };
 }

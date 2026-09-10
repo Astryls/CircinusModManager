@@ -155,12 +155,30 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   component and everything local to it; coming back mounts a fresh one at the top. Halfway down a
   thousand-mod list that is the whole position gone for looking at one group, and it did the same
   in the Defs and Patches reports. `store.scrollMemory` outlives the component: keyed by scope
-  ("order:main", "order:inactive", "defs", "patches"), and deliberately not `$state`, since it is
-  written on every scroll event and read once on mount. The list remembers the *row* under the top
-  of the window rather than the pixel — a pixel is only right if the list is identical when you
-  come back, and a filter or an activation makes it not — and falls back to the raw offset when
+  ("order:main", "order:inactive", "defs", "patches:<tab>"), and deliberately not `$state`, since
+  it is written on every scroll event and read once on mount. The list remembers the *row* under
+  the top of the window rather than the pixel — a pixel is only right if the list is identical when
+  you come back, and a filter or an activation makes it not — and falls back to the raw offset when
   that row has gone. `tools/loadtest/scroll.cjs` scrolls, leaves, returns and asserts the same row
   is at the same height.
+- The patch report is four screens, not one page. It answers four different questions — what two
+  mods are fighting over, every method anything patches, what each mod patches, and what patches in
+  a way static reading cannot follow — and each answer is a list of hundreds or thousands. Stacked
+  on one page the fourth was a thousand rows of scrolling from the first, and the long ones were
+  cut at 120 and 400 rows with a line apologising for the rest. Cutting is the wrong answer to a
+  list being long: the row somebody wants is as likely to be the two thousandth as the second. So
+  each is a tab, each is complete, and "every patched method" means every one — contested included,
+  since an index that quietly leaves out the interesting rows is not an index. That list is
+  virtualised the way `ModList` is (fixed 33px rows, full-height box, a screenful drawn), because
+  three thousand rows of markup is what the 400-row cut was really about. The title, the read
+  button and the tab bar sit outside the scroller so they stay put, and each tab scrolls in a
+  scroller of its own (`{#key tab}`) with its own entry in `scrollMemory` — sharing one meant the
+  browser clamping the old position against the new tab's height and writing that over the place
+  the new tab was left at. Which tab, the filter text, the open mod and the table's sort live on
+  `store` for the same reason the scroll position does: clicking a mod here *is* a view switch, so
+  everything local to the component is thrown away on the way to it. `tools/loadtest/patches.cjs`
+  covers all of it, and the mock carries a synthetic bulk of patches on top of its named ones
+  because thirty targets cannot show whether a window over three thousand rows lines up.
 - Keeping your own copy. *Keep my own copy* on a Workshop mod copies Steam's folder into the
   game's own `Mods/<workshop id>` and writes `About/PublishedFileId.txt`, which is exactly the
   shape a SteamCMD download has — so it is the same mod to everything downstream, Force update
@@ -203,8 +221,9 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   ever shrinks.** A file leaves it when converted and is guarded from then on; adding to it is how
   the problem comes back, so a new component is guarded from the day it is written. It also fails
   when a listed file has nothing left in it, since a ledger is only useful while it is true.
-  `npm run i18n` prints what is left, file by file — about 400 strings across 22 components at
-  the time of writing.
+  `npm run i18n` prints what is left, file by file — about 386 strings across 21 components at
+  the time of writing. `PatchesView` came off the list when it was rebuilt as tabs, which is the
+  cheapest moment to convert a file: the markup is being rewritten anyway.
 - Not yet done, and each needs its own decision: the prose Rust produces and hands to the UI as
   data (HALO's placement reasons, the log analyzer's findings, `Error::Other` messages) is still
   English inside the payload, so translating it means those becoming keys rather than sentences.

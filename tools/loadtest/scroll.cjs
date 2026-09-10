@@ -74,7 +74,8 @@ function ok(label, cond, detail = '') {
   await page.screenshot({ path: `${OUT}/scroll-restored.png` });
 
   // The reports do the same thing, with the pixel rather than a row.
-  for (const [view, sel] of [['Defs', 'main.center'], ['Patches', 'main.center']]) {
+  // The patch report scrolls its tab rather than the whole frame: the tab bar has to stay put.
+  for (const [view, sel] of [['Defs', 'main.center'], ['Patches', '.pane']]) {
     await page.evaluate((v) => {
       const b = [...document.querySelectorAll('.rail .nav button, .nav button')].find((x) => x.textContent.trim().startsWith(v));
       if (b) b.click();

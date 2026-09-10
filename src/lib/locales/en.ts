@@ -165,6 +165,88 @@ export const EN: Catalogue = {
   "rail.help": "Help on Discord",
   "rail.help.title": "Ask for help, or say a mod sorted somewhere odd",
 
+  // ---- the patch report ------------------------------------------------------------------------
+  // Four questions, four tabs. "Contested" is the word the report uses for a method two mods both
+  // want to decide; if a language has a better one for a tug of war, use that rather than a
+  // literal translation.
+  "patches.title": "Patches",
+  "patches.status.unread": "not read yet",
+  "patches.status.took": "read in {n}s",
+  "patches.read": "Read the assemblies",
+  "patches.reread": "Read them again",
+  "patches.stop": "Stop",
+  "patches.finding": "Finding assemblies…",
+  "patches.reading": "Reading {done} of {total} assemblies",
+  "patches.lastrun": "Last run read {n} assemblies in {mods} mods in {seconds}s.",
+  "patches.lastrun.stopped": "Last run read {n} assemblies in {mods} mods, then stopped, in {seconds}s.",
+
+  "patches.tab.overview": "Overview",
+  "patches.tab.contested": "Two mods over one method",
+  "patches.tab.methods": "Every patched method",
+  "patches.tab.permod": "Per mod",
+  "patches.tab.manual": "Cannot be followed",
+
+  "patches.tile.contested": "Contested methods",
+  "patches.tile.contested.some": "two or more mods change the same method",
+  "patches.tile.contested.none": "nothing two mods fight over",
+  "patches.tile.methods": "Patched methods",
+  "patches.tile.methods.sub": "game methods your active mods attach to",
+  "patches.tile.mods": "Mods with code",
+  "patches.tile.mods.sub": "of {n} active",
+  "patches.tile.patches": "Patches in all",
+  "patches.tile.patches.sub": "{n} more Circinus cannot follow",
+
+  "patches.about.title": "What your mods patch",
+  "patches.about.lead":
+    "Circinus reads every active mod's assemblies itself and reports the game methods they attach to. Nothing is loaded or run: it reads the metadata and instructions of a file the way a disassembler does, so a mod's code never executes. Results are kept until a mod changes, so a second run is quick.",
+
+  // The three emphasised phrases are inside the sentence rather than interpolated around it, so a
+  // translator can put the emphasis where their own word order needs it. Rendered with `{@html}`;
+  // `<b>` is the only tag any entry here is allowed to carry.
+  "patches.contested.lead":
+    "A method is contested when two mods <b>run before</b> it or <b>rewrite</b> it: only one of them decides what the original does, so one usually loses. Mods that only <b>run after</b> a method stack cleanly and are not counted here.",
+  "patches.contested.none": "Nothing here. Every method your active mods patch is either patched by one mod, or only added to.",
+  "patches.contested.priority": "Harmony priority; higher goes first",
+
+  "patches.methods.filter": "Filter by method or mod",
+  "patches.methods.shown": { one: "{n} shown", other: "{n} shown" },
+  "patches.methods.col.method": "Method",
+  "patches.methods.col.mods": "Mods",
+  "patches.methods.col.by": "Patched by",
+  "patches.methods.nomatch": "No method or mod matches that.",
+  "patches.methods.none": "Nothing patched: no active mod ships code.",
+
+  "patches.permod.lead":
+    "Click a mod to see the methods it patches. A Harmony id is the name a mod gives its own patches; the game's logs use it to say whose patch threw.",
+  "patches.permod.col.mod": "Mod",
+  "patches.permod.col.patches": "Patches",
+  "patches.permod.col.before": "Before",
+  "patches.permod.col.after": "After",
+  "patches.permod.col.rewrites": "Rewrites",
+  "patches.permod.col.unreadable": "Unreadable",
+  "patches.permod.col.harmonyid": "Harmony id",
+  "patches.permod.noid": "none found",
+  "patches.permod.reading": "Reading…",
+  "patches.permod.unnamed": "No patch this tool can name: everything it does happens at runtime.",
+  "patches.permod.contested": { one: "In {n} contested method: {names}", other: "In {n} contested methods: {names}" },
+  "patches.permod.none": "No active mod ships an assembly.",
+
+  "patches.manual.lead":
+    "A mod can work out at runtime which method to patch — from a setting, a name it builds, or the mods it finds installed. A target computed like that is not written down in the file, so reading it cannot say what it will be. These are the places that do it, so you know where to look when something goes wrong there.",
+  "patches.manual.none": "Every patch your active mods declare names its target outright.",
+  "patches.manual.places": { one: "{n} place", other: "{n} places" },
+  "patches.manual.unreadable": { one: "{n} assembly could not be read at all", other: "{n} assemblies could not be read at all" },
+
+  // What a patch does to the method it is attached to. Harmony's own words are prefix, postfix
+  // and transpiler; these say what those mean instead, because a player is not reading a manual.
+  "patches.kind.prefix": "runs before",
+  "patches.kind.postfix": "runs after",
+  "patches.kind.transpiler": "rewrites",
+  "patches.kind.finalizer": "catches errors in",
+  "patches.kind.reverse": "copies",
+  "patches.kind.patch": "patches",
+  "patches.kind.unpatch": "unpatches",
+
   // ---- counts, in the two forms English needs ------------------------------------------------
   "count.mods": { one: "{n} mod", other: "{n} mods" },
   "count.edits": { one: "{n} edit", other: "{n} edits" },

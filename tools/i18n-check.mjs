@@ -33,7 +33,6 @@ const PENDING = new Set([
   "ModList.svelte",
   "MovesView.svelte",
   "Panel.svelte",
-  "PatchesView.svelte",
   "Rail.svelte",
   "SettingsView.svelte",
   "Stats.svelte",
