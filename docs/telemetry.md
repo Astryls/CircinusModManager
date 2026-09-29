@@ -74,7 +74,6 @@ append-only raw submission row.
     "cpu": "Ryzen 7 9800X3D",
     "cores": 16,
     "memoryGb": 32,
-    "gpu": "RTX 3070",
     "os": "Windows 11"
   },
   "totalMs": 462986.0,
