@@ -192,7 +192,8 @@ export const EN: Catalogue = {
 
   "sharing.title": "Share what your mods cost to load?",
   "sharing.sub": "Off unless you turn it on. You can change your mind in Settings.",
-  "sharing.lede": "Circinus can read how long each of your mods took to load and send those figures to circinus.sh. Pooled with other installs they become something nobody has yet: what a mod costs at start-up, the way the site already says what it costs per frame.",
+  "sharing.lede": "The Loading Progress mod, by ilyvion, times how long each of your mods takes to load. Circinus can read those figures and send them to circinus.sh, where pooled with other installs they become something nobody has yet: what a mod costs at start-up, the way the site already says what it costs per frame.",
+  "sharing.thanks": "The measuring is entirely Loading Progress's work. Circinus only reads what it wrote and does none of the timing itself.",
   "sharing.sent": "What is sent",
   "sharing.row.costs": "Load figures",
   "sharing.row.costs.v": "How long each mod took, the total, and the part of it that was the game itself",

@@ -19,6 +19,17 @@ it word for word. A second tool sending a slightly different set of things under
 promise would make the promise worthless, so where this document and that page disagree, that
 page wins and this one is the bug.
 
+## Whose measurement this is
+
+Every figure in this payload was taken by **Loading Progress**, by **ilyvion**. Circinus reads
+the file that mod writes and does no timing of its own.
+
+That has to survive the trip. The site is about to publish a number as a property of a mod, on
+a page with Circinus's name at the top, and the person whose code produced it is not Circinus.
+Wherever a load cost appears -- the mod page, the API's `/meta` prose, the method page -- it is
+named, the way the frame figures already name the Circinus Performance Analyzer. The client
+does the same: the load-time card says "Measured by Loading Progress" rather than "Measured".
+
 ## What is being collected, and why it is worth collecting
 
 The manager can already read what the Loading Progress mod measured: how long each mod took to

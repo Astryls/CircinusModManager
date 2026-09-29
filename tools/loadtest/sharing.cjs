@@ -52,6 +52,8 @@ const openSettings = async (p) => {
   ok('it does not pretend the site cannot tell which mods you run', /can tell which mods you run/i.test(card), card.slice(0, 70));
   ok('and it is the load order that is withheld, not the mod identity', /order your mods load in/i.test(card));
   ok('and that reading is not sending', /only about sending/i.test(card));
+  // Somebody being asked to share a measurement should know whose measurement it is.
+  ok('and names the mod that took the measurement', /Loading Progress/.test(card) && /ilyvion/.test(card), card.slice(0, 70));
   await page.screenshot({ path: `${OUT}/sharing-card.png` });
   await page.close();
 

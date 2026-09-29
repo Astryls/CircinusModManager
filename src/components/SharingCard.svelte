@@ -30,6 +30,9 @@
 
     <div class="body">
       <p class="lede">{t("sharing.lede")}</p>
+      <!-- Said before the table rather than after it. Somebody being asked to share a
+           measurement should know whose measurement it is, and the answer is not ours. -->
+      <p class="credit">{t("sharing.thanks")}</p>
 
       <h4>{@html I.up}{t("sharing.sent")}</h4>
       <table>
@@ -80,6 +83,7 @@
   tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
   ul { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--text-2); }
   li { padding: 2px 0; }
+  .credit { margin: -8px 0 14px; font-size: 12.5px; color: var(--text-3); }
   .plain { margin: 14px 0 0; font-size: 12.5px; color: var(--text-2); }
   .fine { margin: 10px 0 0; font-size: 12px; color: var(--text-3); }
   .ft { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--surface-3); }

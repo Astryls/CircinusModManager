@@ -79,8 +79,8 @@
   /** `n` is already the uid-to-name helper in this file, so the number formatter is `num`. */
   const num = (x: number) => x.toLocaleString();
   const loadCap = $derived.by(() => {
-    if (kind === "measured") return `Measured ${ago(store.startupImpactAt)}, every mod in this list`;
-    if (kind === "calibrated") return `Estimated: ${num(store.measuredCount)} of ${num(store.active.length)} mods measured here, the rest from the model`;
+    if (kind === "measured") return `Measured ${ago(store.startupImpactAt)} by Loading Progress, every mod in this list`;
+    if (kind === "calibrated") return `Estimated: ${num(store.measuredCount)} of ${num(store.active.length)} mods timed by Loading Progress, the rest from the model`;
     if (run && store.loadRunMatchesList) return `Measured ${ago(store.loadRunAt)}, from ${run.source}`;
     if (run) return `Measured ${ago(store.loadRunAt)} with ${num(run.mods ?? 0)} mods, not the ${num(store.active.length)} active now`;
     return `Estimated: ${clock(store.vanillaSeconds)} for the game plus ${clock(store.loadTotalSeconds)} for your mods`;
@@ -89,20 +89,20 @@
     const click = "\n\nClick to show the mods slowest to load.";
     const split = `${clock(store.vanillaSeconds)} for RimWorld itself and ${clock(store.loadTotalSeconds)} for the ${num(store.active.length)} active mods.`;
     if (kind === "measured" && impact) {
-      return `${clock(impact.totalMs / 1000)} the last time the game started, ${ago(store.startupImpactAt)}.\n\nEvery mod in this list was timed individually by the Loading Progress mod; Circinus read the figures and did not time anything itself.\n\n${split}${click}`;
+      return `${clock(impact.totalMs / 1000)} the last time the game started, ${ago(store.startupImpactAt)}.\n\nEvery mod in this list was timed individually by Loading Progress, by ilyvion. Circinus read the figures it wrote and did not time anything itself; the measuring is entirely that mod's work, and this card would have nothing to show without it.\n\n${split}${click}`;
     }
     if (kind === "calibrated") {
       const k = store.loadCalibration ?? 1;
-      return `Circinus estimates ${clock(store.loadEstimateSeconds)}.\n\n${num(store.measuredCount)} of your ${num(store.active.length)} active mods were timed on this machine by the Loading Progress mod and contribute what they actually cost. The rest come from Circinus's model, scaled by ${k.toFixed(2)}x -- how far the model was out on the mods where both numbers are known.\n\n${split}${click}`;
+      return `Circinus estimates ${clock(store.loadEstimateSeconds)}.\n\n${num(store.measuredCount)} of your ${num(store.active.length)} active mods were timed on this machine by Loading Progress, by ilyvion, and contribute what they actually cost. The rest come from Circinus's model, scaled by ${k.toFixed(2)}x -- how far the model was out on the mods where both numbers are known.\n\n${split}${click}`;
     }
     const est = `Circinus estimates ${clock(store.loadEstimateSeconds)}: ${split} That second figure is a ranking model, not a stopwatch.`;
     if (run && store.loadRunMatchesList) {
-      return `${clock(run.totalSecs)} the last time the game loaded, ${ago(store.loadRunAt)}.\n\nMeasured by ${run.source} and read out of the game's log; Circinus did not time it.\n\nInstall Loading Progress and switch on "Track startup loading impact" and "Auto-save startup impact report" in its settings, and this becomes a figure per mod rather than one for the whole start.\n\n${est}${click}`;
+      return `${clock(run.totalSecs)} the last time the game loaded, ${ago(store.loadRunAt)}.\n\nMeasured by ${run.source} and read out of the game's log; Circinus did not time it.\n\nFor a figure per mod rather than one for the whole start, install Loading Progress by ilyvion and switch on "Track startup loading impact" and then "Auto-save startup impact report" in its settings. Both are off out of the box.\n\n${est}${click}`;
     }
     if (run) {
       return `${clock(run.totalSecs)} the last time the game loaded, ${ago(store.loadRunAt)}.\n\nThat run had ${num(run.mods ?? 0)} mods and you have ${num(store.active.length)} active now, so it describes a different list.\n\n${est}${click}`;
     }
-    return `No load has been measured yet.\n\n${est}\n\nRimWorld's own log carries no timings. A figure appears here when a mod that reports one is installed -- Prepatcher, or a def-cache mod. For a figure per mod, install Loading Progress and switch on both "Track startup loading impact" and "Auto-save startup impact report" in its settings; they are off out of the box.${click}`;
+    return `No load has been measured yet.\n\n${est}\n\nRimWorld's own log carries no timings. A figure appears here when a mod that reports one is installed -- Prepatcher, or a def-cache mod. For a figure per mod, install Loading Progress by ilyvion and switch on both "Track startup loading impact" and "Auto-save startup impact report" in its settings; they are off out of the box.${click}`;
   });
   // Nothing about seconds is a percentage, so the meter needs a scale invented for it. Ten
   // minutes is the top: past that the bar is full and the number is the thing being read anyway.

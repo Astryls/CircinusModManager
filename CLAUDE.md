@@ -386,6 +386,15 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   Play does **not** go through it. `launch_game` saves in Rust when `launch.save_first` is on,
   and a modal between the button and the game is the wrong place to ask a question; the toast
   says what was written instead.
+- **Loading Progress measured it, and every surface says so.** `ilyvion.LoadingProgress` does
+  all the per-mod timing; Circinus reads the file it writes and times nothing. The log path
+  always named its source ("from DefLoadCache") and the two newer paths use *more* of that
+  mod's work than the log does, so they name it too — `stats.cjs` asserts the caption carries
+  it, and `sharing.cjs` asserts the consent card does. The README thanks it, `docs/telemetry.md`
+  passes the obligation to the site, and `ADD-LOAD-COSTS.md` spells out where it appears there:
+  the mod page block, `/meta`'s units prose, and the method page. Its licence (Apache-2.0 / MIT)
+  asks for none of this. The alternative is a site quietly taking credit for a mod author's
+  work, which is the opposite of what a site that refuses to call a mod bad is for.
 - **Sharing is off until answered, and the answer is to a version.** `src-tauri/src/sharing.rs`
   holds the decision and the id; `crates/circinus-core/src/telemetry.rs` holds the envelope;
   `docs/telemetry.md` and `ADD-LOAD-COSTS.md` in the CircinusWeb workspace are the two halves of

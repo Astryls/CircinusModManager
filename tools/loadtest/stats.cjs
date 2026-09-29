@@ -75,7 +75,10 @@ const cards = (page) =>
   ok('and it reads as a clock, not as raw seconds', /^\d+m \d+s$|^\d+s$/.test(part.value), part.value);
   // The whole point: thirty measurements and fourteen guesses is an estimate.
   ok('a partly measured list is called an estimate', /Estimated/i.test(part.cap), part.cap);
-  ok('and it says how much of it was measured', /\d+ of \d+ mods measured/.test(part.cap), part.cap);
+  ok('and it says how much of it was measured', /\d+ of \d+ mods timed/.test(part.cap), part.cap);
+  // Whose measurement it is. The log path has always named its source; the two paths that use
+  // more of that mod's work than the log does must not quietly stop naming it.
+  ok('and credits the mod that measured it', /Loading Progress/.test(part.cap), part.cap);
   await page.locator('.strip').screenshot({ path: `${OUT}/stats-calibrated.png` });
 
   // ---- the log alone: a real total, and nobody pretending it was ours -------------------------
