@@ -373,6 +373,9 @@ export interface Snapshot {
   loadRun?: LoadRun | null;
   /** Unix seconds of the log that came from. */
   loadRunAt?: number;
+  /** Per-mod measured start-up, when the Loading Progress mod has written one. */
+  startupImpact?: StartupImpact | null;
+  startupImpactAt?: number;
 }
 
 export interface SavedList {
@@ -432,6 +435,27 @@ export const VANILLA_SECS = 40;
  *  RimWorld itself never says. These figures come from lines other mods print — Prepatcher's
  *  vanilla load, the def-cache mods' pipeline — so `source` names whoever measured it and the
  *  screen shows that beside the number rather than passing it off as Circinus's own. */
+/** What one mod cost, as the Loading Progress mod measured it on this machine. */
+export interface ModImpact {
+  /** Lowercased and without the `_steam` suffix: the shape Circinus joins on. */
+  packageId: string;
+  name: string;
+  /** Milliseconds on the loading thread. Milliseconds, not seconds -- the mod's profiler
+   *  returns `Stopwatch.Elapsed.TotalMilliseconds` and the file carries that verbatim. */
+  totalMs: number;
+  /** Milliseconds on other threads: real time, but not time anyone waited for in series. */
+  offThreadMs: number;
+}
+
+/** One measured start-up, read from `StartupImpactData.xml`. */
+export interface StartupImpact {
+  totalMs: number;
+  mods: ModImpact[];
+  modsLoaded?: number;
+  defsParsed?: number;
+  patchOps?: number;
+}
+
 export interface LoadRun {
   totalSecs: number;
   source: string;

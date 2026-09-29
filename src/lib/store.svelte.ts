@@ -3,7 +3,7 @@
 
 import { api, appVersion, listen, openFolder } from "./api";
 import { t } from "./i18n.svelte";
-import type { AuditReport, BuiltinRule, CollectionPreview, DefMatch, DefQuery, DefsState, DefTree, Group, HaloRules, ImportPreview, Instance, Issue, ItemState, LaunchSettings, Locations, LogAnalysis, LogFile, ModChange, ModInfo, ModPatchDetail, ModTextures, PatchJob, PatchReport, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamClientStatus, SteamCmdStatus, SubscribeOutcome, SubscriptionProgress, TexState, TrackedCollection, UpdateCheck, UpdateProgress, UserData, Weight } from "./types";
+import type { AuditReport, BuiltinRule, CollectionPreview, DefMatch, DefQuery, DefsState, DefTree, Group, HaloRules, ImportPreview, Instance, Issue, ItemState, LaunchSettings, Locations, LogAnalysis, LogFile, ModChange, ModInfo, ModPatchDetail, ModTextures, PatchJob, PatchReport, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamClientStatus, SteamCmdStatus, SubscribeOutcome, SubscriptionProgress, TexState, TrackedCollection, UpdateCheck, UpdateProgress, UserData, Weight, ListChange } from "./types";
 import { EMPTY_HALO, GROUP_COLORS, loadBand, PHASES, primaryUid, severityOf, VANILLA_SECS, type LoadBand, type Severity } from "./types";
 
 export type View = "order" | "library" | "downloads" | "textures" | "defs" | "patches" | "analyzer" | "halo" | "settings";
@@ -88,6 +88,11 @@ class Store {
   selected = $state<string[]>([]);
   /** Off, or the two lists shown side by side. */
   split = $state<Split | null>(null);
+  /** The save confirmation, and what it is showing. `pendingSave` is fetched when the dialog
+   *  opens rather than derived, because only the backend can turn the edited uid list into the
+   *  package ids that actually go in the file. */
+  showSave = $state(false);
+  pendingSave = $state<ListChange | null>(null);
   preview = $state<SortResult | null>(null);
   importPreview = $state<ImportPreview | null>(null);
   collectionPreview = $state<CollectionPreview | null>(null);
@@ -246,46 +251,131 @@ class Store {
   columns = $derived(this.snap?.settings.columns ?? {});
   /** The optional list columns that are on. */
   listColumns = $derived(this.snap?.settings.listColumns ?? ["time", "load", "versions"]);
-  /** Each active mod's estimated share of the list's loading time, from the folder figures. */
+  // ---- how long the game takes to start -----------------------------------------------------
+  //
+  // Three numbers, and keeping them apart is the point of showing any of them.
+  //
+  //   `loadRun`        what the game's log recorded: a real total, measured by somebody else's
+  //                    mod, which the card attributes rather than passing off as ours.
+  //   `startupImpact`  what the Loading Progress mod measured per mod, keyed by package id.
+  //   the model        `loadcost::score` over what each folder holds -- nine hand-rounded
+  //                    coefficients, honest as a ranking and only ever right as a duration by
+  //                    luck, since nothing in a folder says what disk it is on.
+  //
+  // The measurement does not replace the model, it corrects it. Mods that were measured
+  // contribute what they cost; the rest contribute the model scaled by how the model compared
+  // to the measurement on the mods where both are known. That factor is the machine.
+
+  /** Measured milliseconds by package id, from the last run the mod recorded. */
+  measuredByPackage = $derived.by(() => {
+    const out = new Map<string, number>();
+    for (const m of this.snap?.startupImpact?.mods ?? []) out.set(m.packageId, m.totalMs);
+    return out;
+  });
+
+  /** A mod's measured load, if that mod was in the run that was measured. */
+  measuredMsOf(uid: string): number | undefined {
+    const pkg = this.byUid.get(uid)?.packageId?.toLowerCase().replace(/_steam$/, "");
+    return pkg ? this.measuredByPackage.get(pkg) : undefined;
+  }
+
+  /** How wrong the model is on this machine, or null when too little overlaps to say.
+   *
+   *  Mirrors `loadcost::calibration` — the floors and the clamp are the same, and the comment
+   *  there is the one that explains why. Kept in the window as well as in Rust because the
+   *  window recalculates on every list edit and a round trip per keystroke would be absurd. */
+  loadCalibration = $derived.by(() => {
+    const measured = this.measuredByPackage;
+    if (!measured.size) return null;
+    let mMs = 0;
+    let modelMs = 0;
+    let overlap = 0;
+    for (const uid of this.active) {
+      const mod = this.byUid.get(uid);
+      const pkg = mod?.packageId?.toLowerCase().replace(/_steam$/, "");
+      const got = pkg ? measured.get(pkg) : undefined;
+      if (got == null) continue;
+      mMs += got;
+      modelMs += mod?.contents.load?.scoreMs ?? 0;
+      overlap++;
+    }
+    if (overlap < 5 || modelMs < 500 || mMs <= 0) return null;
+    const k = mMs / modelMs;
+    if (!Number.isFinite(k)) return null;
+    return Math.min(5, Math.max(0.2, k));
+  });
+
+  /** What one mod is expected to cost, in ms: measured where it was, model elsewhere.
+   *
+   *  This is the figure the Time column shows and the shares are taken against, so it has to be
+   *  one number per mod rather than two columns the reader has to reconcile. Which kind it is
+   *  is said once, on the card, not forty-four times down the list. */
+  expectedMsOf(uid: string): number {
+    const got = this.measuredMsOf(uid);
+    if (got != null) return got;
+    const model = this.byUid.get(uid)?.contents.load?.scoreMs ?? 0;
+    return model * (this.loadCalibration ?? 1);
+  }
+
+  /** How many active mods the measurement actually covers. */
+  measuredCount = $derived.by(() => {
+    let n = 0;
+    for (const uid of this.active) if (this.measuredMsOf(uid) != null) n++;
+    return n;
+  });
+
+  /** Each active mod's share of the list's loading time. */
   loadShares = $derived.by(() => {
     const out = new Map<string, { share: number; band: LoadBand; ms: number }>();
     let total = 0;
-    for (const uid of this.active) total += this.byUid.get(uid)?.contents.load?.scoreMs ?? 0;
+    for (const uid of this.active) total += this.expectedMsOf(uid);
     for (const m of this.mods) {
-      const ms = m.contents.load?.scoreMs ?? 0;
+      const ms = this.expectedMsOf(m.uid);
       const share = total > 0 && this.activeSet.has(m.uid) ? ms / total : 0;
       out.set(m.uid, { share, band: loadBand(share), ms });
     }
     return out;
   });
   loadOf = (uid: string) => this.loadShares.get(uid);
-  /** Total estimated loading time of the active list, in seconds; a model, not a measurement.
+  /** Total loading time of the active list's mods, in seconds.
    *
-   *  Mods only — this is the number the Time column adds up to, and the denominator every
-   *  per-mod share is taken against, so it must stay the sum of the parts. */
+   *  The number the Time column adds up to and the denominator every per-mod share is taken
+   *  against, so it must stay the sum of the parts. */
   loadTotalSeconds = $derived.by(() => {
     let total = 0;
-    for (const uid of this.active) total += this.byUid.get(uid)?.contents.load?.scoreMs ?? 0;
+    for (const uid of this.active) total += this.expectedMsOf(uid);
     return total / 1000;
   });
 
-  // ---- how long the game takes to start ----
-  //
-  // Two different numbers, and the difference is the whole point of showing either. `loadRun` is
-  // what the game's own log recorded last time: a real measurement of a real load, taken by
-  // somebody else's mod, which the screen attributes. `loadEstimate` is the model -- nine
-  // hand-rounded coefficients over what the folders hold -- and it is what shows when no log has
-  // said. The card says which it is, because a guess in large type reads as a fact.
   loadRun = $derived(this.snap?.loadRun ?? null);
   loadRunAt = $derived(this.snap?.loadRunAt ?? 0);
-  /** Vanilla's own load: measured when Prepatcher said so, a round stand-in otherwise. */
-  vanillaSeconds = $derived(this.loadRun?.vanillaSecs ?? VANILLA_SECS);
+  startupImpact = $derived(this.snap?.startupImpact ?? null);
+  startupImpactAt = $derived(this.snap?.startupImpactAt ?? 0);
+  /** Vanilla's own load. The measurement knows it exactly -- it is the part of the total that
+   *  no mod accounted for -- so the round stand-in is only for when nothing has measured. */
+  vanillaSeconds = $derived.by(() => {
+    const si = this.startupImpact;
+    if (si) {
+      const mods = si.mods.reduce((a: number, m) => a + m.totalMs, 0);
+      const vanilla = Math.max(0, si.totalMs - mods);
+      if (vanilla > 0) return vanilla / 1000;
+    }
+    return this.loadRun?.vanillaSecs ?? VANILLA_SECS;
+  });
   /** The list *and* the game under it. `loadTotalSeconds` is mods alone, which as a total would
    *  be short by the larger half of the number on a small list. */
   loadEstimateSeconds = $derived(this.vanillaSeconds + this.loadTotalSeconds);
-  /** Was the measurement taken with roughly the list that is on screen now? A figure from a run
-   *  with two hundred fewer mods is a fact about a different list. */
+  /** Was the run that was measured the list that is on screen now?
+   *
+   *  With a per-mod measurement this is an exact question rather than the count comparison it
+   *  used to be: two lists of forty-four mods can share no mods at all. Falls back to the count
+   *  when only the log has spoken, since the log says how many and not which. */
   loadRunMatchesList = $derived.by(() => {
+    const measured = this.measuredByPackage;
+    if (measured.size) {
+      if (measured.size !== this.active.length) return false;
+      return this.measuredCount === this.active.length;
+    }
     const n = this.loadRun?.mods ?? null;
     if (n == null) return true;
     return Math.abs(n - this.active.length) <= Math.max(5, this.active.length * 0.1);
@@ -1019,6 +1109,21 @@ class Store {
       this.say(r.moves.length ? `Moved ${r.moves.length} mod${r.moves.length === 1 ? "" : "s"}` : "Already in HALO order");
     });
   }
+  /** Open the confirmation. What Save is wired to; `save()` is what the dialog then calls.
+   *
+   *  The Play path deliberately does not come through here: pressing Play means go, and a modal
+   *  between the button and the game is the wrong place to ask a question. It saves in Rust and
+   *  the toast says what was written. */
+  async confirmSave() {
+    try {
+      this.pendingSave = await api.pendingSave();
+    } catch {
+      // Not being able to describe the change is not a reason to block saving it.
+      this.pendingSave = null;
+    }
+    this.showSave = true;
+  }
+
   save() {
     return this.run("Saving…", async () => {
       const p = await api.save();

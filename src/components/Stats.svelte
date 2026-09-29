@@ -56,7 +56,19 @@
   // which, in the caption, where the eye lands after the number. A guess set in 17px bold with
   // the hedge hidden in a tooltip is a guess people will quote back as a fact.
   const run = $derived(store.loadRun);
-  const loadSecs = $derived(run ? run.totalSecs : store.loadEstimateSeconds);
+  const impact = $derived(store.startupImpact);
+  /** Which of the three kinds of number this card is currently showing. */
+  const kind = $derived.by<"measured" | "calibrated" | "modelled">(() => {
+    if (impact && store.loadRunMatchesList) return "measured";
+    if (store.loadCalibration != null) return "calibrated";
+    return "modelled";
+  });
+  const loadSecs = $derived.by(() => {
+    // A measurement of this exact list is the answer and needs no arithmetic.
+    if (kind === "measured" && impact) return impact.totalMs / 1000;
+    if (run && store.loadRunMatchesList && !impact) return run.totalSecs;
+    return store.loadEstimateSeconds;
+  });
   /** Minutes and seconds past a minute: "7m 43s" reads; "462.99 s" does not. */
   const clock = (secs: number) => (secs >= 60 ? `${Math.floor(secs / 60)}m ${Math.round(secs % 60)}s` : `${Math.round(secs)}s`);
   const ago = (at: number) => {
@@ -64,16 +76,33 @@
     const days = Math.floor((Date.now() / 1000 - at) / 86400);
     return days <= 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`;
   };
+  /** `n` is already the uid-to-name helper in this file, so the number formatter is `num`. */
+  const num = (x: number) => x.toLocaleString();
   const loadCap = $derived.by(() => {
-    if (!run) return `Estimated: ${clock(store.vanillaSeconds)} for the game plus ${clock(store.loadTotalSeconds)} for your mods`;
-    if (!store.loadRunMatchesList) return `Measured ${ago(store.loadRunAt)} with ${run.mods?.toLocaleString()} mods, not the ${store.active.length.toLocaleString()} active now`;
-    return `Measured ${ago(store.loadRunAt)}, from ${run.source}`;
+    if (kind === "measured") return `Measured ${ago(store.startupImpactAt)}, every mod in this list`;
+    if (kind === "calibrated") return `Estimated: ${num(store.measuredCount)} of ${num(store.active.length)} mods measured here, the rest from the model`;
+    if (run && store.loadRunMatchesList) return `Measured ${ago(store.loadRunAt)}, from ${run.source}`;
+    if (run) return `Measured ${ago(store.loadRunAt)} with ${num(run.mods ?? 0)} mods, not the ${num(store.active.length)} active now`;
+    return `Estimated: ${clock(store.vanillaSeconds)} for the game plus ${clock(store.loadTotalSeconds)} for your mods`;
   });
   const loadTip = $derived.by(() => {
-    const est = `Circinus estimates ${clock(store.loadEstimateSeconds)}: ${clock(store.vanillaSeconds)} for RimWorld itself${run?.vanillaSecs ? " (measured)" : " (a stand-in until a log says)"} and ${clock(store.loadTotalSeconds)} for the ${store.active.length.toLocaleString()} active mods. That second figure is a ranking model, not a stopwatch.`;
-    if (!run) return `No load has been measured yet.\n\n${est}\n\nRimWorld's own log carries no timings. A figure appears here when a mod that reports one is installed -- Prepatcher, or a def-cache mod.\n\nClick to show the mods slowest to load.`;
-    const which = store.loadRunMatchesList ? "" : `\n\nThat run had ${run.mods?.toLocaleString()} mods and you have ${store.active.length.toLocaleString()} active now, so it describes a different list.`;
-    return `${clock(run.totalSecs)} the last time the game loaded, ${ago(store.loadRunAt)}.\n\nMeasured by ${run.source} and read out of the game's log; Circinus did not time it.${which}\n\n${est}\n\nClick to show the mods slowest to load.`;
+    const click = "\n\nClick to show the mods slowest to load.";
+    const split = `${clock(store.vanillaSeconds)} for RimWorld itself and ${clock(store.loadTotalSeconds)} for the ${num(store.active.length)} active mods.`;
+    if (kind === "measured" && impact) {
+      return `${clock(impact.totalMs / 1000)} the last time the game started, ${ago(store.startupImpactAt)}.\n\nEvery mod in this list was timed individually by the Loading Progress mod; Circinus read the figures and did not time anything itself.\n\n${split}${click}`;
+    }
+    if (kind === "calibrated") {
+      const k = store.loadCalibration ?? 1;
+      return `Circinus estimates ${clock(store.loadEstimateSeconds)}.\n\n${num(store.measuredCount)} of your ${num(store.active.length)} active mods were timed on this machine by the Loading Progress mod and contribute what they actually cost. The rest come from Circinus's model, scaled by ${k.toFixed(2)}x -- how far the model was out on the mods where both numbers are known.\n\n${split}${click}`;
+    }
+    const est = `Circinus estimates ${clock(store.loadEstimateSeconds)}: ${split} That second figure is a ranking model, not a stopwatch.`;
+    if (run && store.loadRunMatchesList) {
+      return `${clock(run.totalSecs)} the last time the game loaded, ${ago(store.loadRunAt)}.\n\nMeasured by ${run.source} and read out of the game's log; Circinus did not time it.\n\nInstall Loading Progress and switch on "Track startup loading impact" and "Auto-save startup impact report" in its settings, and this becomes a figure per mod rather than one for the whole start.\n\n${est}${click}`;
+    }
+    if (run) {
+      return `${clock(run.totalSecs)} the last time the game loaded, ${ago(store.loadRunAt)}.\n\nThat run had ${num(run.mods ?? 0)} mods and you have ${num(store.active.length)} active now, so it describes a different list.\n\n${est}${click}`;
+    }
+    return `No load has been measured yet.\n\n${est}\n\nRimWorld's own log carries no timings. A figure appears here when a mod that reports one is installed -- Prepatcher, or a def-cache mod. For a figure per mod, install Loading Progress and switch on both "Track startup loading impact" and "Auto-save startup impact report" in its settings; they are off out of the box.${click}`;
   });
   // Nothing about seconds is a percentage, so the meter needs a scale invented for it. Ten
   // minutes is the top: past that the bar is full and the number is the thing being read anyway.
@@ -123,7 +152,7 @@
   <button class="card stat" class:on={store.showOnly === "slow"} title={loadTip} onclick={() => narrow("slow")}>
     <div class="l"><span>Load time</span><span class="v num" class:att={loadSecs >= 120} class:neg={loadSecs >= 360}>{clock(loadSecs)}</span></div>
     <div class="meter" style="--c: var(--{loadColor}); --v:{loadPct}%"><i></i></div>
-    <div class="cap">{#if !run}<span class="flag">{@html I.note}</span>{/if}<span class="t">{loadCap}</span></div>
+    <div class="cap">{#if kind !== "measured"}<span class="flag">{@html I.note}</span>{/if}<span class="t">{loadCap}</span></div>
   </button>
   {#if store.showWeight}
     <button class="card stat" class:on={store.showOnly === "heavy"} title={perfTip} onclick={onPerf}>

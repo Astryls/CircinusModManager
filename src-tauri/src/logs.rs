@@ -83,6 +83,95 @@ pub fn last_load(paths: &[PathBuf]) -> Option<(circinus_core::playerlog::LoadRun
     best
 }
 
+/// `<config>/../StartupImpactData.xml`, where the Loading Progress mod writes its measurement.
+///
+/// The game's save-data folder is the parent of its Config folder -- the same folder Player.log
+/// sits in -- so this needs no path of its own.
+pub fn impact_path(app: &App) -> Option<PathBuf> {
+    app.locations.config_dir.as_ref().and_then(|c| c.parent()).map(|p| p.join("StartupImpactData.xml"))
+}
+
+/// Read what Loading Progress measured, and when it wrote it.
+///
+/// Takes the path rather than the `App`, for the same reason `last_load` does: this is file I/O
+/// and it must not hold the state lock. Cheaper than the log by a wide margin -- the file is a
+/// few hundred kilobytes against tens of megabytes -- but the rule is about the lock, not size.
+///
+/// `None` covers every ordinary case: the mod is not installed, or it is and its two settings
+/// are off, or the game is mid-write. None of those is worth a word; the model shows instead.
+pub fn startup_impact(path: &Path) -> Option<(circinus_core::startupimpact::StartupImpact, i64)> {
+    let md = std::fs::metadata(path).ok()?;
+    let text = std::fs::read_to_string(path).ok()?;
+    let parsed = circinus_core::startupimpact::parse(&text)?;
+    let at = md.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs() as i64).unwrap_or(0);
+    Some((parsed, at))
+}
+
+/// Re-read both records of the last start-up and put them in the state.
+///
+/// The log and the measurement answer the same question from two sides, they live in the same
+/// folder, and neither may be read with the state locked -- so they are taken together, and
+/// paths come out under the lock before any file is touched.
+///
+/// This is not only a launch-time job. It used to be, and the result was that starting the game
+/// from Circinus and coming back showed the *previous* run's figure until the app was restarted
+/// -- the one moment a player has a reason to look at that card is the one moment it was stale.
+/// Call it again when the game exits.
+///
+/// Returns whether anything changed, so a caller can skip the redraw when nothing has.
+pub fn refresh_last_run(shared: &crate::commands::Shared) -> bool {
+    let (paths, impact, had_run_at, had_impact_at) = match shared.lock() {
+        Ok(a) => (default_paths(&a), impact_path(&a), a.load_run_at, a.startup_impact_at),
+        Err(_) => return false,
+    };
+
+    // Stat before read. This runs whenever the window comes back to the front, and a Player.log
+    // is tens of megabytes: reading it to discover it has not changed would be the most
+    // expensive way in the app to learn nothing. A file is worth opening only when it is newer
+    // than the figure already on screen.
+    let run = paths
+        .iter()
+        .any(|p| mtime(p).is_some_and(|t| t > had_run_at))
+        .then(|| last_load(&paths))
+        .flatten();
+    let measured = impact
+        .as_deref()
+        .filter(|p| mtime(p).is_some_and(|t| t > had_impact_at))
+        .and_then(startup_impact);
+
+    if run.is_none() && measured.is_none() {
+        return false;
+    }
+    let Ok(mut a) = shared.lock() else { return false };
+    let mut changed = false;
+    if let Some((r, at)) = run {
+        if a.load_run.as_ref() != Some(&r) || a.load_run_at != at {
+            a.load_run = Some(r);
+            a.load_run_at = at;
+            changed = true;
+        }
+    }
+    if let Some((m, at)) = measured {
+        if a.startup_impact.as_ref() != Some(&m) || a.startup_impact_at != at {
+            a.startup_impact = Some(m);
+            a.startup_impact_at = at;
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// A file's modified time in unix seconds, or `None` if it cannot be asked.
+fn mtime(path: &Path) -> Option<i64> {
+    std::fs::metadata(path)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs() as i64)
+}
+
 struct Index<'a> {
     mods: &'a [ModInfo],
     files: &'a HashMap<String, ModFiles>,

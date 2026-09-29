@@ -262,7 +262,7 @@
     </button>
   </div>
   <div class="acts">
-    <button class="btn" class:save={snap?.dirty} disabled={!snap?.dirty} onclick={() => store.save()} title={t("titlebar.save.title", { keys: keyLabel("Mod+s") })}>{@html I.save}Save</button>
+    <button class="btn" class:save={snap?.dirty} disabled={!snap?.dirty} onclick={() => store.confirmSave()} title={t("titlebar.save.title", { keys: keyLabel("Mod+s") })}>{@html I.save}Save</button>
     <button class="btn primary" onclick={() => store.launch()} disabled={!!store.busy} title={snap?.settings.launch.method === "executable" ? "Start RimWorld from its executable (see Settings, Launching RimWorld)" : "Start RimWorld. Through Steam when it lives in a Steam library, otherwise from its executable."}>{@html I.play}Play</button>
     <button class="ib" aria-label={theme.nextLabel} title={theme.nextLabel} onclick={() => theme.toggle()}>{@html I.paper}</button>
     <button class="ib" class:on={store.view === "settings"} aria-label="Settings" title="Settings" onclick={() => (store.view = store.view === "settings" ? "order" : "settings")}>{@html I.gear}</button>

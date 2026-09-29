@@ -354,6 +354,38 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   None of this is colourblind-safe and no seven-hue set is — under deuteranopia the worst pair
   collapses to about 4 ΔE. It is acceptable only because the group name is always printed beside
   its dot. **A dot without its name is the bug**, not the palette.
+- **The load-time card has three kinds of number, and must always say which.** A per-mod
+  measurement from `ilyvion.LoadingProgress` (`StartupImpactData.xml`, beside Player.log in the
+  save-data folder); the game's own log, which gives a total and no breakdown; and
+  `loadcost::score`, the model. They are worth different amounts and the caption is where that
+  is said — a figure built from thirty measurements and fourteen guesses is an *estimate*, and
+  a card calling it "Measured" is lying in 17px bold. `stats.cjs` asserts all three captions.
+  The measurement does not replace the model, it corrects it: `loadcost::calibration` divides
+  what the measured mods really cost by what the model said they would, and that factor is
+  applied to the mods that have never been measured. Floors at five overlapping mods and 500
+  modelled ms — below either the ratio is one outlier — and clamps to 0.2–5×, because a factor
+  outside that is a mismatched file rather than a slow disk. `store.expectedMsOf` is the single
+  per-mod figure this produces; the Time column and the shares both come from it, so they can
+  never disagree.
+  Everything in that XML is **float milliseconds**. Scaling it twice is off by a thousand and
+  looks plausible. The mod's two tracking settings are **off out of the box**, so absent is the
+  normal case; the tooltip names both boxes rather than showing nothing. The file holds one
+  session and is overwritten each launch.
+  `logs::refresh_last_run` reads both records, stats before it reads (a Player.log is tens of
+  megabytes and reading it to learn nothing is the most expensive way to learn nothing), and
+  takes paths out under the lock before touching a file. It runs at startup **and on window
+  focus** — the game writes that figure while Circinus is not in front, so reading it only at
+  launch meant playing, coming back, and being shown the run before the one you just did.
+- **The save confirmation compares; it does not remember.** `dirty` is a sticky flag set by
+  every edit and cleared only by a write, so it stays true after you activate a mod and
+  deactivate it again. `App::pending_save` runs `modsconfig::build` without writing and diffs
+  the result against `file_active`, which needs no new state and makes the dialog the one thing
+  in the app that can say "nothing to write". It breaks the change into activated, deactivated
+  and moved, because those are three different risks: a removal is the one that can lose you
+  something, so it is the only one carrying colour.
+  Play does **not** go through it. `launch_game` saves in Rust when `launch.save_first` is on,
+  and a modal between the button and the game is the wrong place to ask a question; the toast
+  says what was written instead.
 - **The icon set is cut paper.** One solid shape in `currentColor` and a second sheet behind it
   at 38% opacity; no strokes, no gradients, nothing on a grid finer than 3 units of 24, so no
   limb disappears at the 15px the directory uses. The previous set had its hues compiled in,

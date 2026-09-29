@@ -110,6 +110,26 @@ function hash(s: string): number {
 }
 
 const mods: ModInfo[] = SEED.map(mod);
+/** What Loading Progress would have written for this list, in float milliseconds.
+ *
+ *  Two thirds of the active list, on purpose. A measurement that happened to cover everything
+ *  would only ever exercise the easy path; the case worth having in the mock is the one where
+ *  the card must say how much of the number is measured and how much is the model wearing a
+ *  correction factor. The figures are shaped like a real run -- a couple of frameworks
+ *  dominating, a long tail of near-nothing -- so the shares look like shares. */
+const MOCK_IMPACT = (() => {
+  const out: { packageId: string; name: string; totalMs: number; offThreadMs: number }[] = [];
+  for (const [i, m] of mods.entries()) {
+    if (i % 3 === 2) continue; // a third of them were installed after the run
+    // A deterministic spread: heavy at the front, trivial at the back, no randomness so two
+    // runs of the loadtest never disagree.
+    const heavy = m.packageId.includes("harmony") || m.packageId.includes("performance") || m.packageId.includes("rimmsqol");
+    const base = heavy ? 28_000 : 9_000 / (1 + i * 0.7);
+    out.push({ packageId: m.packageId.toLowerCase(), name: m.name, totalMs: Math.round(base * 100) / 100, offThreadMs: 0 });
+  }
+  return out;
+})();
+
 // A mod deployed by a dev tool: a hash-named link in the Mods folder pointing at a workspace.
 {
   const m = mods.find((m) => m.packageId === "community.hospitality.casino")!;
@@ -125,6 +145,9 @@ if (typeof location !== "undefined" && location.search.includes("abovecore")) {
 }
 const phaseOfSeed: Record<string, Phase> = Object.fromEntries(SEED.map((s) => [uidOf(s[2]), s[5]]));
 const byUid = new Map(mods.map((m) => [m.uid, m]));
+/** What "the file on disk" holds, for the save-confirmation diff. Frozen at load: the session
+ *  edits `active` from here, and the difference between the two is what the dialog shows. */
+const SAVED_ACTIVE: string[] = active.map((uid) => (byUid.get(uid)?.packageId ?? uid).toLowerCase());
 /** Mods that arrived while Circinus was watching: ?new=3 (the default) for a handful, ?new=0 for
  *  none. Spread over the last few days so the New tab has something to sort by, and always a
  *  mixture of active and inactive, since a mod dropped in a folder is not in the list yet. */
@@ -348,6 +371,23 @@ function snapshot(): Snapshot {
     // back to the estimate and say that is what it is.
     loadRun: new URLSearchParams(location.search).has("noload") ? null : { totalSecs: 462.986, source: "DefLoadCache", vanillaSecs: 43.40687, mods: 44 },
     loadRunAt: Math.floor(Date.now() / 1000) - 86400,
+    // What the Loading Progress mod would have written. `?noimpact` takes it away, which is the
+    // case most people are in: the mod ships with both of its tracking settings off.
+    //
+    // Deliberately a *partial* measurement -- it covers some of the active list and not all of
+    // it -- because that is the interesting state and the one with no other way to reach it:
+    // the card has to say "estimated, N of M measured here" and calibrate the rest, rather than
+    // claiming a measurement it does not have.
+    startupImpact: new URLSearchParams(location.search).has("noimpact")
+      ? null
+      : {
+          totalMs: 462986,
+          mods: MOCK_IMPACT,
+          modsLoaded: 44,
+          defsParsed: 91244,
+          patchOps: 14022
+        },
+    startupImpactAt: Math.floor(Date.now() / 1000) - 3600,
     // Only what is switched on, the way the backend now reports it: a source that is off is not
     // read and does not claim to be loaded. The mock said both were loaded whatever the switches
     // did, which is exactly the bug it should have been showing.
@@ -1205,6 +1245,25 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
     }
     case "validate":
       return issues(active) as T;
+    case "pending_save": {
+      // The mock has no ModsConfig.xml to diff against, so it answers with the shape a real
+      // one would: what the session has activated and deactivated since it loaded, and a
+      // couple of reorders. Enough for the dialog to be exercised rather than guessed at.
+      const before = SAVED_ACTIVE;
+      const after = active.map((uid) => (byUid.get(uid)?.packageId ?? uid).toLowerCase());
+      const beforeSet = new Set(before);
+      const afterSet = new Set(after);
+      const moves = before
+        .map((p, i) => ({ packageId: p, from: i + 1, to: after.indexOf(p) + 1 }))
+        .filter((m) => m.to > 0 && m.to !== m.from)
+        .slice(0, 6);
+      return {
+        added: after.filter((p) => !beforeSet.has(p)),
+        removed: before.filter((p) => !afterSet.has(p)),
+        reordered: moves.length > 0,
+        moves
+      } as unknown as T;
+    }
     case "save_mods_config":
       dirty = false;
       return settings.locations.configDir + "\\ModsConfig.xml" as T;

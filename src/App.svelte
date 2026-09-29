@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { store } from "$lib/store.svelte";
+  import { api } from "$lib/api";
   import { actions, chord, matches } from "$lib/keys.svelte";
   import Rail from "./components/Rail.svelte";
   import SearchLine from "./components/SearchLine.svelte";
@@ -11,6 +12,7 @@
   import Inspector from "./components/Inspector.svelte";
   import ImportDialog from "./components/ImportDialog.svelte";
   import ChangesDialog from "./components/ChangesDialog.svelte";
+  import SaveDialog from "./components/SaveDialog.svelte";
   import SettingsView from "./components/SettingsView.svelte";
   import AnalyzerView from "./components/AnalyzerView.svelte";
   import DownloadsView from "./components/DownloadsView.svelte";
@@ -31,6 +33,17 @@
   onMount(() => {
     store.load();
   });
+
+  /** The game writes how long it took to start; Circinus is not in front while it does.
+   *
+   *  So the one moment that figure changes is the one moment this window is not looking, and
+   *  reading it only at launch meant playing, coming back, and being shown the run before the
+   *  one you just did. Asking on focus costs two `stat` calls when nothing has changed. */
+  function onFocus() {
+    api.refreshLastRun().catch(() => {
+      /* the figure on screen stays as it was, which is the right failure */
+    });
+  }
 
   // A pane still has to hold a row worth reading: the number, a mod name of 180px, the six badges
   // and the Move column come to 440px, so two of them and the gap between need 892. Measured
@@ -80,7 +93,7 @@
   }
 </script>
 
-<svelte:window onkeydown={onKey} />
+<svelte:window onkeydown={onKey} onfocus={onFocus} />
 
 <div class="app">
   <!-- The Directory layout: one fixed column is the whole navigation -- instance, views, groups,
@@ -140,6 +153,7 @@
   </div>
   {#if store.showImport}<ImportDialog />{/if}
   {#if store.showChanges}<Panel name="Changes"><ChangesDialog /></Panel>{/if}
+  {#if store.showSave}<Panel name="Save"><SaveDialog /></Panel>{/if}
   {#if store.showCollection != null}<Panel name="Collection"><CollectionDialog /></Panel>{/if}
   <!-- A dialog rather than a view with a rail row of its own: most installs follow no packs, and
        a permanent nav entry reading zero is the thing the New tab was deliberately not. -->

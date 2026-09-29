@@ -9,9 +9,15 @@
 // load card still says whether its number is measured or modelled at the narrowest of them,
 // because that is the one thing it must not shed on the way down.
 //
-// The other is honesty. The load-time card shows a measurement when the log carried one and a
-// model when it did not, and the two must not read the same: `?noload` is the case most people
-// are in, and there the caption has to say the number is an estimate.
+// The other is honesty, and the load-time card now has three kinds of number rather than two.
+// A per-mod measurement from the Loading Progress mod, the game's own log with a total and no
+// breakdown, and the model. Each is worth a different amount and the caption has to say which:
+//   default            some of the list measured here -> an estimate, calibrated, and it says so
+//   ?noimpact          the log only -> a measured total, attributed to whoever timed it
+//   ?noload&noimpact   nothing measured -> the model, and it says "Estimated"
+// The trap this guards is the middle one reading like the first. A figure built from thirty
+// measurements and fourteen guesses is an estimate, and a card that calls it "Measured" is
+// lying in 17px bold.
 //
 //   npm run build && npx vite preview --port 4173 --strictPort
 //   node tools/loadtest/stats.cjs [outdir]
@@ -61,26 +67,35 @@ const cards = (page) =>
   await page.waitForSelector('.stats .stat', { timeout: 15000 });
   await page.waitForTimeout(500);
 
-  // ---- the measured case -----------------------------------------------------------------------
+  // ---- partly measured: the common case once the mod is installed ---------------------------
   let c = await cards(page);
   ok('there are five cards', c.length === 5, c.map((x) => x.title).join(' | '));
-  const load = c.find((x) => x.title === 'Load time');
-  ok('one of them is the load time', !!load, c.map((x) => x.title).join(' | '));
-  // 462.986s from the mock's log line.
-  ok('and it reads as a clock, not as raw seconds', load.value === '7m 43s', load.value);
-  ok('the caption says it was measured', /Measured/i.test(load.cap), load.cap);
-  ok('and names who measured it', /DefLoadCache/.test(load.cap), load.cap);
+  const part = c.find((x) => x.title === 'Load time');
+  ok('one of them is the load time', !!part, c.map((x) => x.title).join(' | '));
+  ok('and it reads as a clock, not as raw seconds', /^\d+m \d+s$|^\d+s$/.test(part.value), part.value);
+  // The whole point: thirty measurements and fourteen guesses is an estimate.
+  ok('a partly measured list is called an estimate', /Estimated/i.test(part.cap), part.cap);
+  ok('and it says how much of it was measured', /\d+ of \d+ mods measured/.test(part.cap), part.cap);
+  await page.locator('.strip').screenshot({ path: `${OUT}/stats-calibrated.png` });
+
+  // ---- the log alone: a real total, and nobody pretending it was ours -------------------------
+  await page.goto(`${BASE}/?noimpact`, { waitUntil: 'load' });
+  await page.waitForSelector('.stats .stat', { timeout: 15000 });
+  await page.waitForTimeout(500);
+  const logged = (await cards(page)).find((x) => x.title === 'Load time');
+  ok('with only the log there is still a figure', !!logged && !!logged.value, logged?.value ?? 'none');
+  ok('the log case says it was measured', /Measured/i.test(logged.cap), logged.cap);
+  ok('and names who measured it', /DefLoadCache/.test(logged.cap), logged.cap);
   await page.locator('.strip').screenshot({ path: `${OUT}/stats-measured.png` });
 
-  // ---- the case most people are in --------------------------------------------------------------
-  await page.goto(`${BASE}/?noload`, { waitUntil: 'load' });
+  // ---- nothing measured at all ---------------------------------------------------------------
+  await page.goto(`${BASE}/?noload&noimpact`, { waitUntil: 'load' });
   await page.waitForSelector('.stats .stat', { timeout: 15000 });
   await page.waitForTimeout(500);
   const est = (await cards(page)).find((x) => x.title === 'Load time');
   ok('with no measurement there is still a figure', !!est && !!est.value, est?.value ?? 'none');
-  // The whole point: a model and a measurement must not look alike.
   ok('and the caption calls it an estimate', /Estimated/i.test(est.cap), est.cap);
-  ok('which is a different number from the measured one', est.value !== load.value, `${est.value} vs ${load.value}`);
+  ok('which is a different number from the measured one', est.value !== logged.value, `${est.value} vs ${logged.value}`);
   // Mods alone would read absurdly low, so the game's own load is in it.
   ok('and it includes the game itself, not only the mods', /for the game/.test(est.cap), est.cap);
   await page.locator('.strip').screenshot({ path: `${OUT}/stats-estimated.png` });

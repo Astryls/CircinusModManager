@@ -1,6 +1,6 @@
 // Thin wrapper over Tauri's invoke, with a browser mock so the UI can run outside Tauri.
 
-import type { AddResult, AuditReport, BuiltinRule, CollectionPreview, DdsReport, DefQuery, DefsState, DefTree, ImportPreview, Instance, Issue, ItemSubscription, LaunchInfo, LaunchSettings, Locations, LogAnalysis, LogFile, ModFiles, ModPatchDetail, ModTextures, PatchJob, PatchReport, QueueState, RentryPreview, RestoreResult, Rule, RulesFile, SavedList, Settings, Snapshot, SortResult, SteamClientStatus, SteamCmdStatus, SubscribeOutcome, TestOutcome, TexState, UpdateCheck, UserData } from "./types";
+import type { AddResult, AuditReport, BuiltinRule, CollectionPreview, DdsReport, DefQuery, DefsState, DefTree, ImportPreview, Instance, Issue, ItemSubscription, LaunchInfo, LaunchSettings, Locations, LogAnalysis, LogFile, ModFiles, ModPatchDetail, ModTextures, PatchJob, PatchReport, QueueState, RentryPreview, RestoreResult, Rule, RulesFile, SavedList, Settings, Snapshot, SortResult, SteamClientStatus, SteamCmdStatus, SubscribeOutcome, TestOutcome, TexState, UpdateCheck, UserData, ListChange } from "./types";
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -31,6 +31,8 @@ export const api = {
   halo: (apply: boolean) => invoke<SortResult>("halo", { apply }),
   validate: () => invoke<Issue[]>("validate"),
   save: () => invoke<string>("save_mods_config"),
+  refreshLastRun: () => invoke<boolean>("refresh_last_run"),
+  pendingSave: () => invoke<ListChange>("pending_save"),
   importList: (path?: string, text?: string) => invoke<ImportPreview>("import_list", { path: path ?? null, text: text ?? null }),
   applyImport: (uids: string[], append: boolean) => invoke<Snapshot>("apply_import", { uids, append }),
   updateSettings: (settings: Settings) => invoke<Snapshot>("update_settings", { settings }),

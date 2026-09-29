@@ -47,7 +47,7 @@ export function actions(): Action[] {
   const sel = () => store.selected.filter((u) => store.activeSet.has(u));
   const out: Action[] = [
     // ---- the list ----
-    { id: "save", section: t("keys.section.list"), name: t("keys.save"), keys: "Mod+s", scope: "always", run: () => store.save() },
+    { id: "save", section: t("keys.section.list"), name: t("keys.save"), keys: "Mod+s", scope: "always", run: () => store.confirmSave() },
     { id: "search", section: t("keys.section.list"), name: t("keys.search"), keys: "Mod+k", scope: "always", run: focusSearch },
     { id: "import", section: t("keys.section.list"), name: t("keys.import"), keys: "Mod+i", scope: "always", run: () => (store.showImport = true) },
     { id: "refresh", section: t("keys.section.list"), name: t("keys.refresh"), keys: "Mod+r", scope: "always", run: () => store.rescan() },

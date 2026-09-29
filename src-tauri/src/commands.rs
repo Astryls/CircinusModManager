@@ -115,6 +115,14 @@ pub fn halo_rules() -> Vec<circinus_core::order::BuiltinRule> {
 }
 
 
+/// What saving would change, so the window can show it before it happens.
+///
+/// Read-only: it builds the file in memory and throws it away.
+#[tauri::command]
+pub async fn pending_save(state: State<'_, Shared>) -> CmdResult<circinus_core::changes::ListChange> {
+    with_app(&state, |app| Ok(app.pending_save())).await
+}
+
 #[tauri::command]
 pub async fn save_mods_config(state: State<'_, Shared>) -> CmdResult<String> {
     with_app(&state, |app| app.save().map(|p| p.display().to_string()).map_err(err)).await
@@ -781,6 +789,24 @@ pub async fn get_launch_info(state: State<'_, Shared>) -> CmdResult<LaunchInfo> 
 }
 
 /// Start RimWorld the way the settings say, saving ModsConfig.xml first if asked to.
+/// Re-read how long the last start-up took.
+///
+/// Called when the window comes back to the front, which is where this actually matters: the
+/// figure is written by the game, so the one moment it changes is the one moment Circinus was
+/// not the thing in focus. Cheap when nothing has changed -- it stats the files and stops.
+#[tauri::command]
+pub async fn refresh_last_run(app_handle: AppHandle, state: State<'_, Shared>) -> CmdResult<bool> {
+    let shared = (*state).clone();
+    let changed = tauri::async_runtime::spawn_blocking(move || crate::logs::refresh_last_run(&shared))
+        .await
+        .unwrap_or(false);
+    if changed {
+        use tauri::Emitter;
+        let _ = app_handle.emit("state-changed", ());
+    }
+    Ok(changed)
+}
+
 #[tauri::command]
 pub async fn launch_game(app_handle: AppHandle, state: State<'_, Shared>) -> CmdResult<String> {
     use tauri_plugin_opener::OpenerExt;

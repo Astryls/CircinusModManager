@@ -194,22 +194,14 @@ pub fn run() {
             tauri::async_runtime::spawn_blocking(move || run_scan(handle, st, false));
             // Then keep an eye on Steam and the game while we are open.
             watch::start(app.handle().clone(), shared.clone());
-            // How long the game took to load last time, from its own log. Cheap, and after the
-            // first scan so it never delays the window.
+            // How long the game took to load last time -- from its own log, and from the
+            // per-mod measurement the Loading Progress mod leaves beside it. Cheap, and after
+            // the first scan so it never delays the window.
             {
                 let st = shared.clone();
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn_blocking(move || {
-                    // The paths under the lock, the reading outside it: a Player.log runs to tens
-                    // of megabytes and nothing else should wait on it.
-                    let paths = match st.lock() {
-                        Ok(a) => logs::default_paths(&a),
-                        Err(_) => return,
-                    };
-                    let found = logs::last_load(&paths);
-                    if let (Some((run, at)), Ok(mut a)) = (found, st.lock()) {
-                        a.load_run = Some(run);
-                        a.load_run_at = at;
+                    if logs::refresh_last_run(&st) {
                         let _ = handle.emit("state-changed", ());
                     }
                 });
@@ -234,6 +226,8 @@ pub fn run() {
             commands::validate,
             commands::halo_rules,
             commands::save_mods_config,
+            commands::pending_save,
+            commands::refresh_last_run,
             commands::import_list,
             commands::apply_import,
             commands::update_settings,

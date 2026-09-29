@@ -4,6 +4,7 @@
 use crate::instances::{self, Instance};
 use circinus_core::announce::Announcement;
 use circinus_core::playerlog::LoadRun;
+use circinus_core::startupimpact::StartupImpact;
 use circinus_core::arrivals::Arrivals;
 use circinus_core::cache::Cache;
 use circinus_core::changes::{self, Baseline, ListChange, ModChange};
@@ -390,6 +391,12 @@ pub struct Snapshot {
     pub load_run: Option<LoadRun>,
     /// Unix seconds of the log that figure came from, so the screen can say how old it is.
     pub load_run_at: i64,
+    /// Per-mod measured start-up, when the Loading Progress mod has written one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub startup_impact: Option<StartupImpact>,
+    /// Unix seconds of that measurement.
+    #[serde(default)]
+    pub startup_impact_at: i64,
     /// What the curators of the followed packs have said, newest first, muted packs left out.
     #[serde(default)]
     pub announcements: Vec<Announcement>,
@@ -455,6 +462,11 @@ pub struct App {
     /// launch, and the log is the record -- keeping a copy would only let the two disagree.
     pub load_run: Option<LoadRun>,
     pub load_run_at: i64,
+    /// What the Loading Progress mod measured, per mod, last time the game started. Not
+    /// persisted for the same reason as `load_run`: the file in the save folder is the record,
+    /// and a copy here could only ever disagree with it.
+    pub startup_impact: Option<StartupImpact>,
+    pub startup_impact_at: i64,
     /// What the previous session last saw; `changes` is the diff against it.
     pub baseline: Option<Baseline>,
     /// When each mod folder was first seen, and which of those are still marked new. Unlike the
@@ -576,6 +588,8 @@ impl App {
             announcements_checked_at: 0,
             load_run: None,
             load_run_at: 0,
+            startup_impact: None,
+            startup_impact_at: 0,
             baseline,
             arrivals,
             changes: Vec::new(),
@@ -1028,6 +1042,35 @@ impl App {
             announcements_checked_at: self.announcements_checked_at,
             load_run: self.load_run.clone(),
             load_run_at: self.load_run_at,
+            startup_impact: self.startup_impact.clone(),
+            startup_impact_at: self.startup_impact_at,
+        }
+    }
+
+    /// What saving would write, without writing it.
+    ///
+    /// The confirmation the window shows before `save` runs, and it needs no new state to do
+    /// it: `build` already turns the edited uid list into the package-id list `save` is about
+    /// to put on disk, and `file_active` is what is there now. The diff between those two is
+    /// the whole answer, so the only thing this does that `save` does not is stop short of
+    /// writing.
+    ///
+    /// Note what it is *not*. `dirty` is a sticky flag set by every edit and cleared by a save;
+    /// it never goes back to false because you undid something. This does: activate a mod and
+    /// deactivate it again and the dialog correctly says nothing changed, because it compares
+    /// rather than remembers.
+    pub fn pending_save(&self) -> ListChange {
+        let cfg = modsconfig::build(&self.active, &self.mods, &self.game_version.full, &self.previous_known);
+        let after: Vec<String> = cfg.active_mods.iter().map(|p| p.to_ascii_lowercase()).collect();
+        let before = &self.file_active;
+        let before_set: std::collections::HashSet<&str> = before.iter().map(|s| s.as_str()).collect();
+        let after_set: std::collections::HashSet<&str> = after.iter().map(|s| s.as_str()).collect();
+        let moves = changes::list_moves(before, &after);
+        ListChange {
+            added: after.iter().filter(|p| !before_set.contains(p.as_str())).cloned().collect(),
+            removed: before.iter().filter(|p| !after_set.contains(p.as_str())).cloned().collect(),
+            reordered: !moves.is_empty(),
+            moves,
         }
     }
 

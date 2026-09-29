@@ -25,6 +25,7 @@ pub mod playerlog;
 pub mod rentry;
 pub mod rules;
 pub mod scan;
+pub mod startupimpact;
 pub mod steam;
 pub mod textures;
 pub mod weight;

@@ -57,6 +57,47 @@ pub fn score(c: &Contents) -> u64 {
     ms.round() as u64
 }
 
+/// How wrong the model is on this machine, as a factor to multiply it by.
+///
+/// `score` is nine coefficients folded out of one machine's profiling. As a *ranking* that is
+/// fine -- a mod with three thousand patch operations really does cost more than one with none,
+/// on any hardware. As a *duration* it is only ever right by luck: the same list on an NVMe and
+/// on a spinning disk are minutes apart, and nothing in a mod's folder says which you have.
+///
+/// A measurement fixes that without replacing the model. Take the mods that appear in both the
+/// measurement and the list, divide what they really cost by what the model said they would,
+/// and the result describes this machine. Apply it to the mods that have never been measured
+/// and their estimate is in the same currency as the rest of the number.
+///
+/// `None` when the overlap is too thin to mean anything, and then the caller leaves the model
+/// alone and says so. The floors are deliberately blunt: a handful of mods, or a sliver of the
+/// modelled total, produces a ratio that is noise dressed as precision. One floor counts mods
+/// and the other counts modelled milliseconds, because either can be the thin one -- five
+/// enormous mods are a better sample than forty trivial ones, and forty trivial ones are a
+/// better sample than five that round to nothing.
+///
+/// The result is clamped. A factor outside this range is not a slow disk, it is a mismatch: a
+/// measurement of somebody else's list, a file from another game version, a mod that charged
+/// another mod's work to itself. Clamping stops a bad file turning a six-minute load into a
+/// six-second or a six-hour one, and the caller still says the number is an estimate.
+pub fn calibration(measured_ms: f64, modelled_ms: f64, overlap: usize) -> Option<f64> {
+    /// Fewer mods than this in common and the ratio is one mod's outlier.
+    const MIN_OVERLAP: usize = 5;
+    /// Less modelled time than this in common and the divisor is too small to divide by.
+    const MIN_SHARE_MS: f64 = 500.0;
+    const MIN_FACTOR: f64 = 0.2;
+    const MAX_FACTOR: f64 = 5.0;
+
+    if overlap < MIN_OVERLAP || modelled_ms < MIN_SHARE_MS || measured_ms <= 0.0 {
+        return None;
+    }
+    let k = measured_ms / modelled_ms;
+    if !k.is_finite() {
+        return None;
+    }
+    Some(k.clamp(MIN_FACTOR, MAX_FACTOR))
+}
+
 /// Whether an XPath makes the game search the whole document rather than walk to one node:
 /// a descendant step, a wildcard step, or a predicate that has to test every candidate.
 pub fn xpath_is_heavy(xpath: &str) -> bool {
@@ -244,5 +285,41 @@ mod tests {
         assert_eq!(xml_only.load.score_ms, s(&xml_only));
         let words = explain(&patch_heavy).join("; ");
         assert!(words.contains("300 patch operations, 100 scanning the whole document"), "{words}");
+    }
+}
+
+#[cfg(test)]
+mod calibration_tests {
+    use super::calibration;
+
+    #[test]
+    fn a_machine_twice_as_slow_as_the_model_reads_as_two() {
+        assert_eq!(calibration(20_000.0, 10_000.0, 30), Some(2.0));
+    }
+
+    #[test]
+    fn too_few_mods_in_common_is_no_answer() {
+        // Four mods is one outlier away from meaningless, however much time they account for.
+        assert_eq!(calibration(20_000.0, 10_000.0, 4), None);
+    }
+
+    #[test]
+    fn too_little_modelled_time_is_no_answer() {
+        // Forty mods that the model thinks cost 400ms between them cannot calibrate anything.
+        assert_eq!(calibration(900.0, 400.0, 40), None);
+    }
+
+    #[test]
+    fn a_wild_ratio_is_clamped_rather_than_believed() {
+        // A measurement of a different list entirely. Clamped, not trusted, not rejected --
+        // the caller is still calling it an estimate either way.
+        assert_eq!(calibration(10_000_000.0, 1000.0, 30), Some(5.0));
+        assert_eq!(calibration(600.0, 100_000.0, 30), Some(0.2));
+    }
+
+    #[test]
+    fn nothing_measured_is_no_answer() {
+        assert_eq!(calibration(0.0, 10_000.0, 30), None);
+        assert_eq!(calibration(-5.0, 10_000.0, 30), None);
     }
 }
