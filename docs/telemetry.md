@@ -48,10 +48,14 @@ No key and no account, like `/mods`. Rate limiting is by hashed install id (belo
 
 ### Request body
 
+`installId` travels in `X-Circinus-Install`, not in the body — the same way `/api/v1/ingest`
+already takes one, so the header is already in the CORS allowlist and the id stays out of the
+append-only raw submission row.
+
 ```json
 {
   "consentVersion": 1,
-  "installId": "019fabdd75a720ad9cba70522627",
+  "runId": "01JBQ7X2K9",
   "source": "modmanager",
   "managerVersion": "1.6.0",
   "gameVersion": "1.6",
@@ -93,8 +97,8 @@ particular what is **absent and must never be accepted if a future client sends 
 
 | Status | Meaning | What the client does |
 |---|---|---|
-| `202` | Accepted, or accepted-and-ignored as a duplicate. Body may be `{"runId": "..."}`. | Marks the run sent and drops it from the queue. |
-| `409` | Already have this `(installId, listHash, totalMs)`. | Same as 202. A duplicate is not an error. |
+| `201` | Accepted. Body `{"status":"accepted","runId":"..."}`. | Marks the run sent and drops it from the queue. |
+| `200` with `{"status":"duplicate"}` | Already have this `runId`. | Same as accepted. A duplicate is not an error. |
 | `400` | Malformed. | Drops the run and logs. Never retried — a bad payload will be bad forever. |
 | `422` | `consentVersion` is not one the site currently accepts. | Drops the run, and clears the stored consent so the player is asked again. |
 | `429` | Rate limited. Honour `Retry-After`. | Keeps the run queued. |
@@ -127,6 +131,10 @@ database. It is used for two things — stopping one run being counted twice, an
 and for nothing else. Because it is separate from the analyzer's, its rate-limit bucket and its
 deletion scope are separate too: deleting from the mod does not delete load runs, and the
 Sharing panel has to offer its own delete with its own id shown beside it.
+
+The site half is specified against its real code in `ADD-LOAD-COSTS.md` in the CircinusWeb
+workspace, including the storage, the rollup and the deploy sequence. This section is the
+summary; that file is the instruction.
 
 ## What the site should do on arrival
 
