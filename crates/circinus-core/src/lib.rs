@@ -27,6 +27,7 @@ pub mod rules;
 pub mod scan;
 pub mod startupimpact;
 pub mod steam;
+pub mod telemetry;
 pub mod textures;
 pub mod weight;
 pub mod xmlutil;
