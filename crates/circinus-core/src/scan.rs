@@ -20,7 +20,10 @@ use std::time::UNIX_EPOCH;
 // 5: `ModInfo::updated` carries Steam's timeupdated on its own. A cached row from 4 has no such
 // field and would deserialize as "never updated", which is a wrong answer rather than a missing
 // one, so every mod is read again once.
-const PARSER_VERSION: u32 = 5;
+// 6: a local folder only counts as a SteamCMD download when it is a real folder named after the
+// Workshop id. A cached row from 5 may say SteamCmd about somebody's dev build, and a wrong
+// source there is what offers a Force update that would write a duplicate packageId beside it.
+const PARSER_VERSION: u32 = 6;
 
 /// File inventory kept out of `ModInfo` (too large for the UI): relative paths from the mod
 /// root, lowercase, forward slashes. Textures are stored without extension because RimWorld
@@ -347,7 +350,19 @@ fn parse_quick(c: &Candidate, gv: &GameVersion) -> ModInfo {
     if info.source == Source::Local && c.real.join(".git").exists() {
         info.source = Source::Git;
     }
-    if info.source == Source::Local && info.published_file_id.is_some() && about_dir.as_ref().and_then(|d| find_entry(d, "PublishedFileId.txt")).is_some() {
+    // A SteamCMD download is a REAL FOLDER NAMED AFTER THE WORKSHOP ID, which is the only shape
+    // `collect` and "Keep my own copy" ever produce. Carrying a PublishedFileId.txt is not
+    // enough on its own and never was: plenty of mods track that file in their repository, so a
+    // developer's own build in `Mods/LoadingProgressDev`, and any copy taken beside it, were
+    // both classified as downloads. That is not cosmetic -- it is what put them on the update
+    // list as permanently out of date and offered Force update on them, and a Force update of
+    // one would have written `Mods/3535481557` beside it: a second folder with the same
+    // packageId, which RimWorld reports as a duplicate and resolves by picking one.
+    //
+    // The link check matters for the same reason. A hash-named link to a workspace is how dev
+    // tools deploy a mod, and the folder it points at is somebody's working copy, not a
+    // download to be replaced.
+    if info.source == Source::Local && c.real == c.path && info.published_file_id.is_some_and(|id| c.path.file_name().is_some_and(|n| n == id.to_string().as_str())) && about_dir.as_ref().and_then(|d| find_entry(d, "PublishedFileId.txt")).is_some() {
         info.source = Source::SteamCmd;
     }
     info.preview = about_dir.as_ref().and_then(|d| find_entry(d, "Preview.png"));
@@ -541,7 +556,10 @@ mod tests {
         let royalty = by_id("ludeon.rimworld.royalty");
         assert_eq!(royalty.steam_app_id, Some(1149640));
         let harmony = by_id("brrainz.harmony");
-        assert_eq!(harmony.source, Source::SteamCmd);
+        // `Mods/Harmony` carries a PublishedFileId.txt and is still LOCAL: the folder is not
+        // named after the id, so nothing Circinus wrote put it there. See
+        // `a_dev_build_is_not_a_download` for why that distinction is the whole rule.
+        assert_eq!(harmony.source, Source::Local);
         assert_eq!(harmony.published_file_id, Some(2009463077));
         assert_eq!(harmony.contents.assemblies, 2);
         assert!(harmony.contents.bundles_harmony);
@@ -575,6 +593,48 @@ mod tests {
     /// the platform's own separator; anything asserted against it has to be built the same way.
     fn at(base: &std::path::Path, rel: &str) -> std::path::PathBuf {
         rel.split('/').fold(base.to_path_buf(), |p, part| p.join(part))
+    }
+
+    /// What may be treated as a SteamCMD download, and what may not.
+    ///
+    /// Carrying `About/PublishedFileId.txt` is not the test and never was: mods track that file
+    /// in their own repositories, so a developer's build of one had the id sitting in it and was
+    /// classified as a download. The consequences were not cosmetic. It went on the update list
+    /// as permanently out of date, it was offered Force update, and taking that offer would have
+    /// written `Mods/<id>` beside it -- a second folder with the same packageId, which RimWorld
+    /// reports as a duplicate and resolves by loading one of the two.
+    ///
+    /// The test is the shape `collect` and "Keep my own copy" actually produce: a real folder
+    /// whose name is the Workshop id.
+    #[test]
+    fn a_dev_build_is_not_a_download() {
+        let tmp = tempfile::tempdir().unwrap();
+        let loc = fixture_game(tmp.path());
+        let about = |pkg: &str| format!("<ModMetaData><packageId>{pkg}</packageId><name>{pkg}</name><supportedVersions><li>1.6</li></supportedVersions></ModMetaData>");
+
+        // What `collect` writes: the folder IS the id.
+        write(&tmp.path().join("Mods/3535481557/About/About.xml"), &about("ilyvion.loadingprogress"));
+        write(&tmp.path().join("Mods/3535481557/About/PublishedFileId.txt"), "3535481557\n");
+        // A dev build of the same mod, with the id tracked in its repository.
+        write(&tmp.path().join("Mods/LoadingProgressDev/About/About.xml"), &about("ilyvion.loadingprogress.dev"));
+        write(&tmp.path().join("Mods/LoadingProgressDev/About/PublishedFileId.txt"), "3535481557\n");
+        // And a copy taken beside it, which is the case that made this obvious: the reporter had
+        // two, and both were listed as out of date for ever.
+        write(&tmp.path().join("Mods/LoadingProgressTest/About/About.xml"), &about("ilyvion.loadingprogress.test"));
+        write(&tmp.path().join("Mods/LoadingProgressTest/About/PublishedFileId.txt"), "3535481557\n");
+
+        let opts = ScanOptions { locations: loc, game_version: GameVersion::parse("1.6.4530 rev1235").unwrap(), use_cache: false, workshop_updated: HashMap::new() };
+        let out = scan(&opts, None, true, &|_, _| {}).unwrap();
+        let by = |pkg: &str| out.mods.iter().find(|m| m.package_id == pkg).unwrap_or_else(|| panic!("{pkg} was not scanned"));
+
+        assert_eq!(by("ilyvion.loadingprogress").source, Source::SteamCmd, "a real folder named after the id is what Circinus itself writes");
+        assert_eq!(by("ilyvion.loadingprogress.dev").source, Source::Local, "a dev build is not a download, whatever its About folder carries");
+        assert_eq!(by("ilyvion.loadingprogress.test").source, Source::Local, "nor is a copy taken beside one");
+        // The id is still read off all three: it is how the mod is identified, and dropping it
+        // would lose the Workshop link on a mod that genuinely has one.
+        for pkg in ["ilyvion.loadingprogress", "ilyvion.loadingprogress.dev", "ilyvion.loadingprogress.test"] {
+            assert_eq!(by(pkg).published_file_id, Some(3535481557), "{pkg}");
+        }
     }
 
     /// Modmixer and Circinus Dev Tools keep a mod in a workspace and put a link named after a

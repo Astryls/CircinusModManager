@@ -525,7 +525,10 @@ class Store {
 
   pinned = $derived(new Set(this.snap?.user.pinned ?? []));
   showWeight = $derived(this.snap?.settings.showWeight ?? false);
-  updateByUid = $derived(new Map((this.snap?.updates ?? []).map((u) => [u.uid, u])));
+  /** What the last Workshop check found out of date, pruned on every rescan by the backend so
+   *  a mod Steam has since updated stops being listed. */
+  updates = $derived(this.snap?.updates ?? []);
+  updateByUid = $derived(new Map(this.updates.map((u) => [u.uid, u])));
   changes = $derived(this.snap?.changes ?? []);
   changeByUid = $derived(new Map(this.changes.map((c) => [c.uid, c])));
   /** When each mod first appeared, for the ones that appeared while Circinus was watching. A mod

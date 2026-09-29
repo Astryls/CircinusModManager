@@ -529,6 +529,46 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   which is why a second paper was impossible: every glyph had to be redrawn and none could take
   the ink of the thing it sat in. Only `error` and `warn` ever carry colour and they take it from
   the caller. Keys in `lib/icons.ts` are unchanged from the old set, so call sites still resolve.
+- **A mod is replaced where it already lives** (reported as #2). Every SteamCMD download used
+  to land in `Mods/<id>`, Force update of a subscribed mod included. With the same packageId in
+  Mods and in Steam's folder RimWorld suffixes the *Workshop* copy `_steam`, so ModsConfig.xml's
+  plain packageId names Circinus's copy: the game loads that one, Steam goes on updating a
+  folder nothing reads, and the mod is frozen at whatever Force update fetched until somebody
+  deletes it by hand. So `steamcmd::replace_workshop_copy` puts a subscribed mod back into
+  Steam's own folder and `collect` keeps taking everything else into Mods. Three rules hold it
+  safe: **never while Steam has a `downloads/<id>` or `temp/<id>` staging folder** for the item,
+  because that is a process we do not control; **the old copy is moved aside, not deleted**, and
+  moved back if the new one cannot be put in place, because a failed update must not uninstall
+  a mod somebody is still subscribed to; and **Steam's `appworkshop_294100.acf` is never
+  written** — the worst of leaving it alone is that Steam re-downloads later, which is a slow
+  correct answer rather than a fast corrupt one. Parked copies go in the prefix's `replaced/`
+  and never inside `content/`, where they would scan as a second mod with the same packageId.
+- **A SteamCMD download is a real folder named after the Workshop id**, and nothing else
+  (`PARSER_VERSION` 6). Carrying `About/PublishedFileId.txt` was the old test and was far too
+  wide: mods track that file in their own repositories, so a developer's build of one was
+  classified as a download, sat on the update list as permanently out of date, and was offered
+  a Force update that would have written `Mods/<id>` beside it. The link check is part of the
+  rule — a hash-named link to a workspace is how dev tools deploy a mod, and what it points at
+  is somebody's working copy. `State::is_updatable` is the one place that decides what may be
+  checked or force-updated, and it is Workshop and SteamCmd only; `workshop_ids` used to say
+  that in its comment while returning every mod with an id.
+- **A moved item must leave the workshop ACF, and `forget(&ids)` was not enough** (reported as
+  #1). SteamCMD builds a download out of chunks it believes are on disk, so an item still listed
+  as installed whose folder has moved makes a *later* download that shares a file with it fail
+  while reading that chunk — and SteamCMD answers a read failure by validating the whole app,
+  re-downloading every item still listed. One report had 9,797 files and 336 MB come back three
+  seconds after a batch of 25 was collected. Two changes: `collect` removes the id as part of
+  the move (after, not before — until the files are elsewhere the entry is true), and
+  `forget_everything` clears the whole list and the content folder before every batch, because
+  the queue cannot predict which earlier item a new download will share a file with. `collect`
+  uses `forget_listed`, which touches only the ACF: clearing the depot cache mid-batch would
+  throw away chunks the items still downloading are about to want.
+- **The update list is pruned on every rescan.** `apply_update_check` was the only thing that
+  ever wrote it and it only runs when somebody presses Check, so a mod Steam updated ten minutes
+  later stayed listed as newer on the Workshop indefinitely. What changed's "Update all" now
+  takes only what the last check found out of date, which is the other half of the same report:
+  it used to queue every changed Workshop mod, and one run sent 32 through SteamCMD when Steam
+  had already installed 31.
 - Keeping your own copy. *Keep my own copy* on a Workshop mod copies Steam's folder into the
   game's own `Mods/<workshop id>` and writes `About/PublishedFileId.txt`, which is exactly the
   shape a SteamCMD download has — so it is the same mod to everything downstream, Force update

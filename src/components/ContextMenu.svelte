@@ -87,7 +87,15 @@
   /** Steam can only unsubscribe from what it put there, so only those are offered. */
   const subscribed = $derived(mods.filter((x) => x.publishedFileId && x.source === "workshop" && store.subscriptions[x.publishedFileId] !== "absent"));
   const workshopUrl = (x: ModInfo) => (x.publishedFileId ? `https://steamcommunity.com/sharedfiles/filedetails/?id=${x.publishedFileId}` : x.url);
-  const redownloadable = $derived(mods.filter((x) => x.publishedFileId && x.source !== "ludeon"));
+  /* Only Steam's own copies and the ones Circinus downloaded.
+   *
+   * "Has a publishedFileId" was too wide: mods track About/PublishedFileId.txt in their
+   * repositories, so a developer's build of one was offered a Force update that would have
+   * written Mods/<id> beside it -- a second folder with the same packageId, which RimWorld
+   * reports as a duplicate and resolves by loading one of the two. */
+  const redownloadable = $derived(mods.filter((x) => x.publishedFileId && (x.source === "workshop" || x.source === "steamcmd")));
+  /** Where the fresh copy will land, which is wherever the mod already lives. */
+  const forceDest = $derived(redownloadable.every((x) => x.source === "workshop") ? "Steam's own folder, replacing the copy you are subscribed to" : redownloadable.every((x) => x.source === "steamcmd") ? "your Mods folder, replacing the copy Circinus downloaded" : "wherever each copy already lives: Steam's folder for subscribed mods, Mods for the ones Circinus downloaded");
 </script>
 
 <svelte:window onmousedown={onWindowDown} />
@@ -176,7 +184,7 @@
       >{@html I.save}Keep my own copy{localizable.length > 1 ? ` (${localizable.length})` : ""}</button>
     {/if}
     {#if redownloadable.length}
-      <button class="it" role="menuitem" title="Fetches a fresh copy from the Workshop with SteamCMD into your Mods folder. RimWorld prefers that copy over the Steam one." onclick={() => run(() => store.queueIds(redownloadable.map((x) => x.publishedFileId!)))}>{@html I.download}Force update: re-download{redownloadable.length > 1 ? ` (${redownloadable.length})` : ""}</button>
+      <button class="it" role="menuitem" title="Fetches a fresh copy from the Workshop with SteamCMD, into {forceDest}." onclick={() => run(() => store.queueIds(redownloadable.map((x) => x.publishedFileId!)))}>{@html I.download}Force update{redownloadable.length > 1 ? ` (${redownloadable.length})` : ""}</button>
     {/if}
     {#if workshopOnly && subscribed.length}
       {#if confirmUnsub}

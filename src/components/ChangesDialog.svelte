@@ -50,7 +50,19 @@
   function changelog(c: ModChange) {
     if (c.publishedFileId) openUrl(`https://steamcommunity.com/sharedfiles/filedetails/changelog/${c.publishedFileId}`);
   }
-  const redownloadable = $derived(store.changes.filter((c) => c.kind !== "removed" && c.publishedFileId && (c.source === "workshop" || c.source === "steamcmd")));
+  /* What "Re-download all" may queue.
+   *
+   * Every changed Workshop mod used to qualify, and the section this button sits under lists
+   * updates STEAM HAS ALREADY INSTALLED -- its own hint says so. So the button re-fetched
+   * manifests Steam already had on disk: one report put 32 mods through SteamCMD when 31 of
+   * them were already current, and the only result was a set of copies in Mods that the game
+   * loaded instead of Steam's.
+   *
+   * So the button now queues only what the last Workshop check actually found out of date.
+   * A mod Steam has since caught up with drops out of `store.updates` on the next rescan, and
+   * drops out of here with it. */
+  const outOfDate = $derived(new Set(store.updates.map((u) => u.publishedFileId)));
+  const redownloadable = $derived(store.changes.filter((c) => c.kind !== "removed" && c.publishedFileId && (c.source === "workshop" || c.source === "steamcmd") && outOfDate.has(c.publishedFileId)));
 </script>
 
 <div class="scrim" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) close(); }}>
@@ -123,7 +135,7 @@
 
     <div class="ft">
       <span class="sp"></span>
-      {#if redownloadable.length > 1}<button class="btn" onclick={() => store.queueIds(redownloadable.map((c) => c.publishedFileId!))}>{@html I.download}Re-download all {redownloadable.length}</button>{/if}
+      {#if redownloadable.length > 1}<button class="btn" title="Only the {redownloadable.length} the last Workshop check found out of date. Steam may have installed the others already." onclick={() => store.queueIds(redownloadable.map((c) => c.publishedFileId!))}>{@html I.download}Update all {redownloadable.length}</button>{/if}
       <button class="btn primary" onclick={() => store.acknowledgeChanges()}>{@html I.check}Got it, clear the list</button>
     </div>
   </div>

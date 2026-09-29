@@ -260,6 +260,18 @@ impl SteamCmd {
     }
 
     /// Move a finished download into the Mods folder as `<id>` and mark it as a SteamCMD mod.
+    ///
+    /// **The item is removed from the workshop ACF as part of the move**, and that is not
+    /// tidying. SteamCMD builds a download out of chunks it believes are already on disk: an
+    /// item still listed as installed, whose folder has gone, makes a *later* download that
+    /// shares a file with it fail while reading that chunk. SteamCMD answers that failure by
+    /// validating the whole app, which re-downloads every item it still has listed -- all the
+    /// ones moved before it, hundreds of megabytes, into a folder they were just taken out of.
+    ///
+    /// The file header has said a moved item must be forgotten since this module was written.
+    /// What was missing is that `forget` only ran *before* a batch and only for that batch's own
+    /// ids, so nothing ever removed an item after `collect` moved it, and the very next batch
+    /// three seconds later walked into it.
     pub fn collect(&self, id: u64, mods_dir: &Path) -> Result<PathBuf> {
         let src = self.downloads_dir().join(id.to_string());
         if !src.is_dir() {
@@ -271,6 +283,8 @@ impl SteamCmd {
             std::fs::remove_dir_all(&dest)?;
         }
         move_dir(&src, &dest)?;
+        // After the move, not before: until the files are somewhere else, the ACF entry is true.
+        self.forget_listed(&[id]);
         let about = dest.join("About");
         std::fs::create_dir_all(&about)?;
         let marker = about.join("PublishedFileId.txt");
@@ -278,6 +292,125 @@ impl SteamCmd {
             std::fs::write(marker, id.to_string())?;
         }
         Ok(dest)
+    }
+
+    /// Remove ids from the workshop ACF, and nothing else.
+    ///
+    /// Separate from `forget` because `collect` runs inside a batch: clearing the depot cache
+    /// mid-batch would throw away chunks the items still downloading are about to want.
+    fn forget_listed(&self, ids: &[u64]) {
+        let acf = self.acf_path();
+        if let Ok(text) = std::fs::read_to_string(&acf) {
+            let (new_text, _) = acf::forget_items(&text, ids);
+            let _ = std::fs::write(&acf, new_text);
+        }
+    }
+
+    /// Forget **everything** the workshop ACF lists, and clear the content folder with it.
+    ///
+    /// Run before every batch. `forget(&ids)` was not enough: it cleared the ids about to be
+    /// downloaded, and left every item some earlier run had moved away still listed. One of
+    /// those is all it takes, because the failure is triggered by whatever the *new* download
+    /// shares a file with, which is not something the queue can predict.
+    ///
+    /// Clearing the content folder as well is the other half. A leftover folder there is a
+    /// download nobody collected -- a crash, a kill, a failed move -- and it is equally capable
+    /// of being half of a chunk reuse.
+    ///
+    /// Nothing here touches Steam's own install. This is Circinus's private SteamCMD prefix
+    /// under its data folder, and the ACF being cleared is that prefix's own.
+    pub fn forget_everything(&self) -> Result<()> {
+        let acf = self.acf_path();
+        let listed: Vec<u64> = std::fs::read_to_string(&acf).map(|t| acf::installed_items(&t).into_iter().map(|(id, _)| id).collect()).unwrap_or_default();
+        if !listed.is_empty() {
+            self.forget_listed(&listed);
+        }
+        for dir in [self.tool_dir().join("depotcache"), self.install_dir().join("depotcache"), self.install_dir().join("steamapps").join("workshop").join("downloads"), self.install_dir().join("steamapps").join("workshop").join("temp")] {
+            if dir.exists() {
+                let _ = std::fs::remove_dir_all(&dir);
+            }
+        }
+        // Anything still sitting in content is an uncollected download, and keeping it buys
+        // nothing: the queue re-downloads what it needs, and `collect` reads from a fresh folder.
+        if let Ok(rd) = std::fs::read_dir(self.downloads_dir()) {
+            for e in rd.flatten() {
+                if e.path().is_dir() {
+                    let _ = std::fs::remove_dir_all(e.path());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Replace Steam's own copy of a subscribed item with what SteamCMD just downloaded.
+    ///
+    /// **Why this exists.** Every SteamCMD download used to land in `Mods/<id>`, Force update of
+    /// a subscribed mod included. When the same packageId exists in both Mods and the Workshop
+    /// folder, RimWorld suffixes the *Workshop* copy with `_steam`, so the plain packageId in
+    /// ModsConfig.xml now names the copy in Mods. From that moment the game loads Circinus's
+    /// copy, Steam goes on updating a folder nothing reads, and the mod is frozen at whatever
+    /// Force update fetched until somebody deletes the folder by hand.
+    ///
+    /// So a Steam mod is replaced where Steam keeps it. Three rules hold this safe:
+    ///
+    /// - **Never while Steam is working on the item.** A `downloads/<id>` or `temp/<id>` staging
+    ///   folder beside the content folder means Steam has the item open; replacing under it
+    ///   would race a process we do not control.
+    /// - **The old copy is moved aside, not deleted**, and moved back if the new one cannot be
+    ///   put in place. A failure here must cost the player nothing; deleting first and failing
+    ///   second would uninstall a mod they still have subscribed.
+    /// - **Steam's `appworkshop_294100.acf` is never written.** It is Steam's bookkeeping, and
+    ///   the worst outcome of leaving it alone is that Steam re-downloads the item later, which
+    ///   is a slow correct answer rather than a fast corrupt one.
+    pub fn replace_workshop_copy(&self, id: u64, workshop_dir: &Path) -> Result<PathBuf> {
+        let src = self.downloads_dir().join(id.to_string());
+        if !src.is_dir() {
+            return Err(Error::Other(format!("SteamCMD reported success but {} is missing", src.display())));
+        }
+        // `workshop_dir` is Steam's `steamapps/workshop/content/294100`; its grandparent holds
+        // the staging folders Steam uses while it downloads.
+        let ws_root = workshop_dir.parent().and_then(|p| p.parent()).map(|p| p.to_path_buf());
+        if let Some(root) = &ws_root {
+            for staging in ["downloads", "temp"] {
+                if root.join(staging).join(RIMWORLD_APP_ID.to_string()).join(id.to_string()).exists() {
+                    return Err(Error::Other(format!("Steam is downloading {id} right now. Let it finish and try again")));
+                }
+            }
+        }
+        let dest = workshop_dir.join(id.to_string());
+        std::fs::create_dir_all(workshop_dir)?;
+
+        // Aside, and OUTSIDE content/: a folder parked next to the real ones would be scanned
+        // as a mod, and on the next launch RimWorld would see the same packageId twice.
+        let aside = if dest.exists() {
+            let holding = self.root.join("replaced");
+            std::fs::create_dir_all(&holding)?;
+            let parked = holding.join(format!("{id}.{}", std::process::id()));
+            if parked.exists() {
+                std::fs::remove_dir_all(&parked)?;
+            }
+            move_dir(&dest, &parked)?;
+            Some(parked)
+        } else {
+            None
+        };
+
+        match move_dir(&src, &dest) {
+            Ok(()) => {
+                self.forget_listed(&[id]);
+                if let Some(parked) = aside {
+                    let _ = std::fs::remove_dir_all(parked);
+                }
+                Ok(dest)
+            }
+            Err(e) => {
+                // Put it back. The player subscribed to this mod and must still have it.
+                if let Some(parked) = aside {
+                    let _ = move_dir(&parked, &dest);
+                }
+                Err(e)
+            }
+        }
     }
 
     /// Make SteamCMD forget items so a later download really downloads: purge them from the
@@ -665,6 +798,151 @@ impl QueueState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An ACF listing three items, in the shape SteamCMD writes.
+    fn acf_with(ids: &[u64]) -> String {
+        let items: String = ids.iter().map(|id| format!("\t\t\"{id}\"\n\t\t{{\n\t\t\t\"size\"\t\t\"100\"\n\t\t\t\"timeupdated\"\t\t\"1700000000\"\n\t\t}}\n")).collect();
+        format!("\"AppWorkshop\"\n{{\n\t\"appid\"\t\t\"294100\"\n\t\"WorkshopItemsInstalled\"\n\t{{\n{items}\t}}\n\t\"WorkshopItemDetails\"\n\t{{\n{items}\t}}\n}}\n")
+    }
+
+    fn lab(name: &str) -> (tempfile::TempDir, SteamCmd) {
+        let tmp = tempfile::tempdir().unwrap();
+        let cmd = SteamCmd::new(tmp.path().join(name));
+        std::fs::create_dir_all(cmd.downloads_dir()).unwrap();
+        std::fs::create_dir_all(cmd.acf_path().parent().unwrap()).unwrap();
+        (tmp, cmd)
+    }
+
+    fn listed(cmd: &SteamCmd) -> Vec<u64> {
+        let text = std::fs::read_to_string(cmd.acf_path()).unwrap_or_default();
+        let mut v: Vec<u64> = acf::installed_items(&text).into_iter().map(|(id, _)| id).collect();
+        v.sort_unstable();
+        v
+    }
+
+    /// The bug this whole change is about.
+    ///
+    /// SteamCMD builds a download out of chunks it believes are on disk. An item still listed
+    /// as installed, whose folder has moved into Mods, makes a LATER download that shares a
+    /// file with it fail while reading that chunk -- and SteamCMD answers a read failure by
+    /// validating the whole app, which re-downloads every item it still has listed. One report
+    /// had 9,797 files come back three seconds after a batch of 25 was collected.
+    ///
+    /// The file header has said a moved item must be forgotten since this module was written.
+    /// What was missing is that nothing did it after the move.
+    #[test]
+    fn collecting_an_item_takes_it_out_of_the_acf() {
+        let (tmp, cmd) = lab("prefix");
+        std::fs::write(cmd.acf_path(), acf_with(&[2009463077, 818773962])).unwrap();
+        let src = cmd.downloads_dir().join("2009463077");
+        std::fs::create_dir_all(src.join("About")).unwrap();
+        std::fs::write(src.join("About/About.xml"), "<ModMetaData/>").unwrap();
+
+        let mods = tmp.path().join("Mods");
+        let dest = cmd.collect(2009463077, &mods).unwrap();
+
+        assert!(dest.join("About/About.xml").is_file(), "the files really moved");
+        assert!(!cmd.downloads_dir().join("2009463077").exists(), "and are gone from content/");
+        assert_eq!(listed(&cmd), vec![818773962], "the moved item is no longer listed as installed");
+        // The other item was untouched: this is surgery, not a reset.
+        assert!(std::fs::read_to_string(cmd.acf_path()).unwrap().contains("818773962"));
+    }
+
+    /// `forget(&ids)` cleared the ids about to be downloaded and left every item an earlier run
+    /// had moved away still listed. The queue cannot predict which of those a new download will
+    /// share a file with, so the only safe list is all of them.
+    #[test]
+    fn a_batch_starts_with_nothing_listed_and_nothing_left_over() {
+        let (_tmp, cmd) = lab("prefix");
+        std::fs::write(cmd.acf_path(), acf_with(&[2009463077, 818773962, 2023507013])).unwrap();
+        // An uncollected download from a crash or a failed move: equally capable of being half
+        // of a chunk reuse.
+        let leftover = cmd.downloads_dir().join("2023507013");
+        std::fs::create_dir_all(&leftover).unwrap();
+        std::fs::write(leftover.join("x.txt"), "x").unwrap();
+
+        cmd.forget_everything().unwrap();
+
+        assert!(listed(&cmd).is_empty(), "everything, not just this batch's ids");
+        assert!(!leftover.exists(), "and the content folder is empty too");
+        assert!(cmd.acf_path().is_file(), "the file itself survives; only its item lists are emptied");
+    }
+
+    /// A Force update of a subscribed mod used to land in `Mods/<id>`. With the same packageId
+    /// in both places RimWorld suffixes the WORKSHOP copy `_steam`, so ModsConfig.xml's plain
+    /// packageId names Circinus's copy: the game loads that one, Steam goes on updating a folder
+    /// nothing reads, and the mod is frozen until somebody deletes it by hand.
+    #[test]
+    fn a_subscribed_mod_is_replaced_where_steam_keeps_it() {
+        let (tmp, cmd) = lab("prefix");
+        std::fs::write(cmd.acf_path(), acf_with(&[2009463077])).unwrap();
+        let ws = tmp.path().join("library/steamapps/workshop/content/294100");
+        let old = ws.join("2009463077");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("old.txt"), "the version Steam installed").unwrap();
+        let src = cmd.downloads_dir().join("2009463077");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("new.txt"), "the version SteamCMD fetched").unwrap();
+
+        let dest = cmd.replace_workshop_copy(2009463077, &ws).unwrap();
+
+        assert_eq!(dest, old, "in place, so no second copy with the same packageId exists");
+        assert!(dest.join("new.txt").is_file());
+        assert!(!dest.join("old.txt").exists(), "replaced, not merged");
+        assert!(!tmp.path().join("Mods/2009463077").exists(), "and nothing was written to Mods");
+        // Steam's own bookkeeping is never written. Ours is.
+        assert!(listed(&cmd).is_empty(), "the item leaves OUR acf, the same as a collect");
+    }
+
+    /// Replacing under a Steam that is mid-download would race a process we do not control, so
+    /// it is refused and said plainly rather than attempted carefully.
+    #[test]
+    fn steam_downloading_the_item_stops_the_replacement() {
+        let (tmp, cmd) = lab("prefix");
+        let ws = tmp.path().join("library/steamapps/workshop/content/294100");
+        let old = ws.join("2009463077");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("old.txt"), "still Steam's").unwrap();
+        std::fs::create_dir_all(cmd.downloads_dir().join("2009463077")).unwrap();
+        // Steam's staging folder for the item, beside content/.
+        std::fs::create_dir_all(tmp.path().join("library/steamapps/workshop/downloads/294100/2009463077")).unwrap();
+
+        let err = cmd.replace_workshop_copy(2009463077, &ws).unwrap_err();
+        assert!(err.to_string().contains("downloading"), "{err}");
+        assert!(old.join("old.txt").is_file(), "and Steam's copy is exactly as it was");
+    }
+
+    /// A failure must cost the player nothing. The old copy is moved aside rather than deleted,
+    /// so a mod they are still subscribed to cannot be uninstalled by a half-done update.
+    #[test]
+    fn a_failed_replacement_puts_steams_copy_back() {
+        let (tmp, cmd) = lab("prefix");
+        let ws = tmp.path().join("library/steamapps/workshop/content/294100");
+        let old = ws.join("2009463077");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("old.txt"), "the version Steam installed").unwrap();
+        // No download to move in: `replace_workshop_copy` refuses before touching anything.
+        let err = cmd.replace_workshop_copy(2009463077, &ws).unwrap_err();
+        assert!(err.to_string().contains("missing"), "{err}");
+        assert!(old.join("old.txt").is_file(), "Steam's copy is untouched");
+    }
+
+    /// A folder parked inside content/ would be scanned as a mod, and RimWorld would see the
+    /// same packageId twice on the next launch. It goes in the prefix instead.
+    #[test]
+    fn the_old_copy_is_parked_outside_the_content_folder() {
+        let (tmp, cmd) = lab("prefix");
+        let ws = tmp.path().join("library/steamapps/workshop/content/294100");
+        std::fs::create_dir_all(ws.join("2009463077")).unwrap();
+        std::fs::write(ws.join("2009463077/old.txt"), "old").unwrap();
+        std::fs::create_dir_all(cmd.downloads_dir().join("2009463077")).unwrap();
+        std::fs::write(cmd.downloads_dir().join("2009463077/new.txt"), "new").unwrap();
+
+        cmd.replace_workshop_copy(2009463077, &ws).unwrap();
+
+        let strays: Vec<String> = std::fs::read_dir(&ws).unwrap().flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect();
+        assert_eq!(strays, vec!["2009463077".to_string()], "exactly one folder in content/");
+    }
 
     #[test]
     fn parses_steamcmd_lines() {

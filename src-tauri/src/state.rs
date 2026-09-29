@@ -779,6 +779,7 @@ impl App {
         self.read_mods_config();
         self.refresh_changes();
         self.note_arrivals();
+        self.prune_updates();
         self.store_baseline();
         let shallow: Vec<ModInfo> = self.mods.iter().filter(|m| self.shallow.contains(&m.uid)).cloned().collect();
         Ok(shallow)
@@ -1287,16 +1288,29 @@ impl App {
         Some(new_uid)
     }
 
-    /// Workshop ids of every installed mod that came from the Workshop or SteamCMD.
+    /// Is this a mod an update could be applied to?
+    ///
+    /// Steam's own copies and the ones Circinus downloaded, and nothing else. The comment on
+    /// `workshop_ids` used to say exactly this while the code returned every mod that had an id
+    /// in its About folder -- which is most of them, a developer's own build included, because
+    /// mods track `PublishedFileId.txt` in their repositories. Those folders then sat on the
+    /// update list for ever (nothing Circinus does changes their mtime to match the Workshop's
+    /// timestamp) and were offered a Force update that would have written `Mods/<id>` beside
+    /// them: a second folder with the same packageId.
+    pub fn is_updatable(m: &ModInfo) -> bool {
+        m.invalid.is_none() && matches!(m.source, Source::Workshop | Source::SteamCmd) && m.published_file_id.is_some()
+    }
+
+    /// Workshop ids of every installed mod an update could actually be applied to.
     pub fn workshop_ids(&self) -> Vec<(String, u64)> {
-        self.mods.iter().filter(|m| m.invalid.is_none()).filter_map(|m| m.published_file_id.map(|id| (m.uid.clone(), id))).collect()
+        self.mods.iter().filter(|m| Self::is_updatable(m)).filter_map(|m| m.published_file_id.map(|id| (m.uid.clone(), id))).collect()
     }
 
     /// Compare Workshop `time_updated` with what is on disk.
     pub fn apply_update_check(&mut self, items: &[WorkshopItem]) -> usize {
         let by_id: HashMap<u64, &WorkshopItem> = items.iter().map(|i| (i.published_file_id, i)).collect();
         let mut out = Vec::new();
-        for m in self.mods.iter().filter(|m| m.invalid.is_none()) {
+        for m in self.mods.iter().filter(|m| Self::is_updatable(m)) {
             let Some(id) = m.published_file_id else { continue };
             let Some(item) = by_id.get(&id) else { continue };
             if item.time_updated > m.modified + 60 {
@@ -1307,6 +1321,30 @@ impl App {
         self.updates = out;
         self.updates_checked_at = now();
         self.updates.len()
+    }
+
+    /// Drop entries the install has caught up with.
+    ///
+    /// `apply_update_check` was the only thing that ever wrote this list, and it only runs when
+    /// somebody presses Check. So a mod Steam updated ten minutes later stayed listed as "newer
+    /// on the Workshop" until the next manual check -- and What changed's "Re-download all"
+    /// queued it, which on one report sent 32 mods through SteamCMD when Steam had already
+    /// installed 31 of them. The only result was a set of copies in Mods that the game loaded
+    /// instead of Steam's.
+    ///
+    /// A rescan knows what is on disk now, so it is the right moment to let the list go. The
+    /// entry is dropped when the mod is gone, when it is no longer something an update applies
+    /// to, or when its files have caught up with what the Workshop said -- the same comparison
+    /// `apply_update_check` makes, so the two can never disagree about one mod.
+    pub fn prune_updates(&mut self) {
+        if self.updates.is_empty() {
+            return;
+        }
+        let by_uid: HashMap<&str, &ModInfo> = self.mods.iter().map(|m| (m.uid.as_str(), m)).collect();
+        self.updates.retain(|u| match by_uid.get(u.uid.as_str()) {
+            Some(m) => Self::is_updatable(m) && u.remote_updated > m.modified + 60,
+            None => false,
+        });
     }
 
     /// Resolve package ids that are missing from the install to workshop ids via the Steam DB.
@@ -1520,6 +1558,71 @@ mod tests {
         let ins = circinus_core::scan::inspect_mods(&shallow, &|_, _| {});
         app.apply_inspections(ins).unwrap();
         (tmp, app)
+    }
+
+    /// The update list used to be written only by `apply_update_check`, which only runs when
+    /// somebody presses Check. So a mod Steam updated ten minutes later stayed listed as newer
+    /// on the Workshop indefinitely, and What changed's "Re-download all" queued it: one report
+    /// sent 32 mods through SteamCMD when Steam had already installed 31 of them, and the only
+    /// result was a set of copies in Mods that the game loaded instead of Steam's.
+    #[test]
+    fn the_update_list_lets_go_of_what_the_install_has_caught_up_with() {
+        let (_tmp, mut app) = app_on_fixture();
+        // Subscribed, so an update is a thing that could be applied to it at all. `Mods/Harmony`
+        // scans as Local now (the folder is not named after the id), and a Local mod is pruned
+        // on that ground alone -- which is the next test, not this one.
+        for m in app.mods.iter_mut().filter(|m| m.package_id == "brrainz.harmony") {
+            m.source = circinus_core::model::Source::Workshop;
+            m.published_file_id = Some(2009463077);
+        }
+        let m = app.mods.iter().find(|m| m.package_id == "brrainz.harmony").unwrap().clone();
+        let stale = UpdateInfo {
+            uid: m.uid.clone(),
+            published_file_id: 2009463077,
+            name: m.name.clone(),
+            local_modified: m.modified,
+            // Older than what is on disk: Steam has since installed it.
+            remote_updated: m.modified.saturating_sub(10_000),
+            source: m.source,
+        };
+        let gone = UpdateInfo { uid: "a folder that is not there any more".into(), ..stale.clone() };
+        let real = UpdateInfo { remote_updated: m.modified + 10_000, ..stale.clone() };
+        app.updates = vec![stale, gone, real.clone()];
+
+        app.prune_updates();
+
+        assert_eq!(app.updates.len(), 1, "only the one that is genuinely behind survives");
+        assert_eq!(app.updates[0].remote_updated, real.remote_updated);
+
+        // And a mod that stops being something an update applies to leaves the list as well.
+        for m in app.mods.iter_mut().filter(|m| m.package_id == "brrainz.harmony") {
+            m.source = circinus_core::model::Source::Local;
+        }
+        app.prune_updates();
+        assert!(app.updates.is_empty(), "a local folder is not offered an update, so it is not listed as needing one");
+    }
+
+    /// Only Steam's own copies and the ones Circinus downloaded may be offered an update.
+    ///
+    /// `workshop_ids`'s comment said exactly this while the code returned every mod carrying a
+    /// `PublishedFileId.txt` -- which mods track in their own repositories, so a developer's
+    /// build of one was checked, listed as permanently out of date, and offered a Force update
+    /// that would have written `Mods/<id>` beside it: a second folder with the same packageId.
+    #[test]
+    fn a_local_folder_is_not_offered_an_update() {
+        let (_tmp, mut app) = app_on_fixture();
+        for m in app.mods.iter_mut() {
+            if m.package_id == "brrainz.harmony" {
+                m.source = circinus_core::model::Source::Local;
+                m.published_file_id = Some(2009463077);
+            }
+            if m.package_id == "nyx.retrowalls" {
+                m.source = circinus_core::model::Source::Workshop;
+                m.published_file_id = Some(818773962);
+            }
+        }
+        let ids: Vec<u64> = app.workshop_ids().into_iter().map(|(_, id)| id).collect();
+        assert_eq!(ids, vec![818773962], "the local folder is not asked about, the subscribed one is");
     }
 
     #[test]

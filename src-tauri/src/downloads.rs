@@ -315,8 +315,18 @@ impl Downloads {
             self.persist();
             self.emit();
             let cmd = self.steamcmd();
-            let ids: Vec<u64> = batch.iter().map(|(id, _)| *id).collect();
-            let _ = cmd.forget(&ids);
+            // Everything, not just this batch's ids.
+            //
+            // `forget(&ids)` cleared the items about to be downloaded and left every item an
+            // earlier run had moved away still listed as installed. SteamCMD then built a new
+            // download out of chunks it believed were on disk, failed reading one from a folder
+            // that had moved into Mods, and answered by validating the whole app -- which
+            // re-downloaded every item still listed. One report had 9,797 files and 336 MB come
+            // back three seconds after a batch of 25 had been collected.
+            //
+            // The queue cannot predict which earlier item a new download will share a file
+            // with, so the only safe list is all of them.
+            let _ = cmd.forget_everything();
             let me = self.clone();
             let mut last_emit = std::time::Instant::now();
             let mut on_line = move |line: &str| {
@@ -332,7 +342,22 @@ impl Downloads {
                 }
             };
             let outcome = cmd.run_batch(&batch, STALL_TIMEOUT, &mut on_line).await;
-            let mods_dir = self.app.lock().ok().and_then(|a| a.locations.local_mods_dir.clone());
+            // Where each finished item goes is decided by where the copy being updated already
+            // lives, which is read once here rather than per item.
+            let (mods_dir, workshop_dir, subscribed) = self
+                .app
+                .lock()
+                .ok()
+                .map(|a| {
+                    let subs: std::collections::HashSet<u64> = a
+                        .mods
+                        .iter()
+                        .filter(|m| m.source == circinus_core::model::Source::Workshop)
+                        .filter_map(|m| m.published_file_id)
+                        .collect();
+                    (a.locations.local_mods_dir.clone(), a.locations.workshop_dir.clone(), subs)
+                })
+                .unwrap_or((None, None, Default::default()));
             let mut any_done = false;
             match outcome {
                 Ok(outcome) => {
@@ -341,9 +366,28 @@ impl Downloads {
                         s.apply(&outcome, now())
                     };
                     for id in done {
-                        let placed = match &mods_dir {
-                            Some(dir) => cmd.collect(id, dir).map(|p| p.display().to_string()),
-                            None => Err(circinus_core::Error::Other("no local Mods folder is configured".into())),
+                        /*
+                         * A MOD IS REPLACED WHERE IT ALREADY LIVES.
+                         *
+                         * Everything used to go to `Mods/<id>`, Force update of a subscribed
+                         * mod included. With the same packageId in Mods and in Steam's folder,
+                         * RimWorld suffixes the Workshop copy `_steam`, so ModsConfig.xml's
+                         * plain packageId now names Circinus's copy: the game loads that one,
+                         * Steam keeps updating a folder nothing reads, and the mod is stuck at
+                         * whatever this download fetched until somebody deletes it by hand.
+                         *
+                         * So a subscribed mod goes back into Steam's folder, and everything
+                         * else -- a mod Circinus downloaded, a "Keep my own copy" -- carries on
+                         * going into Mods exactly as before.
+                         */
+                        let to_steam = subscribed.contains(&id);
+                        let placed = match (to_steam, &workshop_dir, &mods_dir) {
+                            (true, Some(ws), _) => cmd.replace_workshop_copy(id, ws).map(|p| p.display().to_string()),
+                            // Subscribed, but Circinus cannot see Steam's folder. Falling back
+                            // to Mods is what caused the bug, so it is refused and said plainly.
+                            (true, None, _) => Err(circinus_core::Error::Other("this mod is installed through Steam and Circinus cannot find Steam's workshop folder. Set it in Settings, or let Steam update the mod".into())),
+                            (false, _, Some(dir)) => cmd.collect(id, dir).map(|p| p.display().to_string()),
+                            (false, _, None) => Err(circinus_core::Error::Other("no local Mods folder is configured".into())),
                         };
                         let mut s = self.state.lock().unwrap();
                         if let Some(item) = s.items.iter_mut().find(|i| i.id == id) {
@@ -354,7 +398,7 @@ impl Downloads {
                                 }
                                 Err(e) => {
                                     item.status = ItemStatus::Failed;
-                                    item.error = Some(format!("Downloaded but could not be moved into Mods: {e}"));
+                                    item.error = Some(if to_steam { format!("Downloaded but could not replace Steam's copy: {e}") } else { format!("Downloaded but could not be moved into Mods: {e}") });
                                 }
                             }
                         }

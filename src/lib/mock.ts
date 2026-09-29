@@ -453,7 +453,17 @@ function snapshot(): Snapshot {
     inspecting: 0,
     unreadable: [{ path: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld\\Mods\\deadbeef0000", reason: "links to C:\\Users\\Player\\AppData\\Roaming\\Modmixer\\workspace\\Mods\\deadbeef0000, which cannot be read: The system cannot find the path specified" }],
     issuesTruncated: 0,
-    updates: [{ uid: uidOf("krkr.rocketman"), publishedFileId: 2479389928, name: "RocketMan", localModified: 1_750_000_000, remoteUpdated: 1_756_500_000, source: "workshop" }],
+    /* What the last Workshop check found out of date.
+     *
+     * Deliberately SMALLER than the set of changed Workshop mods below, because that gap is
+     * the bug: What changed lists updates Steam has already installed, and "Re-download all"
+     * used to queue every one of them. Two of the four changed mods here are genuinely behind;
+     * the button must offer two. */
+    updates: [
+      { uid: uidOf("krkr.rocketman"), publishedFileId: 2479389928, name: "RocketMan", localModified: 1_750_000_000, remoteUpdated: 1_756_500_000, source: "workshop" },
+      { uid: uidOf("brrainz.harmony"), publishedFileId: 2009463077, name: "Harmony", localModified: 1_750_000_000, remoteUpdated: 1_756_990_000, source: "workshop" },
+      { uid: uidOf("ceteam.combatextended"), publishedFileId: 2890901044, name: "Combat Extended", localModified: 1_750_000_000, remoteUpdated: 1_756_950_000, source: "steamcmd" }
+    ],
     updatesCheckedAt: 1_757_000_000,
     changes: acknowledged ? [] : changes(),
     listChange: acknowledged ? null : { added: ["voult.betterpawncontrol"], removed: ["some.missing.mod"], reordered: true, moves: [{ packageId: "krkr.rocketman", from: 41, to: 12 }, { packageId: "jaxe.rimhud", from: 9, to: 30 }] },
