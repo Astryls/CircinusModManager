@@ -269,12 +269,47 @@ const weightSeed: Record<string, [number, boolean]> = {
   "ceteam.combatextended": [17.8, true], "jaxe.rimhud": [2.6, true], "orion.hospitality": [1.1, true], "smashphil.vehicleframework": [7.9, true], "unlimitedhugs.hugslib": [0.2, true],
   "brrainz.harmony": [0.1, true], "dubwise.rimatomics": [2.2, true], "voult.betterpawncontrol": [0.6, true], "razuhl.rimmsqol": [3.0, false], "jaxe.bubbles": [0.4, true], "mehni.pickupandhaul": [1.9, true]
 };
-const weights: Record<string, Weight> = Object.fromEntries(
-  Object.entries(weightSeed).map(([pkg, [share, ranked]]) => {
-    const band = !ranked ? "insufficient" : share < 0.5 ? "negligible" : share <= 2 ? "light" : share <= 5 ? "moderate" : share <= 15 ? "heavy" : "veryheavy";
-    return [pkg, { packageId: pkg, share, band, ranked, seen: 300, measured: 240, rankedRuns: ranked ? 200 : 12, installs: ranked ? 48 : 3, netLow: null, netHigh: null, withheld: false, origin: "api" } satisfies Weight];
-  })
-);
+/* Pooled start-up medians, derived from the local measurement so the load-times page has two
+   sides that genuinely relate to each other.
+ *
+ * The shape matters more than the values. This machine is made uniformly 1.3x the pooled median,
+ * because that is the ordinary case the page has to handle without crying wolf: a slower disk
+ * makes every mod slower and none of it is the mod's fault. Two mods are then pushed well off
+ * that line, so "most out of line" has something true to find and a loadtest can assert that it
+ * finds those two and not the forty-two rows sitting at 1.0x.
+ *
+ * A third of the list has no median at all -- nobody has shared a start-up with it -- because a
+ * page that is only ever exercised with complete data will render a blank as a zero the first
+ * time it meets one. */
+const MACHINE_FACTOR = 1.3;
+// Two mods pushed well off the machine's own line, so "most out of line" has something true to
+// find. Both are picked from mods the mock actually measured -- an outlier on a mod with no
+// local measurement is invisible, which is how the first pair of these proved nothing.
+const LOAD_OUTLIERS: Record<string, number> = { "sarg.alphaanimals": 3.4, "razuhl.rimmsqol": 2.1 };
+const impactMs = new Map(MOCK_IMPACT.map((m) => [m.packageId, m.totalMs]));
+
+/** One row as the site sends it. `share` is null for a mod the profiler has never measured,
+ *  which is most of them: a start-up figure and a frame figure arrive independently. */
+function weightRow(pkg: string, i: number, share: number | null, ranked: boolean): Weight {
+  const band = share == null ? "unknown" : !ranked ? "insufficient" : share < 0.5 ? "negligible" : share <= 2 ? "light" : share <= 5 ? "moderate" : share <= 15 ? "heavy" : "veryheavy";
+  const mine = impactMs.get(pkg);
+  // Every fourth one is a mod nobody has shared a start-up for, so the page is exercised
+  // against a blank as well as against a number.
+  const shared = mine != null && i % 4 !== 3;
+  const loadMsMedian = shared ? Math.round((mine / (MACHINE_FACTOR * (LOAD_OUTLIERS[pkg] ?? 1))) * 10) / 10 : null;
+  return { packageId: pkg, share, band, ranked, seen: 300, measured: 240, rankedRuns: ranked ? 200 : 12, installs: ranked ? 48 : 3, netLow: null, netHigh: null, withheld: false, loadMsMedian, loadRuns: shared ? 40 + i * 3 : null, loadInstalls: shared ? 12 + i : null, origin: "api" } satisfies Weight;
+}
+const weights: Record<string, Weight> = {};
+{
+  let i = 0;
+  for (const [pkg, [share, ranked]] of Object.entries(weightSeed)) weights[pkg] = weightRow(pkg, i++, share, ranked);
+  // The frame-share seed covers twenty mods and the start-up measurement covers thirty, and
+  // the two sets are not the same set -- which is the real situation, since a mod can be timed
+  // at start-up by anyone running Loading Progress while a frame share needs somebody to have
+  // armed the profiler on it. Without the mods that have only a load figure the comparison
+  // page had six rows, and six is not enough for the median that divides the machine out.
+  for (const m of MOCK_IMPACT) if (!weights[m.packageId]) weights[m.packageId] = weightRow(m.packageId, i++, null, false);
+}
 
 function placements(order: string[], halo = false): Placement[] {
   const reason: Record<Phase, string> = { core: "The game itself", prepatch: "Changes the game before other mods load", framework: "A library many mods use", content: "Adds content", patch: "Only patches, so it loads after what it changes", texture: "Only textures", late: "A rule says: load near the bottom", optimization: "Speeds up other mods, so it has to load after them" };
@@ -1313,6 +1348,10 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
       return ["Community rules (RimSort): updated", "Steam Workshop database (RimSort): already current", "Use This Instead (emipa606, MIT): updated", "No Version Warning (emipa606, MIT): updated"] as T;
     case "refresh_weights":
       return Object.keys(weights).length as T;
+    // Reading the file again finds the same file. True of the real thing too whenever the game
+    // has not been launched since, which is the ordinary case for anyone pressing it twice.
+    case "refresh_last_run":
+      return false as T;
     case "refresh_local_weights":
       return 0 as T;
     case "get_files":

@@ -74,6 +74,23 @@ pub struct Weight {
     pub net_high: Option<f64>,
     /// Author-restricted figures.
     pub withheld: bool,
+
+    /// What this mod typically costs at *start-up*, in milliseconds: the median over the load
+    /// runs the site has pooled, measured by Loading Progress on other people's machines.
+    ///
+    /// A different measurement of a different thing from `share`, and the two must never be
+    /// added or compared. `share` is a fraction of frame time while the game is running;
+    /// this is wall-clock milliseconds spent once, before anybody sees the main menu.
+    ///
+    /// None below the site's ranking floors, which it signals as `-1` and `num` drops for us
+    /// -- the whole point of the convention is that a mod nobody has timed must never read as
+    /// a mod that was timed and found to be free.
+    pub load_ms_median: Option<f64>,
+    /// How many pooled start-ups that median is over, and from how many separate installs.
+    /// Shown beside the figure, because a median of three runs is a rumour.
+    pub load_runs: Option<i64>,
+    pub load_installs: Option<i64>,
+
     /// "api" or "local".
     pub origin: String,
 }
@@ -185,7 +202,28 @@ pub fn parse_mod(obj: &Value, origin: &str) -> Option<Weight> {
         _ => (None, None),
     };
     let withheld = first(obj, &["withheld"]).and_then(|w| w.as_bool()).unwrap_or(false);
-    Some(Weight { band: band_of(obj, share, ranked), package_id, share, ranked, seen, measured, ranked_runs, installs, net_low, net_high, withheld, origin: origin.into() })
+    // `num` already refuses a negative, which is how the site says "below the floors": it sends
+    // -1 rather than 0 precisely so an untimed mod cannot be read as a free one.
+    let load_ms_median = num(first(obj, &["loadMsMedian", "load_ms_median"]));
+    let load_runs = int(first(obj, &["loadRuns", "load_runs"]));
+    let load_installs = int(first(obj, &["loadInstalls", "load_installs"]));
+    Some(Weight {
+        band: band_of(obj, share, ranked),
+        package_id,
+        share,
+        ranked,
+        seen,
+        measured,
+        ranked_runs,
+        installs,
+        net_low,
+        net_high,
+        withheld,
+        load_ms_median,
+        load_runs,
+        load_installs,
+        origin: origin.into(),
+    })
 }
 
 /// The mod objects of a list response: a bare array, or an object whose first array-valued
@@ -308,6 +346,12 @@ pub fn read_local_runs(dir: &Path) -> Result<HashMap<String, Weight>> {
                 net_low: None,
                 net_high: None,
                 withheld: false,
+                // A local profiler run times frames, not start-up. Nothing here has a load
+                // figure and pretending otherwise would put this machine's own number in the
+                // column that is meant to hold everybody else's.
+                load_ms_median: None,
+                load_runs: None,
+                load_installs: None,
                 origin: "local".into(),
             },
         );
@@ -326,6 +370,39 @@ mod tests {
         assert_eq!(Band::for_share(4.0), Band::Moderate);
         assert_eq!(Band::for_share(10.0), Band::Heavy);
         assert_eq!(Band::for_share(30.0), Band::VeryHeavy);
+    }
+
+    #[test]
+    fn a_mod_nobody_has_timed_is_not_a_mod_that_costs_nothing() {
+        // The site says "below the floors" as -1 rather than 0 for exactly this reason, and the
+        // whole convention is worthless if it arrives here as a number. A zero would render as
+        // "adds 0 s at start-up", which is a measurement nobody took.
+        let list = serde_json::json!({"mods": [
+            {"packageId": "a.timed", "loadMsMedian": 905.75, "loadRuns": 40, "loadInstalls": 14},
+            {"packageId": "b.untimed", "loadMsMedian": -1.0, "loadRuns": 0, "loadInstalls": 0},
+            {"packageId": "c.silent"}
+        ]});
+        let w = parse_list(&list);
+        assert_eq!(w[0].load_ms_median, Some(905.75));
+        assert_eq!(w[0].load_runs, Some(40));
+        assert_eq!(w[0].load_installs, Some(14));
+        assert_eq!(w[1].load_ms_median, None, "-1 is the site saying it does not know");
+        assert_eq!(w[2].load_ms_median, None, "and a field that is simply absent is the same answer");
+    }
+
+    #[test]
+    fn a_start_up_cost_is_not_a_frame_share() {
+        // Two independent measurements in one row: a mod can have either, both or neither, and
+        // reading one as the other would put milliseconds in a column of percentages.
+        let list = serde_json::json!({"mods": [
+            {"packageId": "only.load", "loadMsMedian": 1200.0},
+            {"packageId": "only.frame", "share": 3.4, "ranked": true}
+        ]});
+        let w = parse_list(&list);
+        assert_eq!(w[0].share, None);
+        assert_eq!(w[0].load_ms_median, Some(1200.0));
+        assert_eq!(w[1].share, Some(3.4));
+        assert_eq!(w[1].load_ms_median, None);
     }
 
     #[test]

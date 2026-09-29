@@ -314,6 +314,12 @@ export interface Weight {
   netLow: number | null;
   netHigh: number | null;
   withheld: boolean;
+  /** Typical start-up cost in milliseconds, pooled across everyone who shares load runs.
+   *  Null below the site's floors. A different measurement from `share` -- wall-clock
+   *  milliseconds spent once, not a fraction of every frame -- so the two are never added. */
+  loadMsMedian: number | null;
+  loadRuns: number | null;
+  loadInstalls: number | null;
   origin: "api" | "local";
 }
 

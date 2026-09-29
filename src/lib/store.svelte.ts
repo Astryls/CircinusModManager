@@ -6,7 +6,7 @@ import { t } from "./i18n.svelte";
 import type { AuditReport, BuiltinRule, CollectionPreview, DefMatch, DefQuery, DefsState, DefTree, Group, HaloRules, ImportPreview, Instance, Issue, ItemState, LaunchSettings, Locations, LogAnalysis, LogFile, ModChange, ModInfo, ModPatchDetail, ModTextures, PatchJob, PatchReport, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamClientStatus, SteamCmdStatus, SubscribeOutcome, SubscriptionProgress, TexState, TrackedCollection, UpdateCheck, UpdateProgress, UserData, Weight, ListChange } from "./types";
 import { CONSENT_VERSION, EMPTY_HALO, GROUP_COLORS, loadBand, PHASES, primaryUid, severityOf, VANILLA_SECS, type LoadBand, type Severity } from "./types";
 
-export type View = "order" | "library" | "downloads" | "textures" | "defs" | "patches" | "analyzer" | "halo" | "settings";
+export type View = "order" | "library" | "downloads" | "textures" | "defs" | "patches" | "analyzer" | "loadtimes" | "halo" | "settings";
 
 export type Tab = "active" | "inactive" | "all" | "new";
 
@@ -349,6 +349,80 @@ class Store {
     for (const uid of this.active) total += this.expectedMsOf(uid);
     return total / 1000;
   });
+
+  // ---- this machine against everyone else's ---------------------------------------------
+  //
+  // Two figures per mod: what Loading Progress measured here on the last start-up, and the
+  // median of what it measured on everyone else's machine, pooled by circinus.sh.
+  //
+  // **Raw milliseconds do not compare across machines**, and a screen that puts two of them
+  // side by side invites exactly that comparison. A slower disk makes every mod slower, so a
+  // list of "you: 1,400ms / everyone: 900ms" rows says nothing except that this computer is
+  // slower than the average of some other computers, forty-four times over.
+  //
+  // What *is* comparable is how far one mod departs from this machine's own factor. If
+  // everything here runs at 1.4x the pooled median, then 1.4x is the machine and the mod at
+  // 4.1x is the finding. So the ratio is computed per mod, the median of those ratios is the
+  // machine, and the column worth sorting on is the quotient of the two. That is the same
+  // trick `loadCalibration` plays against the model, for the same reason.
+
+  /** One row per active mod that either side has a figure for. */
+  loadCompare = $derived.by(() => {
+    const rows: { uid: string; packageId: string; name: string; mine: number | null; theirs: number | null; runs: number | null; installs: number | null; ratio: number | null }[] = [];
+    for (const uid of this.active) {
+      const mod = this.byUid.get(uid);
+      if (!mod) continue;
+      const pkg = mod.packageId.toLowerCase().replace(/_steam$/, "");
+      const w = this.snap?.weights[mod.packageId] ?? this.snap?.weights[pkg];
+      const mine = this.measuredMsOf(uid) ?? null;
+      const theirs = w?.loadMsMedian ?? null;
+      rows.push({
+        uid,
+        packageId: pkg,
+        name: mod.name,
+        mine,
+        theirs,
+        runs: w?.loadRuns ?? null,
+        installs: w?.loadInstalls ?? null,
+        // A mod nobody else has timed, or one this run did not include, has no ratio. Zero is
+        // not a substitute: it would sort as the fastest mod in the list.
+        ratio: mine != null && theirs != null && theirs > 0 ? mine / theirs : null
+      });
+    }
+    return rows;
+  });
+
+  /** This machine's own factor: the median per-mod ratio, which is the part that is the
+   *  computer rather than the mod. Null until enough mods have both figures for a median to
+   *  mean anything -- five, the same floor `loadCalibration` uses and for the same reason. */
+  loadMachineFactor = $derived.by(() => {
+    const rs = this.loadCompare.map((r) => r.ratio).filter((r): r is number => r != null).sort((a, b) => a - b);
+    if (rs.length < 5) return null;
+    return rs[Math.floor(rs.length / 2)];
+  });
+
+  /** How many mods the two sides can actually be compared on. */
+  loadCompareCount = $derived(this.loadCompare.filter((r) => r.ratio != null).length);
+
+  /** Re-read what Loading Progress wrote, right now.
+   *
+   *  This already happens at launch and on window focus, which covers the ordinary path of
+   *  playing and coming back. The button is for the path that does not: the two tracking
+   *  settings are off out of the box, so somebody who has just switched them on and launched
+   *  the game has a file the window has no reason to think has changed. Telling them to
+   *  alt-tab twice is not an answer. */
+  rereadLoadRun() {
+    return this.run("Reading Loading Progress…", async () => {
+      await api.refreshLastRun();
+      await this.refresh();
+      const si = this.startupImpact;
+      if (!si) {
+        this.say("No start-up measurement found. Loading Progress writes one only with both of its tracking settings on.");
+        return;
+      }
+      this.say(`Read ${si.mods.length} mods from Loading Progress, ${(si.totalMs / 1000).toFixed(1)}s in total`);
+    });
+  }
 
   loadRun = $derived(this.snap?.loadRun ?? null);
   loadRunAt = $derived(this.snap?.loadRunAt ?? 0);
@@ -1823,10 +1897,15 @@ class Store {
     return this.run("Saving settings…", async () => this.apply(await api.updateSettings(next)));
   }
   refreshWeights() {
-    return this.run("Fetching Circinus weights…", async () => {
+    return this.run("Fetching from circinus.sh…", async () => {
       const n = await api.refreshWeights();
       await this.refresh();
-      this.say(`Circinus weight: ${n} mods have figures`);
+      // Two different figures arrive in the same fetch and the toast says so, because the
+      // button is offered in two places that care about different halves of it: the Cost
+      // column wants the frame shares, the load-times page wants the start-up medians, and
+      // "N mods have figures" told neither of them whether the half they came for arrived.
+      const load = Object.values(this.snap?.weights ?? {}).filter((w) => w.loadMsMedian != null).length;
+      this.say(load ? `${n} mods have figures, ${load} of them timed at start-up` : `${n} mods have figures, none timed at start-up yet`);
     });
   }
   updateDatabases() {

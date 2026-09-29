@@ -16,6 +16,7 @@
   import SharingCard from "./components/SharingCard.svelte";
   import SettingsView from "./components/SettingsView.svelte";
   import AnalyzerView from "./components/AnalyzerView.svelte";
+  import LoadTimesView from "./components/LoadTimesView.svelte";
   import DownloadsView from "./components/DownloadsView.svelte";
   import TexturesView from "./components/TexturesView.svelte";
   import DefsView from "./components/DefsView.svelte";
@@ -120,6 +121,8 @@
         <Panel name="Settings"><SettingsView /></Panel>
       {:else if store.view === "analyzer"}
         <Panel name="Analyzer"><AnalyzerView /></Panel>
+      {:else if store.view === "loadtimes"}
+        <Panel name="Load times"><LoadTimesView /></Panel>
       {:else if store.view === "downloads"}
         <Panel name="Downloads"><DownloadsView /></Panel>
       {:else if store.view === "textures"}

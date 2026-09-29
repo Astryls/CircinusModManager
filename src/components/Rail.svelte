@@ -17,6 +17,7 @@
     { id: "textures", label: "Textures", icon: I.image, count: () => (store.tex?.running ? (store.tex.phase === "converting" && store.tex.progress.total ? `${Math.round((store.tex.progress.done / store.tex.progress.total) * 100)}%` : "busy") : store.ddsTotals.mods || ""), att: false },
     { id: "patches", label: "Patches", icon: I.halo, count: () => (store.patchJob?.running ? "busy" : store.patchReport ? store.patchReport.contested || "" : ""), att: true },
     { id: "analyzer", label: "Analyzer", icon: I.analyze, count: () => store.stats.errors + store.stats.warnings, att: true },
+    { id: "loadtimes", label: "Load times", icon: I.timer, count: () => (store.startupImpact ? `${Math.max(1, Math.round(store.startupImpact.totalMs / 60000))}m` : "") },
     { id: "defs", label: "Defs", icon: I.terminal, count: () => (store.defs?.running ? "busy" : store.defsReport ? store.defsReport.overwrites.length : ""), att: false },
     { id: "halo", label: "HALO", icon: I.halo, count: () => Object.keys(store.halo.packagePhases).length + store.halo.namePhases.length + store.halo.off.length + Object.keys(store.halo.retarget).length || "" },
     { id: "settings", label: "Settings", icon: I.gear }
@@ -293,7 +294,7 @@
   .acts .ib { width: 34px; height: 34px; flex: none; display: grid; place-items: center; color: var(--text-3); box-shadow: var(--shadow-card); }
   .acts .ib :global(svg) { width: 15px; height: 15px; }
   .acts .ib:hover, .acts .ib.on { background: var(--surface-2); color: var(--text); }
-  .help { display: flex; align-items: center; gap: 7px; flex: none; padding: 7px 12px; border-radius: 9px; color: var(--text-3); font-size: 12px; font-weight: 600; }
+  .help { display: flex; align-items: center; gap: 7px; flex: none; padding: 7px 12px; border-radius: 0; color: var(--text-3); font-size: 12px; font-weight: 600; }
   .help :global(svg) { width: 14px; height: 14px; }
   .help:hover { background: var(--surface-2); color: var(--text-2); }
   .rail .card { padding: 12px; flex: none; }
@@ -303,7 +304,7 @@
   .inst .row { display: flex; justify-content: space-between; margin-top: 9px; font-size: 12px; color: var(--text-3); }
   .inst .row .att { color: var(--amber); font-weight: 700; }
   .inst .lists { position: relative; align-items: center; }
-  .lbtn { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-2); font-weight: 600; font-size: 12px; padding: 3px 6px; margin-left: -6px; border-radius: 7px; }
+  .lbtn { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-2); font-weight: 600; font-size: 12px; padding: 3px 6px; margin-left: -6px; border-radius: 0; }
   .lbtn:hover { background: var(--surface-2); color: var(--text); }
   .lbtn :global(svg) { width: 14px; height: 14px; flex: none; }
   .lbtn .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 130px; }
@@ -311,7 +312,7 @@
   .menu { position: fixed; z-index: 30; width: 280px; max-height: 70vh; overflow: hidden auto; padding: 8px; box-shadow: var(--shadow-float); display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
   .menu .label { margin: 6px 0 4px 6px; }
   .menu .label:first-child { margin-top: 0; }
-  .opt { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 8px; color: var(--text-2); text-align: left; width: 100%; font-size: 13px; }
+  .opt { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 0; color: var(--text-2); text-align: left; width: 100%; font-size: 13px; }
   .opt:hover { background: var(--surface-2); color: var(--text); }
   .opt.on { background: var(--surface-3); color: var(--text); font-weight: 600; }
   .opt.danger { color: var(--red); }
@@ -319,10 +320,10 @@
   .opt .c { color: var(--text-3); font-size: 12px; }
   .opt .kbd { color: var(--text-3); font-size: 11px; font-family: var(--mono); }
   .menu .hint, .ask { color: var(--text-3); font-size: 12px; line-height: 1.4; padding: 4px 6px; }
-  .ask { color: var(--text-2); background: var(--surface-2); border-radius: 8px; padding: 8px; }
+  .ask { color: var(--text-2); background: var(--surface-2); border-radius: 0; padding: 8px; }
   .ask div { display: flex; gap: 6px; margin-top: 6px; }
   .menu .newg { margin: 4px 0; }
-  .cols .col { display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 8px; margin: 0 -6px; border-radius: 8px; font-weight: 600; font-size: 13px; width: calc(100% + 12px); text-align: left; }
+  .cols .col { display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 8px; margin: 0 -6px; border-radius: 0; font-weight: 600; font-size: 13px; width: calc(100% + 12px); text-align: left; }
   .cols .col:hover { background: var(--surface-2); }
   .cols .col .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cols .col .c { color: var(--text-3); font-size: 12px; }
@@ -330,7 +331,7 @@
   .cols h3 { margin-bottom: 4px; }
   .inst .meter { margin-top: 7px; }
   .nav { padding: 6px !important; display: flex; flex-direction: column; }
-  .nav button { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 9px; color: var(--text-2); font-weight: 600; font-size: 13.5px; text-align: left; }
+  .nav button { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 0; color: var(--text-2); font-weight: 600; font-size: 13.5px; text-align: left; }
   .nav button :global(svg) { width: 18px; height: 18px; flex: none; }
   .nav button:hover { background: var(--surface-2); color: var(--text); }
   .nav button.on { background: var(--surface-3); color: var(--text); }
@@ -341,11 +342,11 @@
   .newg { display: flex; gap: 6px; margin-bottom: 8px; }
   .newg .input { height: 28px; font-size: 12.5px; }
   .groups h3 { margin-bottom: 4px; }
-  .grow { display: flex; align-items: center; margin: 0 -6px; border-radius: 8px; }
+  .grow { display: flex; align-items: center; margin: 0 -6px; border-radius: 0; }
   .grow:hover, .grow.editing { background: var(--surface-2); }
   .grow.on { background: var(--surface-3); }
-  .groups .g { display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; border-radius: 8px; font-weight: 600; font-size: 13px; flex: 1; min-width: 0; text-align: left; }
-  .grow .edit { width: 24px; height: 24px; margin-right: 2px; border-radius: 6px; display: grid; place-items: center; opacity: 0; color: var(--text-3); flex: none; }
+  .groups .g { display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; border-radius: 0; font-weight: 600; font-size: 13px; flex: 1; min-width: 0; text-align: left; }
+  .grow .edit { width: 24px; height: 24px; margin-right: 2px; border-radius: 0; display: grid; place-items: center; opacity: 0; color: var(--text-3); flex: none; }
   .grow .edit :global(svg) { width: 14px; height: 14px; }
   .grow:hover .edit, .grow.editing .edit, .grow .edit:focus-visible { opacity: 1; }
   .grow .edit:hover { background: var(--surface-3); color: var(--text); }

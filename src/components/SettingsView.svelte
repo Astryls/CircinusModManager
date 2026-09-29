@@ -3,9 +3,13 @@
   import { t } from "$lib/i18n.svelte";
   import { api, pickFile, pickFolder, inTauri, openUrl } from "$lib/api";
   import { I } from "$lib/icons";
+  import { theme } from "$lib/theme.svelte";
   import { DISCORD, type LaunchInfo, type LaunchMethod, type Locations } from "$lib/types";
 
   const s = $derived(store.snap?.settings);
+  /** Same shape the summary card and the load times page use, so the three never disagree
+   *  about how long the last start-up took. "463.0s" is a number you have to convert first. */
+  const clock = (secs: number) => (secs >= 60 ? `${Math.floor(secs / 60)}m ${Math.round(secs % 60)}s` : `${Math.round(secs)}s`);
   const loc = $derived(store.snap?.locations);
   const q = $derived(store.downloads);
   const st = $derived(store.steamcmd);
@@ -79,6 +83,10 @@
   const linked = $derived((store.snap?.mods ?? []).filter((m) => m.linkTarget).length);
   const unreadable = $derived(store.snap?.unreadable ?? []);
   const withNumber = $derived(Object.values(store.snap?.weights ?? {}).filter((w) => w.share != null).length);
+  /** The other half of the same fetch: mods somebody has shared a start-up for. Counted apart
+   *  from `withNumber` because they are different measurements and one can arrive without the
+   *  other -- the site has served frame shares for months and start-up medians since this week. */
+  const withLoad = $derived(Object.values(store.snap?.weights ?? {}).filter((w) => w.loadMsMedian != null).length);
   const fetchedAgo = $derived.by(() => {
     const at = store.snap?.weightsFetchedAt ?? 0;
     if (!at) return "never";
@@ -221,7 +229,7 @@
       <label class="switch"><input type="checkbox" checked={s?.includeLocalRuns ?? true} onchange={(e) => store.updateSettings({ includeLocalRuns: e.currentTarget.checked })} />Include my own runs (the Circinus/Runs folder next to the config folder)</label>
       <div class="row">
         <button class="btn" onclick={() => store.refreshWeights()}>{@html I.gauge}Fetch from circinus.sh</button>
-        <span class="hint">{Object.keys(store.snap?.weights ?? {}).length.toLocaleString()} mods have figures ({withNumber.toLocaleString()} with a number) · fetched {fetchedAgo}</span>
+        <span class="hint">{Object.keys(store.snap?.weights ?? {}).length.toLocaleString()} mods have figures ({withNumber.toLocaleString()} with a frame share, {withLoad.toLocaleString()} timed at start-up) · fetched {fetchedAgo}</span>
       </div>
       {#if store.snap?.weightsSample}
         <details class="sample">
@@ -229,6 +237,46 @@
           <pre class="mono">{store.snap.weightsSample}</pre>
         </details>
       {/if}
+    </section>
+
+    <!-- Start-up timing. Separate from Performance figures on purpose: these are two different
+         measurements of two different things, and a player who reads them as one number will
+         add a frame share to a start-up cost. -->
+    <section class="card">
+      <h3>Start-up times <span class="aside">{store.startupImpact ? `${clock(store.startupImpact.totalMs / 1000)} last read` : "nothing measured"}</span></h3>
+      <p class="hint">
+        How long each mod took while the game loaded, measured by the
+        <button class="lnk" onclick={() => openUrl("https://steamcommunity.com/sharedfiles/filedetails/?id=3535481557")}>Loading Progress</button>
+        mod by ilyvion. Circinus times nothing itself: it reads the report that mod writes.
+        <b>Both of that mod's tracking settings are off out of the box</b> — turn on Track startup
+        loading impact, then Auto-save startup impact report, and start the game once.
+      </p>
+      <div class="row">
+        <button class="btn" onclick={() => store.rereadLoadRun()} disabled={!!store.busy}>{@html I.refresh}Re-read now</button>
+        <span class="hint">
+          {#if store.startupImpact}
+            {store.startupImpact.mods.length.toLocaleString()} mods timed, {store.measuredCount.toLocaleString()} of them in your list now
+          {:else}
+            No report found beside Player.log
+          {/if}
+        </span>
+      </div>
+      <p class="hint">Circinus already re-reads this when it starts and whenever you come back to the window, so this button is for the launch you did before switching the mod's settings on.</p>
+      <button class="btn sm" onclick={() => (store.view = "loadtimes")}>Open Load times</button>
+    </section>
+
+    <section class="card">
+      <h3>Appearance <span class="aside">{theme.paper === "light" ? "paper" : theme.darkVariant === "oled" ? "OLED black" : "dark"}</span></h3>
+      <label class="switch"><input type="checkbox" checked={theme.paper === "light"} onchange={(e) => theme.set(e.currentTarget.checked ? "light" : "dark")} />Use the light paper</label>
+      <label class="switch"><input type="checkbox" checked={theme.darkVariant === "oled"} onchange={(e) => theme.setDark(e.currentTarget.checked ? "oled" : "normal")} />Use OLED black instead of the normal dark</label>
+      <p class="hint">
+        OLED black takes the ground to pure black, so the pixels behind it are switched off rather
+        than driven dim. Everything else is the same paper: the ink stays bone rather than going
+        white, because white on black is what makes text smear when an OLED panel scrolls. Only
+        the separating rules are lifted, since a hairline that reads over near-black disappears
+        over black.
+      </p>
+      <p class="hint">This applies to the dark paper only, and takes effect the moment you switch back to it. The theme is remembered on this machine and never travels with a mod list.</p>
     </section>
 
     <section class="card">
@@ -286,9 +334,9 @@
   .lt b { display: block; font-size: 13px; }
   .lt span { display: block; font-size: 11.5px; color: var(--text-3); overflow-wrap: anywhere; }
   .lv { display: flex; gap: 6px; align-items: center; min-width: 0; }
-  .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); background: var(--surface-2); padding: 5px 8px; border-radius: 7px; user-select: text; }
+  .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); background: var(--surface-2); padding: 5px 8px; border-radius: 0; user-select: text; }
   .row { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
-  .unread { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+  .unread { margin-top: 10px; padding: 10px 12px; border-radius: 0; background: var(--surface-2); display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
   .unread b { color: var(--amber); }
   .unread .hint { margin: 0 0 4px; }
   .unread .ur { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: 10px; color: var(--text-2); overflow-wrap: anywhere; }
@@ -305,13 +353,13 @@
   .updates .notes { white-space: pre-wrap; }
   .sample { margin-top: 8px; font-size: 12.5px; color: var(--text-3); }
   .sample summary { cursor: pointer; font-weight: 600; }
-  .sample pre { margin: 6px 0 0; max-height: 240px; overflow: hidden auto; background: var(--surface-2); border-radius: 8px; padding: 8px 10px; font-size: 11px; line-height: 1.4; user-select: text; white-space: pre-wrap; word-break: break-all; }
+  .sample pre { margin: 6px 0 0; max-height: 240px; overflow: hidden auto; background: var(--surface-2); border-radius: 0; padding: 8px 10px; font-size: 11px; line-height: 1.4; user-select: text; white-space: pre-wrap; word-break: break-all; }
   .path.bad { color: var(--red); }
   .opt { display: flex; align-items: center; gap: 10px; margin: 6px 0 10px; font-size: 13px; }
   .opt .l { width: 100px; color: var(--text-2); }
   .opt .hint { margin: 0; }
-  .seg { display: inline-flex; background: var(--surface-2); border-radius: 9px; padding: 3px; gap: 2px; }
-  .seg button { padding: 5px 10px; border-radius: 7px; font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+  .seg { display: inline-flex; background: var(--surface-2); border-radius: 0; padding: 3px; gap: 2px; }
+  .seg button { padding: 5px 10px; border-radius: 0; font-size: 12.5px; font-weight: 600; color: var(--text-2); }
   .seg button.on { background: var(--surface-4); color: var(--text); }
   .lv .input { height: 30px; font-size: 12.5px; flex: 1; }
   @media (max-width: 980px) { .settings { columns: 1; } }

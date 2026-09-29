@@ -41,6 +41,9 @@ export const I = {
   terminal: svg(back("M3 3h18v18H3z") + front("M6 7l5 5-5 5V13.5H6v-3h0zM12.5 15h5.5v3h-5.5z")),
   link: svg(back("M3 9h9v6H3z") + front("M12 9h9v6h-9zM9 10.5h6v3H9z")),
   gauge: svg(back("M3 18h18v3H3z") + front("M3 16a9 9 0 0 1 18 0zM11 8h2v8h-2z")),
+  // A stopwatch: crown and body behind, the hand cut out of the front. Nothing finer than 3
+  // units, so the hand is still a hand at the 15px the directory draws it at.
+  timer: svg(back("M4 12a8 8 0 1 1 16 0 8 8 0 0 1-16 0z") + front("M9 1h6v3H9zM10.5 7h3v6h-3zM13.5 12h5v3h-5z")),
   bell: svg(back("M6 6h12v10H6z") + front("M4 16h16v3H4zM10 20h4v2h-4zM11 2h2v3h-2z")),
   pin: svg(back("M7 2h10v9H7z") + front("M4 11h16v3H4zM10.5 14h3v8h-3z")),
 

@@ -313,7 +313,7 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   measures the **content** box, 28px narrower than the card at this padding, so thresholds read
   as card widths fire about 30px early; that is what once clamped the caption at a width where
   two lines cost nothing.
-- **The Directory layout, and the two papers.** There is no title bar. One fixed 266px column —
+- **The Directory layout, and the three papers.** There is no title bar. One fixed 266px column —
   the site's own `--dirw` — is the whole navigation: wordmark, instance, views, groups,
   collections, then the status marks and Save/Play/theme at its foot. It lives outside the view
   switch in `App.svelte` because it is the constant; only what sits beside it changes. Search is
@@ -331,7 +331,27 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   the scrollbars and form controls keep the other `color-scheme`) and remembers it in
   localStorage, never in user data — a list moved between machines must not drag a theme with it.
   `index.html` repeats that read in a tiny inline script so the window never flashes the other
-  paper before the bundle lands; **keep the key in step with the module.**
+  paper before the bundle lands; **keep both keys in step with the module.**
+  The third is **OLED**, and it is a *variant of dark rather than a third choice beside the other
+  two*. `theme.paper` is light or dark and is what the toggle flips; `theme.darkVariant` decides
+  which dark and is a setting. Making it a third value of one enum would have turned the toggle
+  into a three-state cycle, so somebody glancing at the paper and coming back would land
+  somewhere they did not start. Only two things move from the dark set: the ground goes to `#000`
+  so the pixels are off rather than dim, and every rule is lifted one step, because a 1px
+  separator at `#2a2723` that reads over `#131210` disappears over black and the whole layout is
+  held together by rules. The ink stays the same bone — pure white on pure black is what makes
+  text smear when an OLED panel scrolls, and `#ece7de` is already 17.05:1 there, more than the
+  normal dark set has. The group hues are untouched and every one of them *gains* contrast on the
+  darker ground, so the three rules they were solved for still hold.
+- **Every corner is 0, written literally, and there are no radius tokens.** The four that used to
+  exist were all 0 and the rounding had drifted back in as literals anyway: eight different px
+  values across twenty-five files, so a button was square in one panel and rounded in the next.
+  A token whose only value is 0 invites somebody to give it a second one. The exceptions are
+  round because they are circles, not because they are soft — the small status dots (`.dot`,
+  `.newdot`, the save mark, a `::before` bullet) and the two spinners. circinus.sh's own
+  stylesheet makes the same call and has exactly one `50%` in it. `loadtimes.cjs` walks every
+  button, chip, pill, input, card and switch in the window and fails on a computed radius that is
+  not `0px`.
 - **Colour means an error, with one exception.** Two accents: `--amber` is the site's `--hold`,
   `--red` its `--bad`. Everything advisory carries its weight in words and ink — the five weight
   bands are mono inside a rule, banners are quiet panels with a 3px coloured edge, and `.pos` is
@@ -375,7 +395,29 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   megabytes and reading it to learn nothing is the most expensive way to learn nothing), and
   takes paths out under the lock before touching a file. It runs at startup **and on window
   focus** — the game writes that figure while Circinus is not in front, so reading it only at
-  launch meant playing, coming back, and being shown the run before the one you just did.
+  launch meant playing, coming back, and being shown the run before the one you just did. There
+  is a **Re-read** button as well (Load times, and Settings) for the path automatic reading
+  cannot cover: the mod's two tracking settings are off out of the box, so somebody who has just
+  switched them on has a file the window has no reason to think has changed, and "alt-tab twice"
+  is not an answer.
+- **The Load times page divides the machine out, and that is the whole feature.** It puts what
+  Loading Progress measured here beside the median of what it measured on everyone else's
+  machine, pooled by circinus.sh (`Weight::load_ms_median`, off the same `/api/v1/mods` fetch
+  that already brings the frame shares; `-1` from the site means *below the floors* and `num`
+  drops it to `None`, because a mod nobody timed must never read as a mod timed and found free).
+  **Raw milliseconds do not compare across machines.** A slower disk makes every mod slower, so
+  two columns of ms say one thing forty-four times and that thing is about the computer. The
+  per-mod ratio has the same problem until you notice the machine *is* the median of those
+  ratios — so `store.loadMachineFactor` is that median and the column worth sorting on is each
+  mod's ratio divided by it. Everything that was only the disk lands at 1.0×; what is left is
+  the mod. Same trick as `loadcost::calibration`, against a different baseline.
+  A missing figure is **never** a zero and never sorts as one: a null sorts last, not fastest.
+  `loadtimes.cjs` plants two outliers in a corpus made uniformly 1.3× the pooled median and
+  fails unless exactly those two rise and everything else reads 1.0×, which is the assertion a
+  page comparing raw milliseconds cannot pass.
+  The site publishes `loadRatioMedian` in its rollup but does **not** serialise it yet; that is
+  the figure that would make this comparison exact rather than inferred, so take it when it
+  appears.
 - **The save confirmation compares; it does not remember.** `dirty` is a sticky flag set by
   every edit and cleared only by a write, so it stays true after you activate a mod and
   deactivate it again. `App::pending_save` runs `modsconfig::build` without writing and diffs
@@ -413,7 +455,11 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   always silent — a toast about a background upload is noise about a thing nobody can fix.
   No GPU in the payload. Loading is XML parsing, patches and disk; the graphics card explains
   none of the variance, and a field that explains nothing only makes an install easier to pick
-  out. The analyzer sends one because frame time genuinely depends on it.
+  out. The analyzer sends one because frame time genuinely depends on it. **Every surface that
+  lists what is sent has to say so**, and two of them said the opposite for a while: the consent
+  card's `sharing.row.machine.v` listed an RTX 3070, and the site's privacy page listed a
+  graphics card in the start-up table. Both now say no graphics card, in as many words, because
+  overstating what you collect is the same kind of lie as understating it.
   The policy is the one already published at circinus.sh/privacy for the Performance Analyzer,
   word for word, because a second tool sending a slightly different set under the same promise
   would make the promise worthless. Three parts of it are mechanical rather than aspirational:
