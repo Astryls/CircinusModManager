@@ -89,7 +89,7 @@
     user-select: text;
     color: #ffb4ae;
     background: var(--well);
-    border-radius: 10px;
+    border-radius: 0;
     padding: 10px 12px;
     font-size: 12px;
     max-height: 220px;

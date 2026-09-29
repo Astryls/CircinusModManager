@@ -44,8 +44,14 @@
   --shadow-float: inset 0 0 0 1px var(--surface-4), 0 24px 64px rgba(0, 0, 0, 0.55);
   --scrim: rgba(14, 13, 11, 0.72);
   /* Flat and square. A 1px rule does the work a drop shadow was doing, which is to say it
-     separates a panel from the ground behind it, and it does it without pretending to depth. */
-  --r-card: 0; --r-hero: 0; --r-row: 0; --r-pill: 0;
+     separates a panel from the ground behind it, and it does it without pretending to depth.
+     There are no radius tokens: every corner in the app is 0, written literally, because a
+     token whose only value is 0 invites somebody to give it a second one. The four that used
+     to live here were already all 0 and the rounding had drifted back in as literals anyway --
+     eight different px values across twenty-five files, so buttons were square in one panel and
+     rounded in the next. The exceptions are dots and spinners, which are round because they are
+     circles rather than because they are soft; circinus.sh's own stylesheet makes the same call
+     and has exactly one 50% in it. */
 
   /* Legacy aliases. Components still name these; each now points at what the colour rule says
      that use should be, so a stray `var(--green)` renders as bone rather than as nothing. Prefer
@@ -56,6 +62,36 @@
   --coral: var(--g-coral); --slate: var(--g-slate);
   --font: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "Red Hat Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+/* OLED. The same paper as the dark set above, with the ground taken all the way to #000 so the
+   pixels behind it are switched off rather than driven dim.
+ *
+ * This is a variant of dark, not a third choice beside light and dark: the toggle still flips
+ * between paper and dark, and which dark you get is a setting. That is the honest model, because
+ * nobody wants to cycle through three states to get back to where they were.
+ *
+ * Two things move and nothing else does. The surfaces step up from nothing rather than down from
+ * #131210, so a panel is still legible as a panel against a ground that has no light in it at
+ * all; and every rule is lifted, because a 1px separator at #2a2723 that reads fine over #131210
+ * disappears over #000. The ink stays the same bone #ece7de rather than going to white: pure
+ * white on pure black is what makes text smear when an OLED panel scrolls, and the bone is
+ * already 17:1 here, which is more contrast than the normal dark set has, not less.
+ *
+ * The group hues are untouched. They were solved against #131210 and every one of them gains
+ * contrast on a darker ground, so the three rules they were solved for all still hold. */
+:root[data-theme="oled"] {
+  color-scheme: dark;
+  --bg: #000000; --bg-2: #000000; --well: #000000;
+  --surface: #0b0a09; --surface-2: #131211; --surface-3: #232120; --surface-4: #3a3733;
+  --track: #131211;
+
+  /* One step brighter than the dark set's rules. Against #000 the old values read as nothing,
+     and the whole layout is held together by 1px rules rather than by shadows. */
+  --shadow-card: inset 0 0 0 1px var(--surface-3);
+  --shadow-raised: inset 0 0 0 1px var(--surface-4);
+  --shadow-float: inset 0 0 0 1px var(--surface-4), 0 24px 64px rgba(0, 0, 0, 0.8);
+  --scrim: rgba(0, 0, 0, 0.78);
 }
 
 /* E-ink. Ground comes down off white and ink comes up off black, so the range closes to about
@@ -118,7 +154,7 @@ a:hover { text-decoration-color: var(--amber); }
    get a hue, and a "good" colour spends the reader's attention saying nothing happened. */
 .pos { color: var(--text); } .neg { color: var(--red); } .att { color: var(--amber); }
 
-.card { background: var(--surface); border-radius: var(--r-card); box-shadow: var(--shadow-card); padding: 14px; }
+.card { background: var(--surface); border-radius: 0; box-shadow: var(--shadow-card); padding: 14px; }
 .card h3 { margin: 0 0 10px; font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-3); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .card h3 .aside { font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--text-3); }
 .btn { height: 34px; padding: 0 14px; background: transparent; font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; box-shadow: var(--shadow-card); color: var(--text); white-space: nowrap; }
@@ -133,45 +169,45 @@ a:hover { text-decoration-color: var(--amber); }
 .btn.danger { color: var(--red); }
 .btn.save { color: var(--amber); }
 .btn.save i { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); }
-.btn.sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
+.btn.sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 0; }
 .btn svg { width: 16px; height: 16px; flex: none; }
-.pill { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--text-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.pill { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 0; background: var(--surface-2); color: var(--text-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
 .pill .dot { width: 6px; height: 6px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { height: 26px; padding: 0 10px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--text-2); font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.chip { height: 26px; padding: 0 10px; border-radius: 0; background: var(--surface-2); color: var(--text-2); font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
 .chip svg { width: 14px; height: 14px; flex: none; }
 .chip:hover { background: var(--surface-3); color: var(--text); }
 .chip.on { background: var(--amber-soft); color: var(--amber); }
 .chip.on.err { background: var(--red-soft); color: var(--red); }
 .chip.on.note { background: var(--blue-soft); color: #8fb8ff; }
-.seg { display: inline-flex; background: var(--surface); border-radius: 10px; padding: 3px; box-shadow: var(--shadow-card); }
-.seg button { height: 28px; padding: 0 12px; border-radius: 8px; font-weight: 600; font-size: 13px; color: var(--text-2); display: inline-flex; align-items: center; gap: 6px; }
+.seg { display: inline-flex; background: var(--surface); border-radius: 0; padding: 3px; box-shadow: var(--shadow-card); }
+.seg button { height: 28px; padding: 0 12px; border-radius: 0; font-weight: 600; font-size: 13px; color: var(--text-2); display: inline-flex; align-items: center; gap: 6px; }
 .seg button .num { color: var(--text-3); font-size: 12px; }
 .seg button.on { background: var(--surface-3); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
 .seg button.on .num { color: var(--text-2); }
 .flag { width: 18px; height: 18px; display: inline-grid; place-items: center; flex: none; }
 .flag svg { width: 16px; height: 16px; }
 .flag.pin { color: var(--text-2); }
-.src { width: 22px; height: 22px; border-radius: 6px; display: inline-grid; place-items: center; font: 700 10.5px var(--mono); color: var(--text-2); background: var(--surface-3); flex: none; }
+.src { width: 22px; height: 22px; border-radius: 0; display: inline-grid; place-items: center; font: 700 10.5px var(--mono); color: var(--text-2); background: var(--surface-3); flex: none; }
 .src.workshop { color: #8fb8ff; background: var(--blue-soft); }
 .src.ludeon { color: var(--text); background: var(--surface-4); }
 .src.local { color: #b8b8c0; }
 .src.steamcmd { color: #7fd7d1; background: rgba(56, 184, 176, 0.16); }
 .src.git { color: #f0b0d0; background: rgba(224, 85, 154, 0.16); }
 .vers { display: inline-flex; gap: 4px; }
-.vers span { font: 600 10.5px var(--mono); padding: 2px 5px; border-radius: 5px; background: var(--surface-3); color: var(--text-2); }
+.vers span { font: 600 10.5px var(--mono); padding: 2px 5px; border-radius: 0; background: var(--surface-3); color: var(--text-2); }
 .vers span.off { color: var(--text-4); background: transparent; box-shadow: inset 0 0 0 1px var(--surface-3); }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { font-size: 12.5px; font-weight: 600; color: var(--text-2); }
-.input { height: 34px; border: 0; border-radius: 10px; background: var(--surface-2); color: var(--text); padding: 0 12px; font-size: 13px; width: 100%; }
+.input { height: 34px; border: 0; border-radius: 0; background: var(--surface-2); color: var(--text); padding: 0 12px; font-size: 13px; width: 100%; }
 .input::placeholder { color: var(--text-3); }
 textarea.input { height: auto; padding: 10px 12px; resize: vertical; font-family: var(--mono); font-size: 12px; line-height: 1.5; }
 .switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13.5px; font-weight: 600; }
-.switch input { appearance: none; width: 38px; height: 22px; border-radius: 11px; background: var(--surface-4); position: relative; margin: 0; cursor: pointer; transition: background 0.15s; }
-.switch input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--text); transition: transform 0.15s; }
+.switch input { appearance: none; width: 38px; height: 22px; border-radius: 0; background: var(--surface-4); position: relative; margin: 0; cursor: pointer; transition: background 0.15s; }
+.switch input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 0; background: var(--text); transition: transform 0.15s; }
 .switch input:checked { background: var(--amber); }
 .switch input:checked::after { transform: translateX(16px); background: var(--amber-ink); }
-.band { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.band { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: 0; font-size: 11px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
 /* The five bands read as type inside a rule, told apart by ink weight rather than by hue. A
    coloured pill on forty-four rows spends the reader's whole colour budget saying what the word
    next to it already says; the ones that matter are the two that are still allowed a hue. */

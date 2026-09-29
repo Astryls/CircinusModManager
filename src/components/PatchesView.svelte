@@ -353,8 +353,8 @@
   .prog { margin-left: auto; display: flex; align-items: center; gap: 12px; min-width: 0; flex: 0 1 420px; }
   .pl { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--text-2); min-width: 0; flex: 1; }
   .pl b { font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .bar { height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
-  .bar i { display: block; height: 100%; background: var(--amber); border-radius: 3px; transition: width 0.3s; }
+  .bar { height: 6px; border-radius: 0; background: var(--surface-3); overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--amber); border-radius: 0; transition: width 0.3s; }
 
   .tabs { align-self: flex-start; max-width: 100%; flex-wrap: wrap; }
 
@@ -371,12 +371,12 @@
 
   /* contested */
   .fights { display: flex; flex-direction: column; gap: 3px; }
-  .fight { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 12px; align-items: center; padding: 7px 8px; border-radius: 9px; background: var(--surface-2); }
+  .fight { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 12px; align-items: center; padding: 7px 8px; border-radius: 0; background: var(--surface-2); }
   .mth { min-width: 0; display: flex; flex-direction: column; }
   .mth .ty { font-size: 11px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mth b { font-size: 13px; color: var(--text); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .who { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
-  .pat { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 8px; border-radius: 7px; background: var(--surface-3); font-size: 12px; color: var(--text-2); }
+  .pat { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 8px; border-radius: 0; background: var(--surface-3); font-size: 12px; color: var(--text-2); }
   .pat:hover { background: var(--surface-4); color: var(--text); }
   .pat .kd { font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }
   .pat.prefix .kd { color: var(--amber); }
@@ -399,7 +399,7 @@
      locked window, and cutting the list at four hundred was the workaround. */
   .vrows { position: relative; }
   .vrows .row { position: absolute; left: 0; right: 0; }
-  .row { height: 32px; border-radius: 9px; font-size: 12.5px; }
+  .row { height: 32px; border-radius: 0; font-size: 12.5px; }
   .row:hover { background: var(--surface-2); }
   .mth2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
   .ty { color: var(--text-3); }
@@ -419,7 +419,7 @@
   .mhdr .h.r { text-align: right; }
   .mhdr button.h:hover { color: var(--text-2); }
   .mhdr .h.on { color: var(--amber); }
-  .mrow { height: 34px; border-radius: 9px; font-size: 12.5px; width: 100%; }
+  .mrow { height: 34px; border-radius: 0; font-size: 12.5px; width: 100%; }
   .mrow:hover { background: var(--surface-2); }
   .mrow.open { background: var(--surface-3); }
   .mrow .nm { min-width: 0; display: flex; align-items: center; gap: 8px; }
@@ -439,7 +439,7 @@
 
   /* unreadable */
   .mans { display: flex; flex-direction: column; gap: 8px; }
-  .man { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: 12px; align-items: start; padding: 6px 8px; border-radius: 9px; background: var(--surface-2); }
+  .man { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: 12px; align-items: start; padding: 6px 8px; border-radius: 0; background: var(--surface-2); }
   .man .b { text-align: left; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mlist { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
   .mline { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; min-width: 0; }

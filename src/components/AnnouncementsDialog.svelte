@@ -100,7 +100,7 @@
   .hd { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
   .hd b { font-size: 16px; font-weight: 800; display: block; }
   .hd .sub { display: block; font-size: 12.5px; color: var(--text-3); margin-top: 2px; line-height: 1.4; }
-  .x { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--text-3); flex: none; }
+  .x { width: 28px; height: 28px; border-radius: 0; display: grid; place-items: center; color: var(--text-3); flex: none; }
   .x:hover { background: var(--surface-2); color: var(--text); }
   .x :global(svg) { width: 14px; height: 14px; }
   .lead { margin: 0; color: var(--text-2); font-size: 12.5px; line-height: 1.5; }
@@ -113,7 +113,7 @@
   .lnk:hover { text-decoration: underline; }
 
   .posts { display: flex; flex-direction: column; gap: 8px; }
-  .post { padding: 10px 12px; border-radius: 10px; background: var(--surface-2); }
+  .post { padding: 10px 12px; border-radius: 0; background: var(--surface-2); }
   /* The unread mark is a left edge rather than a background, so a post stays readable the moment
      after it is marked read instead of the whole card changing colour under the cursor. */
   .post.new { box-shadow: inset 3px 0 0 var(--amber); }

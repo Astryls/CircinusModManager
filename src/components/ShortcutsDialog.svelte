@@ -50,7 +50,7 @@
   .dlg { width: min(620px, calc(100vw - 40px)); max-height: calc(100vh - 40px); padding: 18px 20px; box-shadow: var(--shadow-float); display: flex; flex-direction: column; gap: 12px; }
   .hd { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
   .hd b { font-size: 16px; font-weight: 800; }
-  .x { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--text-3); flex: none; }
+  .x { width: 28px; height: 28px; border-radius: 0; display: grid; place-items: center; color: var(--text-3); flex: none; }
   .x:hover { background: var(--surface-2); color: var(--text); }
   .x :global(svg) { width: 14px; height: 14px; }
   .lead { margin: 0; color: var(--text-2); font-size: 12.5px; line-height: 1.5; }
@@ -58,6 +58,6 @@
   h4 { margin: 0 0 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); }
   .row { display: flex; align-items: center; gap: 12px; height: 28px; }
   .row .nm { flex: 1; min-width: 0; font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  kbd { font-family: inherit; font-size: 11px; font-weight: 700; color: var(--text-2); background: var(--surface-3); border-radius: 5px; padding: 3px 7px; white-space: nowrap; }
+  kbd { font-family: inherit; font-size: 11px; font-weight: 700; color: var(--text-2); background: var(--surface-3); border-radius: 0; padding: 3px 7px; white-space: nowrap; }
   .note { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--text-3); }
 </style>

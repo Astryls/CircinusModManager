@@ -361,8 +361,8 @@
   .hint.att { color: var(--amber); }
   .report { margin-top: 12px; font-size: 12.5px; color: var(--text-2); line-height: 1.5; }
   .prog { display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; align-items: center; }
-  .bar { grid-column: 1 / -1; height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
-  .bar i { display: block; height: 100%; background: var(--amber); border-radius: 4px; transition: width 0.3s; }
+  .bar { grid-column: 1 / -1; height: 8px; border-radius: 0; background: var(--surface-3); overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--amber); border-radius: 0; transition: width 0.3s; }
   .pl { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; color: var(--text-2); min-width: 0; }
   .pl b { font-size: 14px; color: var(--text); }
   .cur { color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -371,13 +371,13 @@
   .input.sm { height: 28px; font-size: 12.5px; width: 220px; }
   .rows { display: flex; flex-direction: column; gap: 1px; }
   .hdr { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); height: 28px; align-items: center; padding: 0 8px; gap: 12px; }
-  .row { height: 34px; border-radius: 9px; font-size: 13px; padding: 0 8px; gap: 12px; align-items: center; text-align: left; width: 100%; color: var(--text-2); }
+  .row { height: 34px; border-radius: 0; font-size: 13px; padding: 0 8px; gap: 12px; align-items: center; text-align: left; width: 100%; color: var(--text-2); }
   .row:hover { background: var(--surface-2); color: var(--text); }
   /* Five columns that cannot collide: the def, the path, who shipped it, an arrow with a count
      for everyone in between, and what the game ends up with. Thirty steps used to go on one line
      and print over each other; now they are a click away, one per line. */
   .hdr.ch, .row.ch { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.3fr) minmax(0, 1fr) 56px minmax(0, 1fr); }
-  .ch-row { border-radius: 9px; }
+  .ch-row { border-radius: 0; }
   .ch-row.open { background: var(--surface-2); }
   .ch-row.open .row { background: transparent; color: var(--text); }
   .path .cnt { margin-left: 8px; font-family: var(--sans); font-size: 11px; color: var(--text-3); }
@@ -386,7 +386,7 @@
   .step b { font-size: 12.5px; color: var(--text-3); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 12ch; flex: none; }
   .step.win b { color: var(--text); font-weight: 700; }
   .via { display: inline-flex; align-items: center; justify-content: center; gap: 4px; color: var(--text-4); white-space: nowrap; }
-  .via em { font-style: normal; font-size: 11px; font-weight: 700; color: var(--amber); background: var(--amber-soft); padding: 1px 6px; border-radius: 999px; }
+  .via em { font-style: normal; font-size: 11px; font-weight: 700; color: var(--amber); background: var(--amber-soft); padding: 1px 6px; border-radius: 0; }
   .history { display: flex; flex-direction: column; gap: 2px; padding: 4px 12px 10px 20px; }
   .hs { display: grid; grid-template-columns: 24px 10px minmax(0, 1.4fr) minmax(0, 0.8fr) minmax(0, 1fr); gap: 10px; align-items: center; height: 26px; font-size: 12.5px; color: var(--text-2); }
   .hs .n { color: var(--text-4); font-size: 11px; text-align: right; }
@@ -406,7 +406,7 @@
   .path { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dp .from { color: var(--text-3); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dp .win { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .pm { border-radius: 9px; }
+  .pm { border-radius: 0; }
   .pm[open] { background: var(--surface-2); }
   .pm summary, .quiet summary { cursor: pointer; display: flex; align-items: center; gap: 10px; padding: 6px 10px; font-size: 13px; color: var(--text-2); }
   .pm summary b { color: var(--text); }
@@ -438,13 +438,13 @@
   .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 2px 2px 10px; }
   .lg { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-3); }
   .tree { display: flex; flex-direction: column; gap: 1px; max-height: 460px; overflow: auto; }
-  .tn { display: flex; align-items: center; gap: 8px; height: 24px; padding-right: 8px; border-radius: 6px; font-size: 12.5px; white-space: nowrap; }
+  .tn { display: flex; align-items: center; gap: 8px; height: 24px; padding-right: 8px; border-radius: 0; font-size: 12.5px; white-space: nowrap; }
   .tn:hover { background: var(--surface-2); }
   .tn.hit { background: var(--amber-soft); }
   .tn .tag { color: var(--text-2); }
   .tn .at { color: var(--text-3); }
   .tn .val { color: var(--text); font-weight: 500; }
-  .tn .inh { font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-4); background: var(--surface-3); padding: 1px 6px; border-radius: 5px; }
+  .tn .inh { font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-4); background: var(--surface-3); padding: 1px 6px; border-radius: 0; }
   .tn .who { margin-left: auto; padding-left: 16px; font-size: 11px; color: var(--text-3); opacity: 0; }
   .tn:hover .who, .tn.hit .who { opacity: 1; }
   .adv { margin-top: 12px; border-top: 1px solid var(--surface-3); padding-top: 8px; }

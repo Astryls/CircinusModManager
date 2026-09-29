@@ -103,18 +103,18 @@
 </div>
 
 <style>
-  .ged { display: flex; flex-direction: column; gap: 8px; padding: 10px; margin: 2px -6px 8px; border-radius: 10px; background: var(--surface-2); }
+  .ged { display: flex; flex-direction: column; gap: 8px; padding: 10px; margin: 2px -6px 8px; border-radius: 0; background: var(--surface-2); }
   .top { display: flex; gap: 6px; align-items: center; }
   .ged .input { height: 28px; font-size: 12.5px; background: var(--surface-3); }
-  .x { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: var(--text-3); flex: none; }
+  .x { width: 26px; height: 26px; border-radius: 0; display: grid; place-items: center; color: var(--text-3); flex: none; }
   .x:hover { background: var(--surface-3); color: var(--text); }
   .x :global(svg) { width: 12px; height: 12px; }
   .colors { display: flex; gap: 6px; flex-wrap: wrap; }
-  .sw { width: 18px; height: 18px; border-radius: 50%; background: var(--c); border: 2px solid transparent; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25) inset; }
+  .sw { width: 18px; height: 18px; border-radius: 0; background: var(--c); border: 2px solid transparent; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25) inset; }
   .sw.on { border-color: var(--text); }
   .sw:hover { transform: scale(1.1); }
   .fld { display: grid; grid-template-columns: 1fr; gap: 4px; font-size: 12px; color: var(--text-2); font-weight: 600; }
-  .sel { height: 26px; border: 0; border-radius: 7px; background: var(--surface-3); color: var(--text); font-size: 12px; padding: 0 6px; min-width: 0; width: 100%; }
+  .sel { height: 26px; border: 0; border-radius: 0; background: var(--surface-3); color: var(--text); font-size: 12px; padding: 0 6px; min-width: 0; width: 100%; }
   .hint { color: var(--text-3); font-size: 11.5px; line-height: 1.4; margin: 0; }
   .acts { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .acts .sp { flex: 1; }

@@ -270,27 +270,27 @@
   .lane path { fill: none; opacity: 0.8; transition: opacity 0.12s; }
   .lane path.on { opacity: 1; }
   .lane path.cold { opacity: 0.15; }
-  .tally { position: absolute; transform: translate(-50%, -50%); min-width: 22px; height: 19px; padding: 0 6px; border-radius: 999px; background: var(--surface-3); color: var(--text-2); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; box-shadow: 0 0 0 3px var(--surface); }
+  .tally { position: absolute; transform: translate(-50%, -50%); min-width: 22px; height: 19px; padding: 0 6px; border-radius: 0; background: var(--surface-3); color: var(--text-2); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; box-shadow: 0 0 0 3px var(--surface); }
   .tally:hover, .tally.on { background: var(--amber); color: var(--amber-ink); }
 
   /* one phase's worth of departures or arrivals */
-  .grp { background: var(--surface); border-radius: 12px; padding: 7px 8px 8px; display: flex; flex-direction: column; gap: 3px; min-width: 0; transition: opacity 0.12s; }
+  .grp { background: var(--surface); border-radius: 0; padding: 7px 8px 8px; display: flex; flex-direction: column; gap: 3px; min-width: 0; transition: opacity 0.12s; }
   .grp.dim { opacity: 0.35; }
-  .ghead { display: grid; grid-template-columns: 8px auto minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; height: 28px; padding: 0 6px; border-radius: 8px; text-align: left; }
+  .ghead { display: grid; grid-template-columns: 8px auto minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; height: 28px; padding: 0 6px; border-radius: 0; text-align: left; }
   .ghead:hover { background: var(--surface-2); }
   .ghead.on { background: var(--amber-soft); }
   .ghead b { font-size: 12.5px; font-weight: 700; color: var(--text); white-space: nowrap; }
   .ghead .where { font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ghead .n { font-size: 11.5px; font-weight: 700; color: var(--text-2); }
 
-  .mv { display: grid; grid-template-columns: 46px 8px minmax(0, 1fr) auto; align-items: center; gap: 9px; width: 100%; height: 26px; padding: 0 6px; border-radius: 7px; background: var(--bg-2); text-align: left; transition: opacity 0.12s; }
+  .mv { display: grid; grid-template-columns: 46px 8px minmax(0, 1fr) auto; align-items: center; gap: 9px; width: 100%; height: 26px; padding: 0 6px; border-radius: 0; background: var(--bg-2); text-align: left; transition: opacity 0.12s; }
   .mv:hover { background: var(--surface-2); }
   .mv.sel { box-shadow: inset 0 0 0 1px var(--amber); }
   .mv.dim { opacity: 0.28; }
   .mv .num { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--text-3); text-align: right; }
   .mv .nm { font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .mv .to { font-size: 10.5px; color: var(--text-3); white-space: nowrap; }
-  .more { height: 22px; margin-top: 1px; border-radius: 7px; font-size: 11px; font-weight: 600; color: var(--text-3); background: repeating-linear-gradient(115deg, var(--bg-2) 0 7px, var(--surface) 7px 14px); }
+  .more { height: 22px; margin-top: 1px; border-radius: 0; font-size: 11px; font-weight: 600; color: var(--text-3); background: repeating-linear-gradient(115deg, var(--bg-2) 0 7px, var(--surface) 7px 14px); }
   .more:hover { color: var(--text); }
 
   .board .hint { grid-row: 3; grid-column: 1 / -1; margin: 0; padding: 0 4px; font-size: 11.5px; color: var(--text-3); line-height: 1.4; }

@@ -330,7 +330,7 @@
   .inspector { display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; overflow: hidden auto; }
   .inspector .card { flex: none; min-width: 0; }
   .hero { display: flex; gap: 12px; align-items: flex-start; }
-  .thumb { width: 64px; height: 64px; border-radius: 12px; flex: none; object-fit: cover; box-shadow: var(--shadow-card); }
+  .thumb { width: 64px; height: 64px; border-radius: 0; flex: none; object-fit: cover; box-shadow: var(--shadow-card); }
   .mono-tile { display: grid; place-items: center; font: 800 18px var(--font); color: #fff; letter-spacing: -0.02em; background: linear-gradient(150deg, var(--c1), var(--c2)); }
   .hero .t { min-width: 0; }
   .hero .t b { display: block; font-size: 16px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.15; }
@@ -344,27 +344,27 @@
   .wkv .band { margin-left: 6px; vertical-align: middle; }
   .lnk { color: var(--blue); font-weight: 600; }
   .lnk:hover { text-decoration: underline; }
-  .sel { height: 28px; border: 0; border-radius: 7px; background: var(--surface-3); color: var(--text); font-size: 12.5px; padding: 0 8px; max-width: 100%; min-width: 0; width: 100%; }
+  .sel { height: 28px; border: 0; border-radius: 0; background: var(--surface-3); color: var(--text); font-size: 12.5px; padding: 0 8px; max-width: 100%; min-width: 0; width: 100%; }
   .kv .sel { width: auto; max-width: 180px; }
   .newg { display: flex; gap: 6px; margin-top: 6px; justify-content: flex-end; }
   .newg .input { height: 28px; font-size: 12.5px; min-width: 0; flex: 1; }
   .halo .hint { color: var(--text-3); font-size: 11.5px; line-height: 1.4; margin: 6px 0 0; }
   .halo .ph2 { display: flex; align-items: center; gap: 8px; font-weight: 600; }
   .halo .why { color: var(--text-3); font-size: 12px; margin-top: 4px; line-height: 1.4; }
-  .halo .move { margin-top: 10px; background: var(--surface-2); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; color: var(--text-2); }
+  .halo .move { margin-top: 10px; background: var(--surface-2); border-radius: 0; padding: 10px 12px; font-size: 12.5px; color: var(--text-2); }
   .halo .move b { color: var(--text); }
   .ctl { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; font-size: 12.5px; }
   .ctl .switch { font-size: 12.5px; }
   .ctl .fld { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; font-size: 12.5px; color: var(--text-2); font-weight: 600; }
   .wmeta { font-size: 12px; color: var(--text-3); margin: 8px 0; line-height: 1.5; }
   .rules { display: flex; flex-direction: column; gap: 2px; }
-  .rule { display: grid; grid-template-columns: 16px 62px minmax(0, 1fr) auto; gap: 7px; align-items: center; height: 30px; padding: 0 6px; border-radius: 8px; font-size: 12.5px; }
+  .rule { display: grid; grid-template-columns: 16px 62px minmax(0, 1fr) auto; gap: 7px; align-items: center; height: 30px; padding: 0 6px; border-radius: 0; font-size: 12.5px; }
   .rule:hover { background: var(--surface-2); }
   .st { width: 16px; height: 16px; display: grid; place-items: center; }
   .st :global(svg) { width: 15px; height: 15px; }
   .ty { font: 600 10.5px var(--mono); color: var(--text-3); text-transform: uppercase; }
   .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .srcb { font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; padding: 2px 6px; border-radius: 5px; background: var(--surface-3); color: var(--text-3); }
+  .srcb { font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; padding: 2px 6px; border-radius: 0; background: var(--surface-3); color: var(--text-3); }
   .srcb.community { color: var(--teal); } .srcb.user { color: var(--violet); } .srcb.halo { color: var(--amber); }
   .issues .it { display: flex; gap: 10px; padding: 8px 0; font-size: 12.5px; color: var(--text-2); line-height: 1.4; }
   .issues .it + .it { border-top: 1px solid rgba(255, 255, 255, 0.05); }
@@ -385,7 +385,7 @@
   .patches .kv dd.mono { font-size: 11.5px; }
   .patches .fights { margin-top: 10px; display: flex; flex-direction: column; gap: 2px; }
   .patches .fh { color: var(--text-3); font-size: 11.5px; line-height: 1.4; margin-bottom: 4px; }
-  .patches .fr { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; text-align: left; padding: 5px 7px; border-radius: 8px; }
+  .patches .fr { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; text-align: left; padding: 5px 7px; border-radius: 0; }
   .patches .fr:hover { background: var(--surface-2); }
   .patches .fr .mono { font-size: 12px; color: var(--amber); font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .patches .fr .ow { font-size: 11.5px; color: var(--text-3); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

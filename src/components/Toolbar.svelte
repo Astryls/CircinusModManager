@@ -185,7 +185,7 @@
   .menu { position: absolute; top: 38px; left: 0; z-index: 20; width: 300px; padding: 10px; box-shadow: var(--shadow-float); display: flex; flex-direction: column; gap: 2px; }
   .menu .label { margin: 8px 0 4px 6px; }
   .menu .label:first-child { margin-top: 0; }
-  .opt { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 8px; font-size: 13px; color: var(--text-2); text-align: left; width: 100%; }
+  .opt { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 0; font-size: 13px; color: var(--text-2); text-align: left; width: 100%; }
   .opt:hover { background: var(--surface-2); color: var(--text); }
   .opt.on { background: var(--surface-3); color: var(--text); }
   .opt .ico { width: 16px; height: 16px; display: grid; place-items: center; flex: none; }

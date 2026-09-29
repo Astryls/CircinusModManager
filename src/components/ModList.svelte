@@ -655,7 +655,7 @@
   /* Dropping into the inactive pane switches mods off; there is no position to choose, so the
      pane itself is the target rather than a line between two rows. */
   .list.take { box-shadow: var(--shadow-card), inset 0 0 0 2px var(--amber); }
-  .ghost { position: fixed; z-index: 30; pointer-events: none; background: var(--surface-4); color: var(--text); font-size: 12.5px; font-weight: 600; padding: 6px 10px; border-radius: 8px; box-shadow: var(--shadow-float); max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ghost { position: fixed; z-index: 30; pointer-events: none; background: var(--surface-4); color: var(--text); font-size: 12.5px; font-weight: 600; padding: 6px 10px; border-radius: 0; box-shadow: var(--shadow-float); max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .spacer { position: relative; }
   /* One grid for the column header and every row, so the columns line up; the template is
      built in the script (dragged widths, optional columns) and handed down as --cols. */
@@ -678,17 +678,17 @@
   .ph .n { font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-2); }
   .ph .c { font-size: 11px; color: var(--text-3); font-weight: 600; }
   .ph .note { margin-left: auto; font-size: 11.5px; color: var(--text-3); }
-  .row { position: absolute; left: 0; right: 0; height: 40px; border-radius: var(--r-row); cursor: default; }
+  .row { position: absolute; left: 0; right: 0; height: 40px; border-radius: 0; cursor: default; }
   .row:hover { background: var(--surface-2); }
   .row.sel { background: var(--surface-3); }
   .row.off { opacity: 0.72; }
   .row.off.sel, .row.off:hover { opacity: 1; }
   /* Side by side, the mods HALO would move are the ones worth finding in the other pane. */
   .row.moved { box-shadow: inset 2px 0 0 var(--amber); }
-  .row.drop-before::before, .row.drop-after::after { content: ""; position: absolute; left: 8px; right: 8px; height: 2px; background: var(--amber); border-radius: 1px; }
+  .row.drop-before::before, .row.drop-after::after { content: ""; position: absolute; left: 8px; right: 8px; height: 2px; background: var(--amber); border-radius: 0; }
   .row.drop-before::before { top: -1px; }
   .row.drop-after::after { bottom: -1px; }
-  .drop-line { position: absolute; left: 8px; right: 8px; height: 2px; background: var(--amber); border-radius: 1px; }
+  .drop-line { position: absolute; left: 8px; right: 8px; height: 2px; background: var(--amber); border-radius: 0; }
   .idx { font-family: var(--mono); font-size: 11.5px; color: var(--text-3); text-align: right; position: relative; }
   .grip { position: absolute; left: -4px; top: 50%; transform: translateY(-50%); color: var(--text-4); opacity: 0; display: grid; place-items: center; cursor: grab; touch-action: none; }
   .row:hover .grip, .row.sel .grip { opacity: 1; }
@@ -715,7 +715,7 @@
   .list.pane .hdr .b i { display: none; }
   .list.pane .ph .note { display: none; }
   .badges .b { display: grid; place-items: center; height: 24px; }
-  .flag { display: inline-flex; align-items: center; gap: 1px; height: 20px; padding: 0 2px; border-radius: 6px; }
+  .flag { display: inline-flex; align-items: center; gap: 1px; height: 20px; padding: 0 2px; border-radius: 0; }
   .flag :global(svg) { width: 15px; height: 15px; flex: none; }
   .flag em { font-style: normal; font-size: 10.5px; font-weight: 700; color: var(--text-2); }
   .delta { font: 700 11.5px var(--mono); text-align: right; color: var(--text-3); }
@@ -728,7 +728,7 @@
   .row.fresh { background: var(--green-soft); box-shadow: inset -2px 0 0 var(--green); }
   .row.fresh:hover { background: rgba(63, 196, 106, 0.2); }
   .row.fresh.sel { background: rgba(63, 196, 106, 0.26); }
-  .newtag { font-style: normal; margin-left: 7px; font-size: 9px; font-weight: 800; letter-spacing: 0.08em; color: var(--green); background: var(--green-soft); padding: 1px 5px; border-radius: var(--r-pill); vertical-align: 1px; }
+  .newtag { font-style: normal; margin-left: 7px; font-size: 9px; font-weight: 800; letter-spacing: 0.08em; color: var(--green); background: var(--green-soft); padding: 1px 5px; border-radius: 0; vertical-align: 1px; }
   /* In a pane the name is barely wide enough for the name; the edge and the dot say it instead. */
   .list.pane .newtag { display: none; }
   .newdot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }

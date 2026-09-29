@@ -105,26 +105,26 @@
   .hd { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
   .hd b { font-size: 16px; font-weight: 800; display: block; }
   .hd .sub { display: block; font-size: 12.5px; color: var(--text-3); margin-top: 2px; line-height: 1.4; }
-  .x { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--text-3); flex: none; }
+  .x { width: 28px; height: 28px; border-radius: 0; display: grid; place-items: center; color: var(--text-3); flex: none; }
   .x:hover { background: var(--surface-2); color: var(--text); }
   .x :global(svg) { width: 14px; height: 14px; }
   h4 { margin: 0 0 6px; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2); display: flex; align-items: center; gap: 8px; }
   .aside { color: var(--text-3); font-weight: 600; letter-spacing: 0; text-transform: none; }
   .hint { margin: 6px 0 0; color: var(--text-3); font-size: 12.5px; line-height: 1.45; }
   .pills { display: flex; flex-wrap: wrap; gap: 6px; }
-  .pill { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 7px; background: var(--surface-3); font-size: 12px; font-weight: 600; color: var(--text-2); max-width: 100%; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 0; background: var(--surface-3); font-size: 12px; font-weight: 600; color: var(--text-2); max-width: 100%; }
   .pill :global(svg) { width: 10px; height: 10px; flex: none; }
   .pill.add { color: var(--green); background: var(--green-soft); }
   .pill.rm { color: var(--red); background: var(--red-soft); }
-  .seg { display: inline-flex; background: var(--surface-2); border-radius: 9px; padding: 3px; gap: 2px; align-self: flex-start; }
-  .seg button { padding: 5px 10px; border-radius: 7px; font-size: 12.5px; font-weight: 600; color: var(--text-2); display: flex; gap: 6px; }
+  .seg { display: inline-flex; background: var(--surface-2); border-radius: 0; padding: 3px; gap: 2px; align-self: flex-start; }
+  .seg button { padding: 5px 10px; border-radius: 0; font-size: 12.5px; font-weight: 600; color: var(--text-2); display: flex; gap: 6px; }
   .seg button.on { background: var(--surface-4); color: var(--text); }
   .seg .num { color: var(--text-3); }
   .body { overflow: hidden auto; min-height: 0; padding-right: 4px; }
   .rows { display: flex; flex-direction: column; gap: 2px; }
-  .row { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px 8px; border-radius: 9px; }
+  .row { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px 8px; border-radius: 0; }
   .row:hover { background: var(--surface-2); }
-  .k { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-3); color: var(--text-2); }
+  .k { width: 22px; height: 22px; border-radius: 0; display: grid; place-items: center; background: var(--surface-3); color: var(--text-2); }
   .k :global(svg) { width: 11px; height: 11px; }
   .row.active .k { background: var(--green-soft); color: var(--green); }
   .row.missing .k { background: var(--amber-soft); color: var(--amber); }
@@ -132,7 +132,7 @@
   .nm b { font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .nm span { font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .acts { display: flex; gap: 4px; align-items: center; }
-  .ib { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--text-3); }
+  .ib { width: 28px; height: 28px; border-radius: 0; display: grid; place-items: center; color: var(--text-3); }
   .ib:hover { background: var(--surface-3); color: var(--text); }
   .ib :global(svg) { width: 14px; height: 14px; }
   .ft { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

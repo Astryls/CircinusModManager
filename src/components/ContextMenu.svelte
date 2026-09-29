@@ -202,7 +202,7 @@
   .head { padding: 6px 10px 8px; display: flex; flex-direction: column; gap: 2px; }
   .head b { font-size: 13px; }
   .head span { color: var(--text-3); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .it { display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 10px; border-radius: 8px; font-size: 13px; color: var(--text-2); text-align: left; width: 100%; white-space: nowrap; }
+  .it { display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 10px; border-radius: 0; font-size: 13px; color: var(--text-2); text-align: left; width: 100%; white-space: nowrap; }
   .it :global(svg) { width: 15px; height: 15px; flex: none; }
   .it:hover, .it:focus-visible { background: var(--surface-2); color: var(--text); }
   .it.danger { color: var(--red); }

@@ -102,11 +102,11 @@
   .dlg { width: min(620px, calc(100vw - 40px)); max-height: 70vh; padding: 10px; box-shadow: var(--shadow-float); display: flex; flex-direction: column; gap: 8px; }
   /* Not `.field`: that is a global form-row class that stacks its children, and a scoped rule
      that only adds to it inherits the stacking. Two different ideas should not share a name. */
-  .q { display: flex; flex-direction: row; align-items: center; gap: 8px; padding: 0 10px; height: 40px; border-radius: 10px; background: var(--surface-2); flex: none; }
+  .q { display: flex; flex-direction: row; align-items: center; gap: 8px; padding: 0 10px; height: 40px; border-radius: 0; background: var(--surface-2); flex: none; }
   .q :global(svg) { width: 17px; height: 17px; color: var(--text-3); flex: none; }
   .q input { flex: 1; min-width: 0; background: none; border: 0; outline: none; color: var(--text); font-size: 14px; font-family: inherit; }
   .rows { overflow: hidden auto; min-height: 0; display: flex; flex-direction: column; gap: 1px; }
-  .it { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; text-align: left; height: 34px; padding: 0 10px; border-radius: 8px; }
+  .it { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; text-align: left; height: 34px; padding: 0 10px; border-radius: 0; }
   .it.on { background: var(--surface-3); }
   .it .nm { font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .it .sec { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
@@ -114,7 +114,7 @@
      now, instead of leaving somebody searching for a word that has quietly stopped matching. */
   .it.off { opacity: 0.5; }
   .it.off .sec { color: var(--amber); }
-  kbd { font-family: inherit; font-size: 11px; font-weight: 700; color: var(--text-3); background: var(--surface-3); border-radius: 5px; padding: 2px 6px; white-space: nowrap; }
+  kbd { font-family: inherit; font-size: 11px; font-weight: 700; color: var(--text-3); background: var(--surface-3); border-radius: 0; padding: 2px 6px; white-space: nowrap; }
   .it.on kbd { color: var(--text-2); background: var(--surface-4); }
   .hint { color: var(--text-3); font-size: 12px; margin: 0; padding: 8px 10px; }
   .foot { border-top: 1px solid var(--surface-3); padding: 8px 10px 4px; flex: none; }

@@ -192,11 +192,11 @@
      amber banner is unreadable. This is a position in the review, and it takes the banner's own
      ink whichever kind of banner it is. */
   .step { flex: none; font-weight: 700; font-size: 12.5px; color: inherit; opacity: 0.8; }
-  .ico { width: 24px; height: 24px; border-radius: 50%; background: rgba(0, 0, 0, 0.18); display: grid; place-items: center; flex: none; }
+  .ico { width: 24px; height: 24px; border-radius: 0; background: rgba(0, 0, 0, 0.18); display: grid; place-items: center; flex: none; }
   .ico :global(svg) { width: 12px; height: 12px; }
   .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .t small { display: block; font-weight: 500; opacity: 0.8; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  button { font-weight: 800; padding: 6px 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.16); color: inherit; white-space: nowrap; }
+  button { font-weight: 800; padding: 6px 10px; border-radius: 0; background: rgba(0, 0, 0, 0.16); color: inherit; white-space: nowrap; }
   button:hover { background: rgba(0, 0, 0, 0.26); }
   /* The second way of doing the same job: offered, but quieter than the first. */
   button.alt { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, 0.22); }

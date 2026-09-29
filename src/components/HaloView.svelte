@@ -308,14 +308,14 @@
   .caution .txt { flex: 1; font-size: 13px; line-height: 1.5; color: var(--text); }
   .caution .ask { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-2); }
   .strip { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; margin: 4px 0 12px; }
-  .strip .ph { background: var(--surface-2); border-radius: 9px; padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .strip .ph { background: var(--surface-2); border-radius: 0; padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
   .strip .ph b { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .strip .ph span:not(.dot) { font-size: 11px; color: var(--text-3); line-height: 1.35; }
   .strip .dot { width: 7px; height: 7px; }
   /* The board: signals on the left, phases on the right, wires between them. */
   .board { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 150px minmax(200px, 240px); gap: 0; margin-top: 6px; }
   .signals { display: flex; flex-direction: column; gap: 6px; }
-  .sig { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px; background: var(--surface-2); }
+  .sig { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 0; background: var(--surface-2); }
   .sig.off { opacity: 0.5; }
   .sig .txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .sig b { font-size: 13px; }
@@ -323,16 +323,16 @@
   .sig details { font-size: 11.5px; color: var(--text-3); }
   .sig summary { cursor: pointer; }
   .sig .ids { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-  .sig .ids .mono { font-size: 11px; padding: 1px 6px; border-radius: 5px; background: var(--surface-3); color: var(--text-3); }
+  .sig .ids .mono { font-size: 11px; padding: 1px 6px; border-radius: 0; background: var(--surface-3); color: var(--text-3); }
   .sig .ids .mono.have { color: var(--text); }
   .sig .fixed { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-2); white-space: nowrap; }
-  .sel { height: 26px; border: 0; border-radius: 7px; background: var(--surface-3); color: var(--text); font-size: 12px; padding: 0 6px; max-width: 170px; }
+  .sel { height: 26px; border: 0; border-radius: 0; background: var(--surface-3); color: var(--text); font-size: 12px; padding: 0 6px; max-width: 170px; }
   .wires { grid-column: 1 / -1; grid-row: 1; position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
   .wires path { fill: none; stroke-width: 1.6px; opacity: 0.85; }
   .wires path.off { stroke-dasharray: 3 4; opacity: 0.3; }
   .signals { grid-column: 1; grid-row: 1; }
   .phases { grid-column: 3; grid-row: 1; display: flex; flex-direction: column; justify-content: space-between; gap: 6px; }
-  .phase { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 8px; padding: 8px 12px; border-radius: 10px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--surface-3); }
+  .phase { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 8px; padding: 8px 12px; border-radius: 0; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--surface-3); }
   .phase b { font-size: 12.5px; }
   .phase .n { color: var(--text-3); font-size: 12px; }
   .phase .note { grid-column: 2 / -1; font-size: 11px; color: var(--text-3); line-height: 1.35; }
@@ -340,14 +340,14 @@
   .add { display: flex; gap: 6px; margin-bottom: 8px; }
   .add .input { flex: 1; min-width: 0; height: 30px; font-size: 12.5px; }
   .rows { display: flex; flex-direction: column; gap: 4px; }
-  .row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 9px; background: var(--surface-2); }
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 0; background: var(--surface-2); }
   .row .nm { min-width: 0; display: flex; flex-direction: column; }
   .row .nm b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .row .nm span { font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .x { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; color: var(--text-3); }
+  .x { width: 24px; height: 24px; border-radius: 0; display: grid; place-items: center; color: var(--text-3); }
   .x:hover { background: var(--surface-3); color: var(--text); }
   .x :global(svg) { width: 11px; height: 11px; }
   .chips { flex-direction: row; flex-wrap: wrap; gap: 6px; }
-  .pill { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 4px 0 9px; border-radius: 7px; background: var(--surface-2); font-size: 12px; font-weight: 600; color: var(--text-2); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 4px 0 9px; border-radius: 0; background: var(--surface-2); font-size: 12px; font-weight: 600; color: var(--text-2); }
   @media (max-width: 1240px) { .strip { grid-template-columns: repeat(4, minmax(0, 1fr)); } .two { grid-template-columns: 1fr; } .board { grid-template-columns: minmax(0, 1fr) 90px 190px; } }
 </style>

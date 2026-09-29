@@ -222,24 +222,24 @@
   .hd { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
   .hd b { font-size: 16px; font-weight: 800; display: block; }
   .hd .sub { display: block; font-size: 12.5px; color: var(--text-3); margin-top: 2px; line-height: 1.45; max-width: 76ch; }
-  .x { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--text-3); flex: none; }
+  .x { width: 28px; height: 28px; border-radius: 0; display: grid; place-items: center; color: var(--text-3); flex: none; }
   .x:hover { background: var(--surface-2); color: var(--text); }
   .x :global(svg) { width: 14px; height: 14px; }
   .body { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 16px; min-height: 0; overflow: hidden; }
   .side { display: flex; flex-direction: column; gap: 2px; overflow: hidden auto; padding-right: 4px; }
-  .side .row { display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 9px; text-align: left; width: 100%; min-width: 0; }
+  .side .row { display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 0; text-align: left; width: 100%; min-width: 0; }
   .side .row:hover { background: var(--surface-2); }
   .side .row.on { background: var(--surface-3); }
   .side .nm { display: flex; flex-direction: column; min-width: 0; }
   .side .nm b { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .side .nm span { font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .add { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 9px; color: var(--text-2); font-weight: 600; font-size: 12.5px; margin-top: 4px; }
+  .add { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 0; color: var(--text-2); font-weight: 600; font-size: 12.5px; margin-top: 4px; }
   .add:hover { background: var(--surface-2); color: var(--text); }
   .add :global(svg) { width: 14px; height: 14px; }
   .detail { overflow: hidden auto; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding-right: 4px; }
   .dh { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
   h4 { margin: 0; font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
-  .tag { font-size: 11px; font-weight: 700; color: var(--green); background: var(--green-soft); border-radius: 6px; padding: 2px 7px; }
+  .tag { font-size: 11px; font-weight: 700; color: var(--green); background: var(--green-soft); border-radius: 0; padding: 2px 7px; }
   .acts { display: flex; gap: 6px; flex-wrap: wrap; }
   .label { margin-bottom: 4px; }
   .loc { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
@@ -247,16 +247,16 @@
   .lt b { display: block; font-size: 13px; }
   .lt span { display: block; font-size: 11.5px; color: var(--text-3); overflow-wrap: anywhere; }
   .lv { display: flex; gap: 6px; align-items: center; min-width: 0; }
-  .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); background: var(--surface-2); padding: 5px 8px; border-radius: 7px; user-select: text; }
+  .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); background: var(--surface-2); padding: 5px 8px; border-radius: 0; user-select: text; }
   .lv .input { height: 30px; font-size: 12.5px; flex: 1; }
   .hint { color: var(--text-3); font-size: 12.5px; line-height: 1.45; margin: 8px 0 0; }
   .hint .mono { color: var(--text-2); user-select: text; overflow-wrap: anywhere; }
-  .ask { color: var(--text-2); background: var(--surface-2); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; line-height: 1.45; }
+  .ask { color: var(--text-2); background: var(--surface-2); border-radius: 0; padding: 10px 12px; font-size: 12.5px; line-height: 1.45; }
   .ask div { display: flex; gap: 6px; margin-top: 8px; }
   .opt { display: flex; align-items: center; gap: 10px; margin: 6px 0 10px; font-size: 13px; }
   .opt .l { width: 100px; color: var(--text-2); }
-  .seg { display: inline-flex; background: var(--surface-2); border-radius: 9px; padding: 3px; gap: 2px; }
-  .seg button { padding: 5px 10px; border-radius: 7px; font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+  .seg { display: inline-flex; background: var(--surface-2); border-radius: 0; padding: 3px; gap: 2px; }
+  .seg button { padding: 5px 10px; border-radius: 0; font-size: 12.5px; font-weight: 600; color: var(--text-2); }
   .seg button.on { background: var(--surface-4); color: var(--text); }
   .switch { margin: 6px 0; align-items: center; display: flex; }
   .switch.sm { font-size: 12px; color: var(--text-3); font-weight: 600; margin: 2px 0 0; }
