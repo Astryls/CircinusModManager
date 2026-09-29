@@ -4,6 +4,33 @@
   import { api, pickFile, pickFolder, inTauri, openUrl } from "$lib/api";
   import { I } from "$lib/icons";
   import { theme } from "$lib/theme.svelte";
+  import { SORTS, sortLabel, VIEWS, type SortKey, type View } from "$lib/store.svelte";
+
+  /** The optional list columns, in the order they appear in the list. Cost is absent on purpose:
+   *  it follows `showWeight`, because it needs figures Circinus only has once they are fetched. */
+  const LIST_COLUMNS = [
+    { key: "time", label: "Time", hint: "Seconds this mod is expected to add to loading" },
+    { key: "load", label: "Load", hint: "The same estimate as a share of the whole list" },
+    { key: "loadmedian", label: "Median", hint: "What the mod typically adds to a start-up on everyone else's machine, from circinus.sh" },
+    { key: "versions", label: "Versions", hint: "The game versions the mod says it supports" },
+    { key: "phase", label: "Phase", hint: "Where HALO files the mod" },
+    { key: "group", label: "Group", hint: "The group the mod is in" }
+  ];
+  /** Settings is left out: opening on the settings page would be a window that never shows you
+   *  your mods, and anyone who set it would have to come back here to undo it. */
+  const VIEW_LABEL: Record<View, string> = {
+    order: "Load order",
+    library: "Library",
+    downloads: "Downloads",
+    textures: "Textures",
+    patches: "Patches",
+    analyzer: "Analyzer",
+    loadtimes: "Load times",
+    defs: "Defs",
+    halo: "HALO",
+    settings: "Settings"
+  };
+  const VIEW_CHOICES = VIEWS.filter((v) => v !== "settings").map((v) => ({ key: v, label: VIEW_LABEL[v] }));
   import { DISCORD, type LaunchInfo, type LaunchMethod, type Locations } from "$lib/types";
 
   const s = $derived(store.snap?.settings);
@@ -279,6 +306,61 @@
       <p class="hint">This applies to the dark paper only, and takes effect the moment you switch back to it. The theme is remembered on this machine and never travels with a mod list.</p>
     </section>
 
+    <!-- The list itself: what it shows, and where it starts. Kept apart from Sorting below,
+         which is about how HALO arranges the order rather than about this window. -->
+    <section class="card">
+      <h3>The list <span class="aside">{store.listColumns.length} optional column{store.listColumns.length === 1 ? "" : "s"}</span></h3>
+
+      <p class="hint">Columns beyond the mod name and its package id. A narrow window drops them from the right rather than squeezing the names past reading, so the order here is the order they go.</p>
+      <div class="chips">
+        {#each LIST_COLUMNS as c}
+          <button class="chip" class:on={store.listColumns.includes(c.key)} title={c.hint} onclick={() => store.setListColumn(c.key, !store.listColumns.includes(c.key))}>{c.label}</button>
+        {/each}
+      </div>
+      <p class="hint">Cost is not in here: it follows <b>Show the figure next to each mod</b> under Performance figures, because it needs figures Circinus only has once they are fetched.</p>
+
+      <div class="fld">
+        <label for="defview">Open on</label>
+        <select id="defview" class="input" value={s?.defaultView || "order"} onchange={(e) => store.updateSettings({ defaultView: e.currentTarget.value })}>
+          {#each VIEW_CHOICES as v}<option value={v.key}>{v.label}</option>{/each}
+        </select>
+        <p class="hint">Which page Circinus shows when it starts. Applied once, when the window opens, so it is a starting position rather than a page you keep being sent back to.</p>
+      </div>
+
+      <div class="fld">
+        <label for="defsort">Open sorted by</label>
+        <div class="row">
+          <select id="defsort" class="input" value={s?.defaultSort || "order"} onchange={(e) => store.updateSettings({ defaultSort: e.currentTarget.value })}>
+            {#each SORTS as k}<option value={k}>{sortLabel(k)}</option>{/each}
+          </select>
+          {#if (s?.defaultSort || "order") !== "order"}
+            <select class="input dir" aria-label="Sort direction" value={s?.defaultSortAsc === false ? "desc" : "asc"} onchange={(e) => store.updateSettings({ defaultSortAsc: e.currentTarget.value === "asc" })}>
+              <option value="asc">Smallest or A first</option>
+              <option value="desc">Largest or Z first</option>
+            </select>
+          {/if}
+        </div>
+        <p class="hint">
+          {#if (s?.defaultSort || "order") === "order"}
+            The load order is the only ordering that is true of anything outside this window, which is why it is the default. Dragging is refused while the list is sorted by anything else, since a drop between two rows of an alphabetical list writes a position nobody chose.
+          {:else}
+            Circinus will open sorted by {sortLabel((s?.defaultSort ?? "order") as SortKey).toLowerCase()}. Dragging is refused while a list is sorted, so clear the sort from the column heading before rearranging.
+          {/if}
+        </p>
+      </div>
+
+      <div class="fld">
+        <label for="dismissed">Notices you have put down</label>
+        <p class="hint" id="dismissed">
+          Each row carries one mark for the most serious thing it has to say, and clicking it shows the rest and offers to put any of them down. A dismissal only hides the mark: the Analyzer still lists every issue, because it is the complete index.
+        </p>
+        <div class="row">
+          <button class="btn sm" disabled={!store.dismissedNotices.size} onclick={() => store.clearDismissedNotices()}>Bring them all back</button>
+          <span class="hint">{store.dismissedNotices.size ? `${store.dismissedNotices.size} put down` : "Nothing put down"}</span>
+        </div>
+      </div>
+    </section>
+
     <section class="card">
       <h3>Sorting</h3>
       <label class="switch"><input type="checkbox" checked={s?.alphabeticalWithinPhase ?? false} onchange={(e) => store.updateSettings({ alphabeticalWithinPhase: e.currentTarget.checked })} />Sort alphabetically inside each phase</label>
@@ -342,6 +424,13 @@
   .unread .ur { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: 10px; color: var(--text-2); overflow-wrap: anywhere; }
   .unread .ur .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hint { color: var(--text-3); font-size: 12.5px; line-height: 1.45; margin: 6px 0 0; }
+  .fld { margin-top: 14px; }
+  .fld > label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
+  /* Wide enough for the longest sort name and no wider: a select stretched across the card
+     reads as a text field somebody forgot to fill in. */
+  .fld select.input { max-width: 260px; }
+  .fld select.dir { max-width: 200px; }
+  .fld .row { margin-top: 0; }
   .dbrow { display: flex; align-items: center; gap: 12px; padding: 6px 0; font-weight: 500; }
   .dbt { display: flex; flex-direction: column; min-width: 0; }
   .dbt b { font-size: 13px; font-weight: 600; }

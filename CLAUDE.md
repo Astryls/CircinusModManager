@@ -112,7 +112,41 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   same estimate as a share of the list, **Cost** its frame-time share from circinus.sh. Time and
   Load come from one number (`contents.load.scoreMs`) so they always agree; only Load is
   coloured, since colouring both would draw one fact twice. All three are estimates from what the
-  folder holds, and every tooltip says so.
+  folder holds, and every tooltip says so. **Median** is the fourth and the only one that is not
+  an estimate: what the mod typically adds to a start-up on *other people's* machines, measured
+  by Loading Progress and pooled by circinus.sh (`Weight::load_ms_median`). It is wall-clock
+  milliseconds spent once, so it is never added to Cost and never compared with it, and a mod
+  nobody has timed shows a dash — the site sends `-1` for that and a zero there would be a
+  measurement nobody took.
+- **One notice column, and severity decides what it shows.** There used to be six columns of
+  icons (Changed, Update, Errors, Warning, Notes, Pinned) costing 232px of every row for ever,
+  and the reader still had to scan all six to answer one question. Now there is one mark, it
+  shows the most serious thing the row carries, and the 190px goes to the mod name.
+  `src/lib/notices.ts` holds the whole rule and is deliberately free of runes, the store and
+  Svelte, so "which of these seven is the one to show" can be tested without rendering a row.
+  `NOTICE_ORDER` *is* the ranking; nothing else defines it. A pinned mod with an error shows the
+  error, and the mock pins one that has an error so `notices.cjs` can prove it — a corpus where
+  no row holds two notices cannot tell a correct ranking from a broken one.
+  **Dismissal hides the mark and nothing else.** The Analyzer still lists every issue, because
+  it is the complete index and one that quietly drops rows is worse than none; this is the
+  bargain `muted` already makes for incompatible pairs, and the reasoning in that entry applies
+  here word for word. The popover shows what has been put down and offers it straight back, and
+  Settings has the same offer in bulk — a dismissal nobody can find again is a memory hole
+  rather than a preference. A pin is the one notice that cannot be dismissed: it is a thing the
+  user did, so the button unpins instead.
+  Keys are `<packageId>|<kind>|<token>`, on the package id like `muted` so a resubscribe does
+  not undo the decision. **The token is what stops a dismissal outliving its subject**: "I have
+  seen this update" means *this* update, so the token is the author's publish time and the next
+  release raises the mark again. A standing condition has no token and stays down until brought
+  back.
+- Where the window opens is a setting, and it is applied **once**, on the first snapshot
+  (`applyOpeningPreferences`). Re-applying it on a later snapshot would drag somebody back to
+  the load order every time settings were saved. A `defaultView` or `defaultSort` this build
+  does not have falls through to the load order rather than failing, because settings written
+  by a newer Circinus must not be able to open a window onto nothing. The mock seeds both from
+  the query string (`?open=loadtimes&sort=name`), since its settings live in a module and a
+  reload throws away whatever the window wrote — "set it, restart, check" is not something the
+  browser mock can do.
 - Sorting: any column heading orders the list, and the Sort menu in the toolbar offers the same
   keys plus the ones that are not columns — date modified, date updated on Steam, Steam id. The
   load order is the default and the only real one. Sorting `visibleActive` rather than the

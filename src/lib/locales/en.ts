@@ -130,6 +130,8 @@ export const EN: Catalogue = {
   "toolbar.col.time.title": "Seconds this mod is expected to add to the game's loading time",
   "toolbar.col.load": "Load",
   "toolbar.col.load.title": "Expected share of the list's loading time",
+  "toolbar.col.loadmedian": "Median",
+  "toolbar.col.loadmedian.title": "What this mod typically adds to a start-up on everyone else's machine, measured by Loading Progress and pooled by circinus.sh",
   "toolbar.col.versions": "Versions",
   "toolbar.col.versions.title": "Game versions the mod says it supports",
   "toolbar.col.phase": "Phase",
@@ -224,6 +226,27 @@ export const EN: Catalogue = {
   "sharing.settings.rotatehint": "Only after you have deleted the old id's data: the delete is keyed on the id, so a new one first would strand the old runs.",
   "sharing.settings.separate": "This id is the mod manager's own. The Circinus Performance Analyzer has a different one, so load runs and frame runs cannot be tied to the same machine, and each has to be deleted separately.",
   "sharing.settings.review": "What gets sent",
+  // ---- the notices on a row, and the panel that lists them ----------------------------------
+  // One mark per row showing the most serious thing it has to say. The panel is where the rest
+  // lives, and where any of them can be put down.
+  "notice.error": "Error",
+  "notice.warning": "Warning",
+  "notice.update": "Update available",
+  "notice.note": "HALO note",
+  "notice.changed": "Changed",
+  "notice.new": "New",
+  "notice.pinned": "Pinned",
+  "notice.aria": "Notices for {name}",
+  "notice.none": "Nothing to report.",
+  "notice.dismiss": "Stop showing this on the row. The Analyzer still lists it.",
+  "notice.dismiss.aria": "Dismiss this notice",
+  "notice.unpin": "Unpin, so HALO can move this mod again",
+  "notice.unpin.aria": "Unpin",
+  "notice.restore": "Show this on the row again",
+  "notice.restore.aria": "Bring this notice back",
+  "notice.putdown": "Put down",
+  "notice.putdown.also": "Put down, and not shown on the row",
+
   // ---- the load times page ----------------------------------------------------------------
   // Two sources, and the page exists to keep them apart: what Loading Progress measured here,
   // and the median of what it measured everywhere else. Both are that mod's work.

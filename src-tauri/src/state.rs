@@ -44,9 +44,26 @@ pub struct Settings {
     pub halo_advanced: bool,
     /// Column widths the user dragged in the list, in CSS pixels, by column key (`name`, `pkg`).
     pub columns: HashMap<String, u32>,
-    /// The optional list columns that are shown: `load`, `versions`, `phase`, `group`.
-    /// (The performance cost column follows `show_weight`.)
+    /// The optional list columns that are shown: `time`, `load`, `loadmedian`, `versions`,
+    /// `phase`, `group`. (The performance cost column follows `show_weight`.)
     pub list_columns: Vec<String>,
+    /// The view Circinus opens on, as a `View` key from the window (`order`, `library`,
+    /// `loadtimes`, ...). Empty means the load order, which is what it has always done.
+    ///
+    /// Stored as a bare string rather than an enum on purpose: the window owns the list of
+    /// views, it changes more often than this file does, and a value Rust does not recognise
+    /// should fall back to the load order rather than fail the whole settings file and open a
+    /// Circinus that has forgotten the user's folders.
+    #[serde(default)]
+    pub default_view: String,
+    /// The sort the list opens with, as a `SortKey` (`order`, `name`, `time`, ...), and which
+    /// way round. Empty means the load order -- the only ordering that is true of anything
+    /// outside the window, which is why it is still the default.
+    #[serde(default)]
+    pub default_sort: String,
+    /// `true` for ascending. Only read when `default_sort` names something other than the order.
+    #[serde(default)]
+    pub default_sort_asc: bool,
     /// Bumped when a default changes so that stored settings can be brought along.
     pub settings_version: u32,
     pub dds: DdsSettings,
@@ -67,7 +84,7 @@ pub fn default_list_columns() -> Vec<String> {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { locations: Locations::default(), db_sources: rules::default_sources(), show_weight: false, include_local_runs: true, alphabetical_within_phase: false, update_databases_on_start: false, list_by_phase: true, halo_advanced: false, columns: HashMap::new(), list_columns: default_list_columns(), settings_version: SETTINGS_VERSION, dds: DdsSettings::default(), launch: LaunchSettings::default(), check_for_updates: true }
+        Settings { locations: Locations::default(), db_sources: rules::default_sources(), show_weight: false, include_local_runs: true, alphabetical_within_phase: false, update_databases_on_start: false, list_by_phase: true, halo_advanced: false, columns: HashMap::new(), list_columns: default_list_columns(), default_view: String::new(), default_sort: String::new(), default_sort_asc: true, settings_version: SETTINGS_VERSION, dds: DdsSettings::default(), launch: LaunchSettings::default(), check_for_updates: true }
     }
 }
 
@@ -247,6 +264,24 @@ pub struct UserData {
     /// pack rather than as one number, because catching up on one curator should not silence
     /// another.
     pub packs_read: HashMap<u64, i64>,
+    /// Row notices the user has waved away, as `<packageId>|<kind>|<token>`.
+    ///
+    /// Keyed on the **package id** rather than the uid, like `muted`, so unsubscribing and
+    /// resubscribing does not undo the decision; a mod is the same mod however many times its
+    /// folder is deleted.
+    ///
+    /// The **token** is what stops a dismissal outliving the thing it was about. "I have seen
+    /// this update" means this update: the token for an update notice is the timestamp the
+    /// author published, so the next release raises the mark again. A notice about a standing
+    /// condition -- an unmet rule, a mod above the game -- has an empty token, because there is
+    /// nothing for it to expire against and it stays down until it is brought back.
+    ///
+    /// Dismissing hides the mark on the row and nothing else. The Analyzer still lists every
+    /// issue, because it is the complete index and an index that quietly omits rows is worse
+    /// than no index. This is the same bargain `muted` already makes: a warning nobody can
+    /// dismiss is one people learn to look past, along with the true ones beside it.
+    #[serde(default)]
+    pub dismissed_notices: HashSet<String>,
     /// Collections whose curator the user would rather not hear from. Following a pack to see
     /// what mods it holds and not wanting a running commentary is a reasonable position, and the
     /// alternative to allowing it is people unfollowing the pack.

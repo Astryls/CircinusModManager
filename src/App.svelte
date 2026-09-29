@@ -27,6 +27,7 @@
   import HaloView from "./components/HaloView.svelte";
   import Toast from "./components/Toast.svelte";
   import ContextMenu from "./components/ContextMenu.svelte";
+  import NoticePopover from "./components/NoticePopover.svelte";
   import CollectionDialog from "./components/CollectionDialog.svelte";
   import InstancesDialog from "./components/InstancesDialog.svelte";
   import MovesView from "./components/MovesView.svelte";
@@ -178,6 +179,7 @@
   {#if store.showKeys}<Panel name="Shortcuts"><ShortcutsDialog /></Panel>{/if}
   {#if store.showPalette}<Panel name="Commands"><CommandPalette /></Panel>{/if}
   <Panel name="Menu"><ContextMenu /></Panel>
+  <Panel name="Notices"><NoticePopover /></Panel>
   <Toast />
   {#if store.loading}
     <div class="loading"><div class="spin"></div><span>{store.progress ? `Reading your mods… ${store.progress.done.toLocaleString()} of ${store.progress.total.toLocaleString()}` : store.error ? store.error : `${store.step}…`}</span></div>

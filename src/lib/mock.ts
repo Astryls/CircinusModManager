@@ -205,13 +205,20 @@ let user: UserData = {
   ],
   // Core, Frameworks and Performance fill themselves; the rest is assigned by hand.
   modGroups: { ...Object.fromEntries(SEED.filter((s) => !["core", "frameworks", "performance"].includes(s[6]) && !s[1].includes("Oskar")).map((s) => [uidOf(s[2]), s[6]])), [uidOf("orion.hospitality")]: "rjw-x1y2", [uidOf("dubwise.rimatomics")]: "rjw-x1y2" },
-  pinned: [],
+  // Pinned on purpose, and on a mod that also carries an error: the collapsing rule says the
+  // row shows the error and not the pin, and a corpus where no row holds two notices cannot
+  // tell a correct ranking from a broken one.
+  pinned: [uidOf("razuhl.rimmsqol")],
   phaseOverrides: {},
   notes: {},
   muted: [],
   ddsExcluded: [],
   packsRead: {},
   packsMuted: [],
+  // One notice already put down, so the popover's "bring it back" half is exercised and so the
+  // loadtest has something to find. A dismissal the mock never carries is a code path nobody
+  // sees until a user finds it.
+  dismissedNotices: [`${SEED.find((x) => x[2] === "jaxe.rimhud") ? "jaxe.rimhud" : ""}|note|`].filter((k) => k !== "|note|"),
   halo: { packagePhases: { "jaxe.rimhud": "content" }, namePhases: [{ needle: "Retro", phase: "texture" }], off: [], retarget: {} },
   collections: [
     (() => {
@@ -249,6 +256,13 @@ let settings: Settings = {
   listByPhase: typeof location === "undefined" || !location.search.includes("plain"),
   haloAdvanced: typeof location !== "undefined" && location.search.includes("advanced"),
   listColumns: ["time", "load", "versions"],
+  // Seeded from the query string, because the mock's settings live in a module and a reload
+  // throws away anything the window wrote -- so "set it in Settings, restart, check" is not a
+  // thing the browser mock can do. `?open=loadtimes&sort=name` stands in for a settings file
+  // that already says so, which is the state the code under test actually reads.
+  defaultView: new URLSearchParams(typeof location === "undefined" ? "" : location.search).get("open") ?? "",
+  defaultSort: new URLSearchParams(typeof location === "undefined" ? "" : location.search).get("sort") ?? "",
+  defaultSortAsc: !new URLSearchParams(typeof location === "undefined" ? "" : location.search).has("desc"),
   settingsVersion: 3,
   dds: { alphaFormat: "bc7", quality: "balanced", mipmaps: true, threads: 0, auto: false },
   launch: { method: "auto", executable: null, args: "", saveFirst: true },

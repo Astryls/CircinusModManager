@@ -7,6 +7,9 @@ import type { AuditReport, BuiltinRule, CollectionPreview, DefMatch, DefQuery, D
 import { CONSENT_VERSION, EMPTY_HALO, GROUP_COLORS, loadBand, PHASES, primaryUid, severityOf, VANILLA_SECS, type LoadBand, type Severity } from "./types";
 
 export type View = "order" | "library" | "downloads" | "textures" | "defs" | "patches" | "analyzer" | "loadtimes" | "halo" | "settings";
+/** Every view, for the "open on" setting. A stored value that is not in here falls through to
+ *  the load order, so settings from a newer build cannot open a window onto nothing. */
+export const VIEWS: View[] = ["order", "library", "downloads", "textures", "defs", "patches", "analyzer", "loadtimes", "halo", "settings"];
 
 export type Tab = "active" | "inactive" | "all" | "new";
 
@@ -489,6 +492,37 @@ class Store {
     return this.updateUser((u) => ({ ...u, halo: patch(structuredClone(u.halo ?? EMPTY_HALO)) }));
   }
   weightOf = (m: ModInfo): Weight | undefined => this.snap?.weights[m.packageId];
+
+  // ---- notices the user has waved away ------------------------------------------------------
+  //
+  // Dismissing hides the mark on the row and nothing else: the Analyzer still lists every
+  // issue, because it is the complete index and one that quietly omits rows is worse than none.
+  // That is the bargain `muted` already makes for incompatible pairs, and the reasoning is the
+  // same -- a warning nobody can dismiss is one people learn to look past, along with the true
+  // ones beside it.
+
+  /** Keys of `<packageId>|<kind>|<token>` the user has put down. */
+  dismissedNotices = $derived(new Set(this.snap?.user.dismissedNotices ?? []));
+
+  /** Put one down, or pick it back up. */
+  dismissNotice(key: string, down = true) {
+    return this.updateUser((u) => {
+      const set = new Set(u.dismissedNotices ?? []);
+      if (down) set.add(key);
+      else set.delete(key);
+      return { ...u, dismissedNotices: [...set] };
+    });
+  }
+
+  /** Bring every one of them back. Offered in Settings beside the count, because a dismissal
+   *  with no way back is a memory hole rather than a preference. */
+  clearDismissedNotices() {
+    return this.updateUser((u) => ({ ...u, dismissedNotices: [] }));
+  }
+
+  /** The row whose notices are open, and where to draw the popover. */
+  noticePopover = $state<{ uid: string; x: number; y: number } | null>(null);
+
   pinned = $derived(new Set(this.snap?.user.pinned ?? []));
   showWeight = $derived(this.snap?.settings.showWeight ?? false);
   updateByUid = $derived(new Map((this.snap?.updates ?? []).map((u) => [u.uid, u])));
@@ -776,6 +810,7 @@ class Store {
     // chance to say why.
     if (snap && this.accept(snap)) {
       this.snap = snap;
+      this.applyOpeningPreferences(snap);
       queueMicrotask(() => log("first render scheduled"));
       this.announceChanges(snap);
     }
@@ -785,6 +820,28 @@ class Store {
     // Inspector without the user having opened the Patches view first.
     this.refreshPatches();
     this.refreshInstances();
+  }
+
+  /** Where the window opens, if the user has said.
+   *
+   *  Once, on the first snapshot, and never again: this is a starting position rather than a
+   *  mode. Re-applying it on a later snapshot would drag somebody back to the load order every
+   *  time settings were saved, which is the sort of thing that feels like the app fighting you.
+   *
+   *  A view or a sort key this build does not have falls through to the default rather than
+   *  failing. Settings written by a newer Circinus, or by hand, should not be able to open a
+   *  window onto nothing. */
+  private applyOpeningPreferences(snap: Snapshot) {
+    const v = snap.settings.defaultView;
+    if (v && VIEWS.includes(v as View)) {
+      this.view = v as View;
+      if (v === "library") this.tab = "all";
+    }
+    const s = snap.settings.defaultSort;
+    if (s && s !== "order" && (SORTS as string[]).includes(s)) {
+      this.sortKey = s as SortKey;
+      this.sortDir = snap.settings.defaultSortAsc === false ? -1 : 1;
+    }
   }
 
   private announceChanges(snap: Snapshot) {
@@ -1879,7 +1936,7 @@ class Store {
   setListColumn(key: string, on: boolean) {
     // The order the columns appear in, whatever order they were switched on in. Time is first
     // because it sits left of Cost, and Cost is not in here: it follows showWeight.
-    const order = ["time", "load", "versions", "phase", "group"];
+    const order = ["time", "load", "loadmedian", "versions", "phase", "group"];
     const set = new Set(this.listColumns);
     on ? set.add(key) : set.delete(key);
     return this.updateSettings({ listColumns: order.filter((k) => set.has(k)) });

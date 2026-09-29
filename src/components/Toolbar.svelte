@@ -32,6 +32,7 @@
   const columns = [
     { key: "time", label: t("toolbar.col.time"), hint: t("toolbar.col.time.title") },
     { key: "load", label: t("toolbar.col.load"), hint: t("toolbar.col.load.title") },
+    { key: "loadmedian", label: t("toolbar.col.loadmedian"), hint: t("toolbar.col.loadmedian.title") },
     { key: "versions", label: t("toolbar.col.versions"), hint: t("toolbar.col.versions.title") },
     { key: "phase", label: t("toolbar.col.phase"), hint: t("toolbar.col.phase.title") },
     { key: "group", label: t("toolbar.col.group"), hint: t("toolbar.col.group.title") }

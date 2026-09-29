@@ -3,7 +3,8 @@
   import { store, type Pane, type SortKey } from "$lib/store.svelte";
   import { I } from "$lib/icons";
   import { describe, explainLoad } from "$lib/describe";
-  import { BAND_LABEL, LOAD_BAND_LABEL, describeChange, severityOf, type Issue, type ModInfo } from "$lib/types";
+  import { BAND_LABEL, LOAD_BAND_LABEL, describeChange, severityOf, type Issue, type ModChange, type ModInfo, type UpdateInfo } from "$lib/types";
+  import { NOTICE_ICON, noticesFor } from "$lib/notices";
 
   // One list, shown three ways. Without `pane` this is the whole list and the tabs decide what is
   // in it; with one it is half of the side-by-side library and shows only its own half.
@@ -41,14 +42,18 @@
     { key: "time", w: 62, show: on.has("time") },
     { key: "cost", w: 64, show: store.showWeight },
     { key: "load", w: 58, show: on.has("load") },
+    { key: "loadmedian", w: 72, show: on.has("loadmedian") },
     { key: "versions", w: 64, show: on.has("versions") },
     { key: "phase", w: 106, show: on.has("phase") },
     { key: "group", w: 106, show: on.has("group") }
   ]);
   const wanted = $derived(optional.filter((c) => c.show));
-  /** A pane carries six badges in the space, and without their words: the strip above it says
-      what the list is, so the row only has to be readable. */
-  const BADGES = $derived(pane === null ? 232 : 138);
+  /** One notice mark, so the strip is one icon wide plus room for a count.
+   *
+   *  This used to be six columns and 232px of every row, for ever, and the reader still had to
+   *  scan all six to answer one question. The 190px it gives back goes to the mod name, which
+   *  is what the window is actually for. */
+  const BADGES = $derived(pane === null ? 42 : 38);
   const minName = $derived(pane === null ? NAME_MIN : PANE_NAME_MIN);
   /** What a row costs before any optional column: the number, the badges, the move, the gaps. */
   const baseW = $derived(34 + BADGES + (showMove ? 40 + 6 : 0) + 3 * 6);
@@ -264,9 +269,31 @@
 
   // ---- the badge columns ----
   /** Issues of one severity, and the text for the column's tooltip. */
-  function bySeverity(issues: Issue[], sev: "error" | "warning" | "note", m: ModInfo): { n: number; text: string } {
-    const list = issues.filter((i) => severityOf(i) === sev);
-    return { n: list.length, text: list.map((i) => describe(i, store.byUid, m.uid)).join("\n") };
+  /** Everything one row has to say, most serious first.
+   *
+   *  The ranking and the dismissal keys live in `$lib/notices` rather than here, so they can be
+   *  tested without rendering a row -- which matters because "which of these six things is the
+   *  one to show" is the entire behaviour of the column. */
+  function noticesOf(m: ModInfo, issues: Issue[], update: UpdateInfo | undefined, change: ModChange | undefined, inactive: boolean) {
+    return noticesFor({
+      mod: m,
+      issues,
+      describe: (i) => describe(i, store.byUid, m.uid),
+      severityOf,
+      update,
+      change,
+      describeChange,
+      isNew: store.isNew(m.uid),
+      arrived: whenItCame(m.uid),
+      pinned: store.pinned.has(m.uid),
+      inactive,
+      dismissed: store.dismissedNotices
+    });
+  }
+
+  /** Open the row's notices where the pointer is, clamped by the popover itself. */
+  function openNotices(e: MouseEvent, uid: string) {
+    store.noticePopover = { uid, x: e.clientX, y: e.clientY };
   }
 
   /** An estimate in milliseconds, said in seconds at a precision the estimate can support.
@@ -558,16 +585,12 @@
     {#if has.has("time")}<span class="h tm" class:by={store.sortKey === "time"} title="How much of the game's loading time this mod is expected to add, in seconds. Estimated from what the folder holds, not measured with a stopwatch: use it to rank mods against each other rather than to predict the clock.">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("time")}>Time{#if store.sortKey === "time"}<i class="dir">{arrowFor("time")}</i>{/if}</button>{:else}Time{/if}</span>{/if}
     {#if has.has("cost")}<span class="h wt" class:by={store.sortKey === "cost"} title="Share of frame time, from circinus.sh or your own runs">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("cost")}>Cost{#if store.sortKey === "cost"}<i class="dir">{arrowFor("cost")}</i>{/if}</button>{:else}Cost{/if}</span>{/if}
     {#if has.has("load")}<span class="h load" class:by={store.sortKey === "load"} title="Expected share of the list's loading time, estimated from what the folder holds: Defs XML, patch operations and how far they search, PNG textures without DDS, assemblies. A ranking, not a stopwatch.">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("load")}>Load{#if store.sortKey === "load"}<i class="dir">{arrowFor("load")}</i>{/if}</button>{:else}Load{/if}</span>{/if}
+    {#if has.has("loadmedian")}<span class="h lmed" title="What this mod typically adds to a start-up on everyone else's machine: the median of the start-ups shared with circinus.sh, measured by the Loading Progress mod. Wall-clock milliseconds spent once, not a share of every frame, so it is never added to Cost. Blank means nobody has timed it yet.">Median</span>{/if}
     {#if has.has("versions")}<span class="h vers" class:by={store.sortKey === "versions"} title="Game versions the mod says it supports">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("versions")}>Versions{#if store.sortKey === "versions"}<i class="dir">{arrowFor("versions")}</i>{/if}</button>{:else}Versions{/if}</span>{/if}
     {#if has.has("phase")}<span class="h phz" class:by={store.sortKey === "phase"} title="Where HALO files the mod: the game, a library, content, a patch, a texture pack, a late loader, a performance mod">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("phase")}>Phase{#if store.sortKey === "phase"}<i class="dir">{arrowFor("phase")}</i>{/if}</button>{:else}Phase{/if}</span>{/if}
     {#if has.has("group")}<span class="h g" class:by={store.sortKey === "group"} title="The group the mod is in">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("group")}>Group{#if store.sortKey === "group"}<i class="dir">{arrowFor("group")}</i>{/if}</button>{:else}Group{/if}</span>{/if}
     <span class="badges">
-      <span class="h b" title="Changed since you last opened Circinus: new, or updated on disk">{@html I.change}<i>Changed</i></span>
-      <span class="h b" title="A newer version is on the Workshop">{@html I.up}<i>Update</i></span>
-      <span class="h b" title="Errors: a missing dependency, two mods that do not work together, a rule loop, a mod above the game's own content">{@html I.error}<i>Errors</i></span>
-      <span class="h b" title="Warnings: a load-order rule not met, a mod not made for this game version, a performance mod not at the end">{@html I.warn}<i>Warning</i></span>
-      <span class="h b" title="HALO notes: textures replaced by more than one mod, a rule HALO set aside">{@html I.note}<i>Notes</i></span>
-      <span class="h b" title="Pinned: keeps its position when HALO sorts">{@html I.pin}<i>Pinned</i></span>
+      <span class="h b" title="Notices: errors first, then warnings, an available update, HALO notes, what changed since you last opened Circinus, and whether the mod is pinned. The row shows the most serious one; click it to read them all and put any of them down."><i>Notices</i></span>
     </span>
     {#if showMove}<span class="h delta" title="How far HALO would move the mod">Move</span>{/if}
   </div>
@@ -587,10 +610,7 @@
         {@const chg = store.changeByUid.get(m.uid)}
         {@const pl = it.inactive ? undefined : placementOf(m.uid)}
         {@const grp = store.groupOf(m.uid)}
-        {@const err = bySeverity(issues, "error", m)}
-        {@const warn = bySeverity(issues, "warning", m)}
-        {@const note = bySeverity(issues, "note", m)}
-        {@const invalid = m.invalid && it.inactive ? m.invalid : ""}
+        {@const nt = noticesOf(m, issues, upd, chg, it.inactive)}
         {@const ld = it.inactive ? undefined : store.loadOf(m.uid)}
         {@const tm = m.contents.load ? store.loadOf(m.uid)?.ms : undefined}
         {@const isNew = store.isNew(m.uid)}
@@ -623,16 +643,22 @@
             <span class="wt">{#if w && w.share != null}<span class="band {w.band}" title="Performance cost: {w.share.toFixed(2)} % of frame time, {BAND_LABEL[w.band].toLowerCase()}. {w.measured ?? '?'} runs measured, from {w.origin === 'local' ? 'your runs' : 'circinus.sh'}">{w.share.toFixed(1)} %</span>{:else if w}<span class="band {w.band}" title="Performance cost: {BAND_LABEL[w.band].toLowerCase()}">{w.band === "negligible" ? "<0.1 %" : "n/a"}</span>{/if}</span>
           {/if}
           {#if has.has("load")}<span class="load">{#if ld && m.contents.load}<span class="band {ld.band}" title="Expected share of loading time: {ld.share >= 0.0005 ? (ld.share * 100).toFixed(ld.share < 0.01 ? 2 : 1) : 'under 0.05'} % ({LOAD_BAND_LABEL[ld.band].toLowerCase()}), about {ld.ms >= 1000 ? `${(ld.ms / 1000).toFixed(1)} s` : `${ld.ms} ms`} of an estimated {store.loadTotalSeconds >= 60 ? `${(store.loadTotalSeconds / 60).toFixed(1)} min` : `${store.loadTotalSeconds.toFixed(0)} s`} for the list.&#10;{explainLoad(m).join('\n')}&#10;&#10;Estimated from the folder; a ranking, not a stopwatch.">{ld.share >= 0.001 ? `${(ld.share * 100).toFixed(ld.share < 0.01 ? 2 : 1)} %` : "<0.1 %"}</span>{:else if !it.inactive && m.contents.load == null}<span class="band unknown" title="Not read yet: the folder is still being inspected">…</span>{/if}</span>{/if}
+          {#if has.has("loadmedian")}<span class="lmed num">{#if w?.loadMsMedian != null}<span title="Typically adds about {w.loadMsMedian >= 1000 ? `${(w.loadMsMedian / 1000).toFixed(1)} s` : `${Math.round(w.loadMsMedian)} ms`} to a start-up, over {w.loadRuns ?? 0} shared start-up{w.loadRuns === 1 ? '' : 's'} from {w.loadInstalls ?? 0} install{w.loadInstalls === 1 ? '' : 's'}. Measured by Loading Progress, pooled by circinus.sh. Start-up only: never added to Cost.">{w.loadMsMedian >= 1000 ? `${(w.loadMsMedian / 1000).toFixed(1)} s` : `${Math.round(w.loadMsMedian)} ms`}</span>{:else}<span class="unread" title="Nobody has shared a start-up with this mod loaded yet. Not the same as costing nothing.">&mdash;</span>{/if}</span>{/if}
           {#if has.has("versions")}<span class="vers">{#each versions as v}<span class:off={!(m.supportedVersions ?? []).includes(v)}>{v}</span>{/each}</span>{/if}
           {#if has.has("phase")}<span class="phz">{#if pl}{@const ph = store.phaseInfo(pl.phase)}<em class="tag" title="{ph.name} · {pl.reason}">{ph.name}</em>{/if}</span>{/if}
           {#if has.has("group")}<span class="g">{#if grp}<em class="tag" title="{grp.name}{grp.auto && !store.snap?.user.modGroups[m.uid] ? ' (by the group’s own rule)' : ''}">{grp.name}</em>{/if}</span>{/if}
           <span class="badges">
-            <span class="b">{#if chg}<span class="flag chg" title="Changed since you last opened Circinus: {describeChange(chg)}">{@html chg.kind === "added" ? I.plus : I.change}</span>{:else if isNew}<span class="newdot" title={arrived ? `New: first seen ${arrived}` : "New"}></span>{/if}</span>
-            <span class="b">{#if upd}<span class="flag" title="A newer version is on the Workshop, updated {new Date(upd.remoteUpdated * 1000).toLocaleDateString()}">{@html I.up}</span>{/if}</span>
-            <span class="b">{#if err.n || invalid}<span class="flag" title={[invalid, err.text].filter(Boolean).join("\n")}>{@html I.error}{#if err.n + (invalid ? 1 : 0) > 1}<em class="num">{err.n + (invalid ? 1 : 0)}</em>{/if}</span>{/if}</span>
-            <span class="b">{#if warn.n}<span class="flag" title={warn.text}>{@html I.warn}{#if warn.n > 1}<em class="num">{warn.n}</em>{/if}</span>{/if}</span>
-            <span class="b">{#if note.n}<span class="flag" title={note.text}>{@html I.note}{#if note.n > 1}<em class="num">{note.n}</em>{/if}</span>{/if}</span>
-            <span class="b">{#if store.pinned.has(m.uid)}<span class="flag" title="Pinned: keeps this position when sorting">{@html I.pin}</span>{/if}</span>
+            {#if nt.shown.length || nt.hidden.length}
+              {@const top = nt.shown[0]}
+              <button
+                class="flag nt"
+                class:err={top?.kind === "error"}
+                class:quiet={!top}
+                title={[...nt.shown.map((x) => x.text), nt.hidden.length ? `${nt.hidden.length} dismissed` : ""].filter(Boolean).join("\n")}
+                aria-label="{nt.shown.length} notice{nt.shown.length === 1 ? '' : 's'} for {m.name}"
+                onclick={(e) => { e.stopPropagation(); openNotices(e, m.uid); }}
+              >{@html top ? I[NOTICE_ICON[top.kind]] : I.check}{#if nt.shown.length > 1}<em class="num">{nt.shown.length}</em>{/if}</button>
+            {/if}
           </span>
           {#if showMove}<span class="delta num" class:down={delta && delta > 0} class:up={delta && delta < 0}>{#if delta}{delta > 0 ? "+" : ""}{delta}{/if}</span>{/if}
         </div>
@@ -700,18 +726,33 @@
   .row .wt, .row .load { display: flex; justify-content: flex-end; }
   .row .load .band.unknown { color: var(--text-4); }
   .vers { justify-content: flex-end; }
+  .row .lmed { display: flex; justify-content: flex-end; font-size: 11.5px; color: var(--text-2); }
+  .row .lmed .unread { color: var(--text-4); }
+  .hdr .lmed { text-align: right; }
   /* Phase and Group are words, not decoration: a coloured dot on every one of two thousand
      rows is noise, and the section headings already carry the colour. Both columns are off
      unless the user asks for them (Show → Columns). */
   .row .phz, .row .g { min-width: 0; display: flex; align-items: center; }
   .tag { font-style: normal; font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .row:hover .tag, .row.sel .tag { color: var(--text-2); }
-  /* Six fixed slots, one per kind of badge, so nothing ever draws over anything else — in the
-     header as in the rows, from the same grid, so the labels sit over their own icons. */
-  .badges { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0; align-items: center; min-width: 0; }
-  .hdr .b { font-size: 8.5px; }
+  /* One slot. The header label sits over the same grid cell as the mark, so the word and the
+     icons under it line up whatever the list is showing. */
+  .badges { display: grid; grid-template-columns: 1fr; gap: 0; align-items: center; min-width: 0; }
+  /* The mark is a button, so it needs a hit area and a hover of its own without becoming a
+     second thing to look at on a row that is only saying "nothing to report". */
+  .flag.nt { cursor: pointer; justify-self: center; }
+  .flag.nt:hover { background: var(--surface-3); color: var(--text); }
+  .flag.nt.err { color: var(--red); }
+  /* A row with nothing left to say after a dismissal still has a way back to what it put down,
+     so it keeps a mark -- at the weight of punctuation rather than of a warning. */
+  .flag.nt.quiet { color: var(--text-4); opacity: 0.55; }
+  .flag.nt.quiet:hover { opacity: 1; }
+  /* One heading over one column, so it can be a word at a readable size rather than the 8.5px
+     abbreviation six columns forced. */
+  .hdr .b { font-size: 9.5px; }
   .hdr .b i { display: block; max-width: 100%; overflow: hidden; text-overflow: clip; }
-  /* A pane is half as wide: the badge words would not fit, and the icons say the same thing. */
+  /* A pane is half as wide and its strip is narrower still; the mark under it says the same
+     thing, and the row's own tooltip names it. */
   .list.pane .hdr .b i { display: none; }
   .list.pane .ph .note { display: none; }
   .badges .b { display: grid; place-items: center; height: 24px; }

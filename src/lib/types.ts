@@ -202,8 +202,14 @@ export interface Settings {
   haloAdvanced: boolean;
   /** Column widths dragged in the list, CSS px, by column key (`name`, `pkg`). */
   columns?: Record<string, number>;
-  /** Optional list columns that are shown: `load`, `versions`, `phase`, `group`. */
+  /** Optional list columns that are shown: `time`, `load`, `loadmedian`, `versions`, `phase`,
+   *  `group`. (The Cost column follows `showWeight`.) */
   listColumns?: string[];
+  /** The view Circinus opens on. Empty or unknown means the load order. */
+  defaultView?: string;
+  /** The sort the list opens with, and which way. Empty means the load order. */
+  defaultSort?: string;
+  defaultSortAsc?: boolean;
   /** Bumped when a default changes, so stored settings can be brought along. */
   settingsVersion?: number;
   dds: DdsSettings;
@@ -271,6 +277,8 @@ export interface UserData {
   packsRead?: Record<string, number>;
   /** Collections whose curator the user would rather not hear from. Still followed. */
   packsMuted?: number[];
+  /** Row notices waved away, as `<packageId>|<kind>|<token>`. See `$lib/notices`. */
+  dismissedNotices?: string[];
 }
 
 /** The user's own HALO rules: portable statements about mods, not folders. */
