@@ -84,7 +84,8 @@ particular what is **absent and must never be accepted if a future client sends 
 
 | Not sent | Why |
 |---|---|
-| Mod names | Unverifiable typed strings. The site takes real titles from Steam's listing, which is the whole reason `workshopId` is here. The source file the manager reads has a name for every mod; it is dropped before the payload is built. |
+| Mod **display names** | Left out for *quality*, not privacy, and the distinction matters. The package id identifies the mod and **is** sent: anyone can read `brrainz.harmony`. What is dropped is the typed string from the mod's own metadata, which nobody can verify and which has given mods the wrong title before; `workshopId` is here so the site can use Steam's real listing instead. Nothing about this hides which mods a run contained, and no interface should imply it does. |
+| The load order | Left out for *privacy*. The `mods` array is sorted by package id and `listHash` is a hash of the sorted, deduplicated set, so two installs with the same mods in different orders send byte-identical lists. Nothing downstream wants the order, and the order of a large list is close to unique. |
 | File paths | On the never-sent list, and the payload is built by a function that has no access to one. |
 | The versions of unmeasured mods | Only mods in this run's cost table carry a version, so a rework's cost can be told apart from the version before it without shipping a whole load order's versions, which would make an install far easier to fingerprint. |
 | OS build numbers | `"Windows 11"`, never `"Windows 11 (10.0.22631)"`. |

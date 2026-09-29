@@ -45,11 +45,22 @@ pub const CONSENT_VERSION: u32 = 1;
 
 /// One mod, as the wire is allowed to describe it.
 ///
-/// Note what is absent. No name -- names are unverifiable typed strings and the site takes real
-/// titles from Steam's listing instead. No path. No source, no load-order position, no folder
-/// size. A version string only for mods this run actually measured, so a rework's cost can be
-/// told apart from the version before it without shipping the versions of a whole load order,
-/// which would make an install far easier to fingerprint.
+/// Be precise about what the omissions are for, because two different reasons are at work and
+/// conflating them makes a privacy claim that is not true.
+///
+/// The **package id identifies the mod**, and it is sent. Anyone can read `brrainz.harmony` and
+/// know which mod that is, and the Workshop id beside it exists so the site can look up the
+/// real title. The site knows perfectly well which mods a run contained; that is the point of
+/// the payload, and nothing here should be described as hiding it.
+///
+/// What is left out for *quality* is the display name: an unverifiable string typed by whoever
+/// packaged the mod, which has given mods the wrong title before. Steam's listing is the
+/// better source and is what the site uses.
+///
+/// What is left out for *privacy* is everything that describes this install rather than the
+/// mod: the folder path, the source, the position in the load order (see the sort in `build`),
+/// and the versions of mods this run did not measure -- a whole load order's versions would
+/// make an install much easier to pick out than the ids alone already do.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModCost {
@@ -159,7 +170,7 @@ pub fn build(
     let off: std::collections::HashMap<&str, f64> =
         impact.mods.iter().map(|m| (m.package_id.as_str(), m.off_thread_ms)).collect();
 
-    let costs: Vec<ModCost> = mods
+    let mut costs: Vec<ModCost> = mods
         .iter()
         .filter_map(|m| {
             let total_ms = *measured.get(&m.package_id)?;
@@ -172,6 +183,14 @@ pub fn build(
             })
         })
         .collect();
+    // Sorted by package id, which throws the load order away.
+    //
+    // Nothing downstream wants it: a load cost is a property of a mod, not of where it sat in
+    // somebody's list. Leaving the array in list order would have shipped the order anyway, as
+    // a side effect of how it was built, and the order of a large list is close to unique --
+    // it is one of the better fingerprints an install has. Sorting costs nothing and makes the
+    // claim that the order is not sent true rather than nearly true.
+    costs.sort_by(|a, b| a.package_id.cmp(&b.package_id));
 
     LoadRunReport {
         consent_version: CONSENT_VERSION,
@@ -191,12 +210,22 @@ pub fn build(
     }
 }
 
-/// A stable hash of the list, in order. Not a secret and not reversible into anything the site
-/// does not already have: every id in it is sent beside it.
+/// A stable hash of *which* mods were in the list, not what order they were in.
+///
+/// Sorted first, for the same reason the cost array is: order is not wanted downstream and an
+/// order-sensitive hash would smuggle it back in. It could not be read back out of a hash, but
+/// it would still make the value more particular to one install than the set alone, and
+/// "matching runs with similar lists" wants the set.
+///
+/// Not a secret and not reversible into anything the site does not already have: every id that
+/// went into it is sent beside it.
 pub fn list_hash<'a>(ids: impl Iterator<Item = &'a str>) -> String {
     use sha2::{Digest, Sha256};
+    let mut sorted: Vec<&str> = ids.collect();
+    sorted.sort_unstable();
+    sorted.dedup();
     let mut h = Sha256::new();
-    for id in ids {
+    for id in sorted {
         h.update(id.as_bytes());
         h.update(b"\n");
     }
@@ -303,6 +332,22 @@ mod tests {
     }
 
     #[test]
+    fn the_load_order_does_not_travel() {
+        // The mods go out sorted, not in list order. The order of a large list is close to
+        // unique and nothing downstream wants it, so shipping it as a side effect of how the
+        // array was built would have been a fingerprint given away for free.
+        let mut reversed = facts();
+        reversed.reverse();
+        let a = build(&impact(), &facts(), machine(), "r", "i", "1.6.0", "1.6");
+        let b = build(&impact(), &reversed, machine(), "r", "i", "1.6.0", "1.6");
+        assert_eq!(a.mods, b.mods, "two orders of the same list must send the same thing");
+        let ids: Vec<&str> = a.mods.iter().map(|m| m.package_id.as_str()).collect();
+        let mut sorted = ids.clone();
+        sorted.sort();
+        assert_eq!(ids, sorted);
+    }
+
+    #[test]
     fn the_install_id_is_not_in_the_body() {
         // It goes in X-Circinus-Install, the way the site's existing ingest takes one. Keeping
         // it out of the body keeps it out of the append-only raw submission row as well.
@@ -313,11 +358,12 @@ mod tests {
     }
 
     #[test]
-    fn the_list_hash_follows_the_order_and_not_the_membership() {
-        let a = list_hash(["a", "b", "c"].into_iter());
-        let b = list_hash(["a", "c", "b"].into_iter());
-        assert_ne!(a, b, "a reorder is a different list and has to hash differently");
-        assert_eq!(a, list_hash(["a", "b", "c"].into_iter()));
+    fn the_list_hash_is_of_the_membership_and_not_the_order() {
+        // Reordering a list does not change what was measured, and an order-sensitive hash
+        // would carry the order past the sort that deliberately drops it.
+        assert_eq!(list_hash(["a", "b", "c"].into_iter()), list_hash(["c", "a", "b"].into_iter()));
+        // Different mods are a different list.
+        assert_ne!(list_hash(["a", "b", "c"].into_iter()), list_hash(["a", "b", "d"].into_iter()));
     }
 
     #[test]

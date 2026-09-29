@@ -45,6 +45,11 @@
         {#each never as n, i (i)}<li>{n}</li>{/each}
       </ul>
 
+      <!-- Said out loud rather than left to be inferred from a list of omissions. "Mod names:
+           never sent" next to "your username: never sent" reads as "the site cannot tell what I
+           run", which is false and is the opposite of what the payload is for. Anyone can read
+           brrainz.harmony. The honest line is which of the two kinds of thing is protected. -->
+      <p class="plain">{t("sharing.plain")}</p>
       <p class="fine">{t("sharing.fine")}</p>
     </div>
 
@@ -75,7 +80,8 @@
   tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
   ul { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--text-2); }
   li { padding: 2px 0; }
-  .fine { margin: 14px 0 0; font-size: 12px; color: var(--text-3); }
+  .plain { margin: 14px 0 0; font-size: 12.5px; color: var(--text-2); }
+  .fine { margin: 10px 0 0; font-size: 12px; color: var(--text-3); }
   .ft { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--surface-3); }
   .ft .sp { flex: 1; }
 </style>

@@ -43,8 +43,14 @@ const openSettings = async (p) => {
   const card = await page.evaluate(() => document.querySelector('[aria-labelledby="sh-title"]')?.closest('.dlg')?.textContent ?? '');
   ok('an install that was never asked is asked', card.length > 0);
   // A card that says "help us improve Circinus" collects consent without informing anybody.
-  ok('the card says what is sent', /Package ids/.test(card), card.slice(0, 70));
+  ok('the card says what is sent', /package ids/i.test(card), card.slice(0, 70));
   ok('and what never is', /File paths/.test(card));
+  // The correction that matters. Listing "mod names: never sent" beside "your username: never
+  // sent" reads as "the site cannot tell what I run", which is false -- anyone can read
+  // brrainz.harmony, and resolving the real title from the Workshop id is deliberate. The card
+  // has to say which of the two kinds of thing is actually protected.
+  ok('it does not pretend the site cannot tell which mods you run', /can tell which mods you run/i.test(card), card.slice(0, 70));
+  ok('and it is the load order that is withheld, not the mod identity', /order your mods load in/i.test(card));
   ok('and that reading is not sending', /only about sending/i.test(card));
   await page.screenshot({ path: `${OUT}/sharing-card.png` });
   await page.close();

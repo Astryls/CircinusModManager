@@ -401,6 +401,16 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   hold that shut and the privacy page says out loud that they run on every build.
   The source file is full of things that must not travel: `StartupImpactData.xml` carries a
   `modName` for every mod and is read from inside the player's home directory.
+  **Two different reasons are at work in the omissions and conflating them makes a false
+  claim.** The package id *identifies the mod* and is sent — anyone can read `brrainz.harmony`,
+  and `workshopId` is there precisely so the site can resolve the real title. The display name
+  is dropped for *quality* (an unverifiable typed string), not privacy, and no interface may
+  imply the site cannot tell which mods a run contained: that is what the payload is for. What
+  is dropped for *privacy* is everything describing the install rather than the mod — paths,
+  source, the versions of unmeasured mods, and the load order. The order is genuinely gone
+  rather than merely unused: `build` sorts the cost array by package id and `list_hash` hashes
+  the sorted, deduplicated set, so two installs with the same mods in different orders send
+  byte-identical payloads. `the_load_order_does_not_travel` holds that.
   **The install id is this tool's own, not the analyzer's.** A load cost and a frame cost meet
   on the mod's page by package id, which is the only join the site performs, so nothing needed
   the two tied at the machine. The consequence is two ids and two deletes, and Settings has to
