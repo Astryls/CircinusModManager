@@ -13,5 +13,13 @@ tools/loadtest/*.png
 # agent worktrees
 .claude/
 
+# Where the desktop app drops files delivered into the chat. It lands inside the checkout, and
+# one untracked folder is enough to make `git status --porcelain` non-empty -- which sends
+# sync-history.ps1 down its "the tree is dirty, so the files may already be here" path, where it
+# stages everything and compares it against the incoming history. The comparison then fails on
+# every file the incoming commits touch and prints a 32-file diff that looks like data loss and
+# is nothing of the kind. Ignoring the folder keeps the tree clean so git just fast-forwards.
+Claude outputs/
+
 # the Harmony scanner, built for a release by scripts/sidecar.mjs
 src-tauri/binaries/
