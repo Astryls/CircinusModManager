@@ -31,6 +31,9 @@ rayon = "1.12.0"
 trash = "5"
 # The install id comes from the OS random source and nothing else: the privacy page claims it
 # is not derived from hardware or an account, and a hash of something real would break that.
+# Coarse CPU, core count and memory for a shared run. No GPU: loading is XML and disk, and a
+# field that explains none of the variance only makes an install easier to pick out.
+sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 getrandom = "0.3"
 hex = "0.4"
 

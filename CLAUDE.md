@@ -398,7 +398,22 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
 - **Sharing is off until answered, and the answer is to a version.** `src-tauri/src/sharing.rs`
   holds the decision and the id; `crates/circinus-core/src/telemetry.rs` holds the envelope;
   `docs/telemetry.md` and `ADD-LOAD-COSTS.md` in the CircinusWeb workspace are the two halves of
-  the contract. Nothing sends yet — the queue and the HTTP call are not written.
+  the contract. `src-tauri/src/outbox.rs` is the queue and the sender.
+  **The spool is files on disk, not a list in memory**, because the endpoint does not exist
+  yet: a build in the wild measures, queues, fails, and keeps the run, and the day the site
+  answers everything held starts moving with no new release. Twenty runs kept, newest first —
+  a month offline should not mean three hundred uploads, and the oldest describe a list that
+  has since changed. `may_send()` is checked at enqueue *and* at send, because a run spooled
+  under a yes must not go out after the player changed their mind; switching sharing off
+  deletes the spool outright rather than letting it expire unsent.
+  Status handling is one arm per code and not "not 2xx", because the distinction is the whole
+  point: 400 and 413 will fail forever so the run is dropped, 422 means the agreement it was
+  sent under is gone so the run is dropped *and* the stored consent is cleared, and everything
+  else including a 404 from an endpoint that does not exist yet is "try later". Failure is
+  always silent — a toast about a background upload is noise about a thing nobody can fix.
+  No GPU in the payload. Loading is XML parsing, patches and disk; the graphics card explains
+  none of the variance, and a field that explains nothing only makes an install easier to pick
+  out. The analyzer sends one because frame time genuinely depends on it.
   The policy is the one already published at circinus.sh/privacy for the Performance Analyzer,
   word for word, because a second tool sending a slightly different set under the same promise
   would make the promise worthless. Three parts of it are mechanical rather than aspirational:

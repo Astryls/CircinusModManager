@@ -795,15 +795,31 @@ pub async fn get_launch_info(state: State<'_, Shared>) -> CmdResult<LaunchInfo> 
 /// "never asked" have to behave differently: one leaves them alone, the other asks again.
 #[tauri::command]
 pub async fn set_sharing(yes: bool, state: State<'_, Shared>) -> CmdResult<()> {
+    let shared = (*state).clone();
     with_app(&state, move |app| {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
         app.user.sharing.answer(yes, now);
+        // Saying yes with a measurement already on disk should not wait for the next launch
+        // to become a contribution. The reverse also matters: saying no must not leave runs
+        // spooled from before, so the queue is emptied rather than left to expire.
+        if yes {
+            if let Some((m, at)) = crate::logs::impact_path(app).as_deref().and_then(crate::logs::startup_impact) {
+                let _ = at;
+                crate::logs::queue_from(app, &m, at);
+            }
+        } else {
+            crate::outbox::discard(&app.data_dir);
+        }
         app.persist().map_err(err)
     })
-    .await
+    .await?;
+    if yes {
+        let _ = crate::outbox::flush(&shared, circinus_core::weight::API_BASE).await;
+    }
+    Ok(())
 }
 
 /// Start sharing under a new id, after the old one's data has been asked to be deleted.
@@ -828,10 +844,18 @@ pub async fn rotate_install_id(state: State<'_, Shared>) -> CmdResult<String> {
 #[tauri::command]
 pub async fn refresh_last_run(app_handle: AppHandle, state: State<'_, Shared>) -> CmdResult<bool> {
     let shared = (*state).clone();
-    let changed = tauri::async_runtime::spawn_blocking(move || crate::logs::refresh_last_run(&shared))
+    let shared2 = shared.clone();
+    let changed = tauri::async_runtime::spawn_blocking(move || crate::logs::refresh_last_run(&shared2))
         .await
         .unwrap_or(false);
-    if changed {
+
+    // Drain whatever is queued, whether or not this call found anything new: the reason a run
+    // is still in the spool is usually that the last attempt failed, and coming back to the
+    // window is as good a moment as any to try again. Nothing here is awaited by the player --
+    // the command has already decided what it returns.
+    let reconsent = crate::outbox::flush(&shared, circinus_core::weight::API_BASE).await;
+
+    if changed || reconsent {
         use tauri::Emitter;
         let _ = app_handle.emit("state-changed", ());
     }

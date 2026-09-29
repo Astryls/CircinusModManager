@@ -81,15 +81,19 @@ fn is_zero(v: &f64) -> bool {
     *v == 0.0
 }
 
-/// What the site is told about the machine, at the coarseness the privacy page states:
-/// "Ryzen 7 9800X3D, 16 cores, 32 GB, RTX 3070, Windows 11", and never an OS build number.
+/// What the site is told about the machine, at the coarseness the privacy page states, and
+/// never an OS build number.
+///
+/// No GPU, unlike the analyzer's runs. Loading a mod list is XML parsing, patch application and
+/// disk reads; the graphics card has no bearing on any of it, and a field that cannot explain
+/// any of the variance is a field that only makes an install easier to pick out. The analyzer
+/// sends one because frame time genuinely depends on it.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Machine {
     pub cpu: String,
     pub cores: u32,
     pub memory_gb: u32,
-    pub gpu: String,
     /// "Windows 11", never "Windows 11 (10.0.22631)".
     pub os: String,
 }
@@ -285,7 +289,7 @@ mod tests {
         ]
     }
     fn machine() -> Machine {
-        Machine { cpu: "Ryzen 7 9800X3D".into(), cores: 16, memory_gb: 32, gpu: "RTX 3070".into(), os: "Windows 11".into() }
+        Machine { cpu: "Ryzen 7 9800X3D".into(), cores: 16, memory_gb: 32, os: "Windows 11".into() }
     }
     fn report() -> LoadRunReport {
         build(&impact(), &facts(), machine(), "01JBQ7X2K9", "019fabdd75a720ad9cba70522627", "1.6.0", "1.6")

@@ -97,6 +97,35 @@ pub fn new_install_id() -> String {
     hex::encode(bytes)
 }
 
+/// What this machine is, at the coarseness the privacy page states.
+///
+/// Read once and cached: `sysinfo` walks the process table on refresh and none of this changes
+/// while the app is open.
+pub fn machine() -> circinus_core::telemetry::Machine {
+    use std::sync::OnceLock;
+    static ONCE: OnceLock<circinus_core::telemetry::Machine> = OnceLock::new();
+    ONCE.get_or_init(|| {
+        let mut sys = sysinfo::System::new();
+        sys.refresh_cpu_all();
+        sys.refresh_memory();
+        let cpu = sys.cpus().first().map(|c| c.brand().trim().to_string()).unwrap_or_default();
+        let os = circinus_core::telemetry::coarse_os(&format!(
+            "{} {}",
+            sysinfo::System::name().unwrap_or_else(|| "Unknown".into()),
+            sysinfo::System::os_version().unwrap_or_default()
+        ));
+        circinus_core::telemetry::Machine {
+            cpu,
+            cores: sys.cpus().len() as u32,
+            // Rounded to whole gigabytes. The exact byte count of installed RAM is a
+            // surprisingly good fingerprint and says nothing a rounded figure does not.
+            memory_gb: (sys.total_memory() as f64 / 1_073_741_824.0).round() as u32,
+            os,
+        }
+    })
+    .clone()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

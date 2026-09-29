@@ -118,6 +118,10 @@ pub fn startup_impact(path: &Path) -> Option<(circinus_core::startupimpact::Star
 /// -- the one moment a player has a reason to look at that card is the one moment it was stale.
 /// Call it again when the game exits.
 ///
+/// A new measurement is also the moment a run becomes shareable, so this queues one when the
+/// player has said yes. Queuing is not sending: the spool is drained separately, and a build
+/// running against a site that does not serve the endpoint yet simply keeps its runs.
+///
 /// Returns whether anything changed, so a caller can skip the redraw when nothing has.
 pub fn refresh_last_run(shared: &crate::commands::Shared) -> bool {
     let (paths, impact, had_run_at, had_impact_at) = match shared.lock() {
@@ -153,12 +157,48 @@ pub fn refresh_last_run(shared: &crate::commands::Shared) -> bool {
     }
     if let Some((m, at)) = measured {
         if a.startup_impact.as_ref() != Some(&m) || a.startup_impact_at != at {
+            queue_from(&a, &m, at);
             a.startup_impact = Some(m);
             a.startup_impact_at = at;
             changed = true;
         }
     }
     changed
+}
+
+/// Turn a fresh measurement into a queued run, if the player has said it may be shared.
+///
+/// Called with the state locked, which is fine: building the report is arithmetic over data
+/// already in memory, and the one write is a small file. Nothing here talks to the network.
+pub fn queue_from(app: &crate::state::App, impact: &circinus_core::startupimpact::StartupImpact, at: i64) {
+    if !app.user.sharing.may_send() {
+        return;
+    }
+    // Only the active list, and only the three things the wire may carry about each mod.
+    let facts: Vec<circinus_core::telemetry::ModFacts> = app
+        .active
+        .iter()
+        .filter_map(|uid| app.mods.iter().find(|m| &m.uid == uid))
+        .map(|m| circinus_core::telemetry::ModFacts {
+            package_id: m.package_id.to_ascii_lowercase().trim_end_matches("_steam").to_string(),
+            workshop_id: m.published_file_id,
+            version: m.mod_version.clone(),
+        })
+        .collect();
+
+    // The run id is the measurement's own timestamp plus a little randomness: two launches in
+    // the same second are unlikely, and a collision would only cost one duplicate rejection.
+    let run_id = format!("{at:x}{}", &crate::sharing::new_install_id()[..8]);
+    let report = circinus_core::telemetry::build(
+        impact,
+        &facts,
+        crate::sharing::machine(),
+        &run_id,
+        &app.user.sharing.install_id,
+        env!("CARGO_PKG_VERSION"),
+        &app.game_version.major_minor,
+    );
+    crate::outbox::enqueue(&app.data_dir, &report);
 }
 
 /// A file's modified time in unix seconds, or `None` if it cannot be asked.

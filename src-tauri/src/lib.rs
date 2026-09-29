@@ -4,6 +4,7 @@ pub mod diag;
 pub mod downloads;
 pub mod instances;
 pub mod logs;
+pub mod outbox;
 pub mod packs;
 pub mod patches;
 pub mod sharing;
