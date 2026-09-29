@@ -190,6 +190,8 @@ export const EN: Catalogue = {
   "keys.shortcuts": "Keyboard shortcuts",
   "keys.view": "Go to {name}",
 
+  "search.placeholder": "Search {n} mods by name, author, packageId or workshop id",
+  "search.aria": "Search mods",
   "titlebar.downloads.aria": "Downloads ({keys})",
   "titlebar.save.title": "Write ModsConfig.xml ({keys})",
 

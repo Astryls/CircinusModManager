@@ -1,25 +1,92 @@
-@import "@fontsource-variable/figtree";
-@import "@fontsource/jetbrains-mono/400.css";
-@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/archivo/400.css";
+@import "@fontsource/archivo/500.css";
+@import "@fontsource/archivo/600.css";
+@import "@fontsource/archivo/700.css";
+@import "@fontsource/red-hat-mono/400.css";
+@import "@fontsource/red-hat-mono/500.css";
 
-/* Circinus design tokens — dark-first. A light set is a swap of these values. */
+/* Circinus design tokens.
+ *
+ * Two papers, and neither is invented here: the dark set is circinus.sh's `:root` and the light
+ * set is an e-ink step of its `:root[data-theme="light"]` — pulled off white in both directions
+ * (ground down, ink up) the way a reflective panel closes its own range. The manager and the
+ * website are meant to read as one product, so when the site's tokens move, these move with it.
+ *
+ * Dark is the default and lives on bare `:root`; `[data-theme="light"]` swaps the values. Nothing
+ * outside these two blocks may name a colour — a literal in a component is a colour that only
+ * works in one paper, which is the bug this structure exists to prevent. */
 :root {
   color-scheme: dark;
-  --bg: #0b0b0d; --bg-2: #101013; --well: #08080a;
-  --surface: #19191c; --surface-2: #202024; --surface-3: #28282d; --surface-4: #313137;
-  --track: #2a2a2f;
-  --text: #f3f3f5; --text-2: #a0a0a8; --text-3: #6b6b73; --text-4: #4a4a51;
-  --amber: #e9a23b; --amber-deep: #c98426; --amber-ink: #1c1405; --amber-soft: rgba(233, 162, 59, 0.14);
-  --green: #3fc46a; --green-soft: rgba(63, 196, 106, 0.14);
-  --red: #f0554d; --red-soft: rgba(240, 85, 77, 0.14);
-  --blue: #4c8dff; --blue-soft: rgba(76, 141, 255, 0.16);
-  --teal: #38b8b0; --pink: #e0559a; --violet: #9b7bff; --coral: #ff8a5b; --slate: #8fa3c7;
-  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 6px 20px rgba(0, 0, 0, 0.35);
-  --shadow-raised: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 12px 32px rgba(0, 0, 0, 0.45);
-  --shadow-float: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 24px 64px rgba(0, 0, 0, 0.6);
-  --r-card: 14px; --r-hero: 18px; --r-row: 9px; --r-pill: 999px;
-  --font: "Figtree Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+  --bg: #131210; --bg-2: #181614; --well: #0e0d0b;
+  --surface: #1d1b18; --surface-2: #24211d; --surface-3: #2a2723; --surface-4: #3b3731;
+  --track: #24211d;
+  --text: #ece7de; --text-2: #bdb5a8; --text-3: #9e9587; --text-4: #6e675c;
+
+  /* Two accents, and only two. Amber is the site's --hold, red its --bad. Everything advisory
+     carries its weight in words and ink, not in hue. */
+  --amber: #dda45a; --amber-deep: #b8843f; --amber-ink: #131210; --amber-soft: rgba(221, 164, 90, 0.13);
+  --red: #e27d6c; --red-soft: rgba(226, 125, 108, 0.13);
+  /* The bar colour the site uses for a filled meter, and the trough behind it. */
+  --bar: #bdb5a8; --bar-held: #554f47;
+
+  /* Group slots. A group is identity, not severity, so hue does real work here and is the one
+     place it survives. Seven families solved together against three rules at once: every pair at
+     least 15 ΔE apart, every one of them at least 15 from both accents so a group can never be
+     mistaken for an error, and every one at least 3:1 on its own ground. The names are the keys
+     already in user data, not descriptions — `amber` and `coral` are slots, and neither renders
+     as the accent it is named after. `slate` is deliberately not a hue: it is the no-colour slot.
+     Worst case on this paper: 15.7 between hues, 16.8 to an accent, 3.14 contrast. */
+  --g-blue: #006cb4; --g-teal: #0d957e; --g-green: #68c153; --g-pink: #a94ea3;
+  --g-amber: #6d650f; --g-coral: #2dbed7; --g-violet: #9e90f9; --g-slate: #8a8274;
+
+  --shadow-card: inset 0 0 0 1px var(--surface-3);
+  --shadow-raised: inset 0 0 0 1px var(--surface-4);
+  --shadow-float: inset 0 0 0 1px var(--surface-4), 0 24px 64px rgba(0, 0, 0, 0.55);
+  --scrim: rgba(14, 13, 11, 0.72);
+  /* Flat and square. A 1px rule does the work a drop shadow was doing, which is to say it
+     separates a panel from the ground behind it, and it does it without pretending to depth. */
+  --r-card: 0; --r-hero: 0; --r-row: 0; --r-pill: 0;
+
+  /* Legacy aliases. Components still name these; each now points at what the colour rule says
+     that use should be, so a stray `var(--green)` renders as bone rather than as nothing. Prefer
+     the token on the right in new code. */
+  --green: var(--bar); --green-soft: rgba(189, 181, 168, 0.10);
+  --blue: var(--text-2); --blue-soft: rgba(189, 181, 168, 0.12);
+  --teal: var(--g-teal); --pink: var(--g-pink); --violet: var(--g-violet);
+  --coral: var(--g-coral); --slate: var(--g-slate);
+  --font: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Red Hat Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+/* E-ink. Ground comes down off white and ink comes up off black, so the range closes to about
+   11.9:1 rather than the 16:1 of paper-white — which is what a reflective panel actually does,
+   and why this reads as a screen you could take outside. Both accents shed most of their chroma
+   with it; the group hues go dark rather than pale, because a mark on paper is ink. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #e4e1d9; --bg-2: #dbd7ce; --well: #edebe4;
+  --surface: #e9e6de; --surface-2: #d5d1c7; --surface-3: #c8c3b7; --surface-4: #aca699;
+  --track: #d5d1c7;
+  --text: #26241f; --text-2: #4e4a42; --text-3: #5c5749; --text-4: #7d7768;
+
+  --amber: #6e4a16; --amber-deep: #573a10; --amber-ink: #f3f1ea; --amber-soft: rgba(110, 74, 22, 0.12);
+  --red: #7e2a20; --red-soft: rgba(126, 42, 32, 0.12);
+  --bar: #4e4a42; --bar-held: #c4bfb3;
+
+  /* Worst case on paper: 14.7 between hues, 14.9 to an accent, 3.13 contrast. Slightly under the
+     15 target on the first two, and it is the medium rather than the values — a light ground
+     forces dark marks, dark marks have less chroma to spend, and --red is itself a dark brick
+     sitting in the middle of the range the groups want. */
+  --g-blue: #021e7c; --g-teal: #128537; --g-green: #2c78cd; --g-pink: #a05bab;
+  --g-amber: #0f4400; --g-coral: #4c429b; --g-violet: #510a5c; --g-slate: #6b6559;
+
+  --shadow-float: inset 0 0 0 1px var(--surface-4), 0 24px 64px rgba(38, 36, 31, 0.18);
+
+  --green: var(--bar); --green-soft: rgba(78, 74, 66, 0.10);
+  --blue: var(--text-2); --blue-soft: rgba(78, 74, 66, 0.12);
+  --teal: var(--g-teal); --pink: var(--g-pink); --violet: var(--g-violet);
+  --coral: var(--g-coral); --slate: var(--g-slate);
+  --scrim: rgba(219, 215, 206, 0.8);
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -28,30 +95,41 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
 input, select, textarea { font: inherit; color: inherit; }
 button:focus-visible, [tabindex]:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
-a { color: var(--blue); text-decoration: none; }
+a { color: var(--text); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--surface-4); }
+a:hover { text-decoration-color: var(--amber); }
 ::selection { background: var(--amber-soft); }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: var(--surface-4); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb { background: var(--surface-4); border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-track { background: transparent; }
 
 .mono { font-family: var(--mono); font-size: 12px; letter-spacing: -0.01em; }
 .num { font-variant-numeric: tabular-nums; }
 .label { font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-3); }
+/* A dot stays round: it is a mark, not a panel, and the flat-and-square rule is about panels. */
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--text-3)); flex: none; display: inline-block; }
-.c-blue { --c: var(--blue); } .c-violet { --c: var(--violet); } .c-teal { --c: var(--teal); } .c-green { --c: var(--green); }
-.c-pink { --c: var(--pink); } .c-amber { --c: var(--amber); } .c-coral { --c: var(--coral); } .c-red { --c: var(--red); } .c-slate { --c: var(--slate); }
-.meter { height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
-.meter > i { display: block; height: 100%; border-radius: 3px; background: var(--c, var(--amber)); width: var(--v, 50%); transition: width 0.25s; }
-.pos { color: var(--green); } .neg { color: var(--red); } .att { color: var(--amber); }
+/* The slot classes. `c-red` is the one that is still a status colour rather than a group slot —
+   nothing may be assigned it as a group, which is why it is absent from GROUP_COLORS. */
+.c-blue { --c: var(--g-blue); } .c-violet { --c: var(--g-violet); } .c-teal { --c: var(--g-teal); } .c-green { --c: var(--g-green); }
+.c-pink { --c: var(--g-pink); } .c-amber { --c: var(--g-amber); } .c-coral { --c: var(--g-coral); } .c-slate { --c: var(--g-slate); }
+.c-red { --c: var(--red); }
+.meter { height: 4px; background: var(--bar-held); overflow: hidden; }
+.meter > i { display: block; height: 100%; background: var(--c, var(--bar)); width: var(--v, 50%); transition: width 0.25s; }
+/* Positive is not green any more. A rule that is met is bone; only the things that stop a launch
+   get a hue, and a "good" colour spends the reader's attention saying nothing happened. */
+.pos { color: var(--text); } .neg { color: var(--red); } .att { color: var(--amber); }
 
 .card { background: var(--surface); border-radius: var(--r-card); box-shadow: var(--shadow-card); padding: 14px; }
 .card h3 { margin: 0 0 10px; font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-3); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .card h3 .aside { font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--text-3); }
-.btn { height: 34px; padding: 0 14px; border-radius: 10px; background: var(--surface-2); font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; box-shadow: var(--shadow-card); color: var(--text); white-space: nowrap; }
-.btn:hover { background: var(--surface-3); }
+.btn { height: 34px; padding: 0 14px; background: transparent; font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; box-shadow: var(--shadow-card); color: var(--text); white-space: nowrap; }
+.btn:hover { background: var(--surface-2); }
 .btn:disabled { opacity: 0.5; cursor: default; }
-.btn.primary { background: var(--amber); color: var(--amber-ink); }
-.btn.primary:hover { background: #f2ad4a; }
+/* Exactly one filled button in the window, on the one action the window exists to reach. */
+.btn.primary { background: var(--text); color: var(--bg); box-shadow: none; }
+.btn.primary:hover { background: var(--text); filter: brightness(1.08); }
+.btn.strong { color: var(--text); box-shadow: inset 0 0 0 1px var(--surface-4); }
+.btn.strong:hover { background: var(--surface-3); }
+
 .btn.danger { color: var(--red); }
 .btn.save { color: var(--amber); }
 .btn.save i { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); }
@@ -94,11 +172,14 @@ textarea.input { height: auto; padding: 10px 12px; resize: vertical; font-family
 .switch input:checked { background: var(--amber); }
 .switch input:checked::after { transform: translateX(16px); background: var(--amber-ink); }
 .band { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.band.negligible { background: var(--surface-3); color: var(--text-2); }
-.band.light { background: var(--green-soft); color: var(--green); }
-.band.moderate { background: var(--amber-soft); color: var(--amber); }
-.band.heavy { background: rgba(255, 138, 91, 0.16); color: var(--coral); }
-.band.veryheavy { background: var(--red-soft); color: var(--red); }
+/* The five bands read as type inside a rule, told apart by ink weight rather than by hue. A
+   coloured pill on forty-four rows spends the reader's whole colour budget saying what the word
+   next to it already says; the ones that matter are the two that are still allowed a hue. */
+.band { font-family: var(--mono); font-weight: 500; letter-spacing: 0; }
+.band.negligible, .band.light { background: transparent; color: var(--text-3); box-shadow: inset 0 0 0 1px var(--surface-3); }
+.band.moderate { background: transparent; color: var(--text-2); box-shadow: inset 0 0 0 1px var(--surface-3); }
+.band.heavy { background: transparent; color: var(--text); box-shadow: inset 0 0 0 1px var(--surface-4); }
+.band.veryheavy { background: transparent; color: var(--text); box-shadow: inset 0 0 0 1px var(--text-3); font-weight: 600; }
 .band.insufficient, .band.unknown { background: transparent; color: var(--text-4); box-shadow: inset 0 0 0 1px var(--surface-3); }
 .empty { padding: 40px; text-align: center; color: var(--text-3); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

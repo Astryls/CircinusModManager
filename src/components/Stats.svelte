@@ -15,6 +15,7 @@
     if (errorIssue.kind === "cycle") return errorIssue.chain;
     return "";
   });
+  // "green" aliases to the bone bar: a figure that is fine does not need a colour.
   const weightColor = $derived(s.share < 10 ? "green" : s.share < 25 ? "amber" : "red");
   const n = (uid: string) => store.byUid.get(uid)?.name ?? uid;
 
@@ -116,7 +117,7 @@
   </button>
   <button class="card stat" class:on={store.showOnly === "collision"} title={texTip} onclick={onTextures}>
     <div class="l"><span>Overlapping textures</span><span class="v num" class:att={s.collisions > 0}>{(s.collisions + (store.snap?.issuesTruncated ?? 0)).toLocaleString()}</span></div>
-    <div class="meter c-amber" style="--v:{Math.min(100, s.collisions * 4)}%"><i></i></div>
+    <div class="meter" style="--v:{Math.min(100, s.collisions * 4)}%"><i></i></div>
     <div class="cap">{#if s.collisions}<span class="flag">{@html I.note}</span>{/if}<span class="t">{s.collisions ? `${s.collidingMods} mods replace the same files. The later mod wins.${store.snap?.issuesTruncated ? ` Only the first ${s.collisions.toLocaleString()} are listed.` : ""}` : "No texture is replaced by two mods"}</span></div>
   </button>
   <button class="card stat" class:on={store.showOnly === "slow"} title={loadTip} onclick={() => narrow("slow")}>
@@ -133,7 +134,7 @@
   {:else}
     <button class="card stat" class:on={store.showOnly === "warning"} title={warnTip} onclick={onPerf}>
       <div class="l"><span>Warnings</span><span class="v num" class:att={s.warnings > 0}>{s.warnings}</span></div>
-      <div class="meter c-amber" style="--v:{Math.min(100, s.warnings * 8)}%"><i></i></div>
+      <div class="meter" style="--v:{Math.min(100, s.warnings * 8)}%"><i></i></div>
       <div class="cap">{#if s.warnings}<span class="flag">{@html I.warn}</span>{/if}<span class="t">{s.warnings ? "Order, version and duplicate notes" : "Nothing to review"}</span></div>
     </button>
   {/if}

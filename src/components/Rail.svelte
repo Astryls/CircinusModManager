@@ -1,7 +1,9 @@
 <script lang="ts">
   import { store, type View } from "$lib/store.svelte";
+  import { theme } from "$lib/theme.svelte";
   import { I } from "$lib/icons";
   import { keyLabel } from "$lib/keys.svelte";
+  import { t } from "$lib/i18n.svelte";
   import GroupEditor from "./GroupEditor.svelte";
   import { openUrl } from "$lib/api";
   import { DISCORD, type Group } from "$lib/types";
@@ -94,16 +96,45 @@
     colText = "";
     newCol = false;
   }
+
+  // One glance at the download manager: installed? busy? cooling down? Moved here with the rest
+  // of the title bar's marks. Only the two accents carry hue -- a download that is simply
+  // working is not an event, so it takes an ink step instead.
+  let now = $state(Math.floor(Date.now() / 1000));
+  $effect(() => {
+    const id = setInterval(() => (now = Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(id);
+  });
+  const dl = $derived.by(() => {
+    const q = store.downloads;
+    if (store.downloadsError) return { color: "var(--red)", label: "Downloads", title: `The download manager did not answer: ${store.downloadsError}` };
+    if (!q) return { color: "var(--text-4)", label: "Downloads", title: "Connecting to the download manager" };
+    const queued = store.queueCounts.queued;
+    const cool = q.throttle.cooldownUntil ? Math.max(0, q.throttle.cooldownUntil - now) : 0;
+    if (q.installing) return { color: "var(--text-2)", label: "Installing SteamCMD", title: "SteamCMD is downloading and updating itself" };
+    if (!q.steamcmdInstalled) return { color: "var(--amber)", label: "SteamCMD not set up", title: "SteamCMD is not set up yet. Click to set it up. It downloads Workshop mods without the Steam client." };
+    if (cool) return { color: "var(--amber)", label: `Cooling down ${cool}s`, title: "Steam refused downloads. Circinus is waiting, then tries a smaller batch." };
+    if (q.running) return { color: "var(--text-2)", label: `Downloading \u00b7 ${queued} left`, title: `SteamCMD is fetching a batch of ${q.currentBatch.length}` };
+    if (q.paused && queued) return { color: "var(--text-3)", label: `Paused \u00b7 ${queued} queued`, title: "Downloads are paused" };
+    if (queued) return { color: "var(--text-2)", label: `${queued} queued`, title: "Waiting to start the next batch" };
+    if (store.queueCounts.failed) return { color: "var(--red)", label: `${store.queueCounts.failed} failed`, title: "Some downloads failed. Open Downloads to retry." };
+    return { color: "var(--text-3)", label: "SteamCMD ready", title: "SteamCMD is ready. Paste Workshop links in Downloads, or use Re-download on a mod." };
+  });
 </script>
 
 <svelte:window onclick={onWindowClick} />
 
 <aside class="rail">
+  <button class="mark" title="Back to the load order" aria-label="Circinus: back to the load order" onclick={() => { store.view = "order"; store.tab = "active"; }}>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path opacity=".38" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 4a6 6 0 1 1 0 12 6 6 0 0 1 0-12z" fill="currentColor"/><path d="M9.5 9.5h5v5h-5z" fill="currentColor"/></svg>
+    <span>Circinus</span>
+  </button>
+  <div class="scroll">
   <section class="card inst">
     <div class="ver"><span class="dot" style="--c: {snap?.locations.gameDir ? 'var(--green)' : 'var(--red)'}"></span>RimWorld {snap?.gameVersion.majorMinor ?? "not found"}</div>
     <div class="sub" title={snap?.locations.gameDir ?? ""}>{snap?.locations.gameDir ? `${snap.gameVersion.full}${snap.locations.workshopDir ? " · Steam" : ""}` : "Set the game folder in Settings"}</div>
     <div class="row"><span class="num">{store.active.length} active</span><span class="num">{store.mods.length} installed</span></div>
-    <div class="meter c-blue" style="--v:{pct}%"><i></i></div>
+    <div class="meter" style="--v:{pct}%"><i></i></div>
     <div class="row lists" bind:this={listMenu}>
       <button class="lbtn" bind:this={listBtn} title={store.currentList ? `Working on the list ${store.currentList}. Save writes it and ModsConfig.xml.` : "The active list is ModsConfig.xml. Save it under a name to keep several lists."} onclick={toggleListMenu} aria-haspopup="menu" aria-expanded={listOpen}>{@html I.list}<span class="n">{store.currentList ?? "ModsConfig.xml"}</span><span class="car">▾</span></button>
       <span class:att={snap?.dirty}>{snap?.dirty ? "not saved" : "saved"}</span>
@@ -212,10 +243,56 @@
 
   <!-- Last in the sidebar because it is what you reach for when the rest has not helped. -->
   <button class="help" onclick={() => openUrl(DISCORD)} title="Ask for help, or say a mod sorted somewhere odd">{@html I.link}Help on Discord</button>
+
+  </div>
+
+  <!-- What the title bar used to carry. In this layout the column owns identity and action, so
+       the status marks and the two committed actions live at its foot: the last thing in the
+       column is the thing you do when you are finished with the column. -->
+  <div class="marks">
+    {#if store.busy}<span class="busy">{store.busy}</span>{/if}
+    {#if store.changeCounts.total}
+      <button class="mk att" title="{store.changeCounts.total} mods changed since you last opened Circinus. Click to see what changed." onclick={() => (store.showChanges = true)}>{@html I.bell}<span>{store.changeCounts.total} changed</span></button>
+    {/if}
+    {#if store.update && !store.updateProgress}
+      <button class="mk" title="Circinus {store.update.version} is available. Settings, Updates has Install and restart." onclick={() => (store.view = "settings")}>{@html I.up}<span>{store.update.version} available</span></button>
+    {/if}
+    <button class="mk" class:on={store.view === "downloads"} title={dl.title} onclick={() => (store.view = store.view === "downloads" ? "order" : "downloads")}>
+      <span class="dot" style="--c: {dl.color}"></span><span>{dl.label}</span>
+    </button>
+  </div>
+  <div class="acts">
+    <button class="btn" class:save={snap?.dirty} disabled={!snap?.dirty} onclick={() => store.save()} title={t("titlebar.save.title", { keys: keyLabel("Mod+s") })}>{@html I.save}Save</button>
+    <button class="btn primary" onclick={() => store.launch()} disabled={!!store.busy} title={snap?.settings.launch.method === "executable" ? "Start RimWorld from its executable (see Settings, Launching RimWorld)" : "Start RimWorld. Through Steam when it lives in a Steam library, otherwise from its executable."}>{@html I.play}Play</button>
+    <button class="ib" aria-label={theme.nextLabel} title={theme.nextLabel} onclick={() => theme.toggle()}>{@html I.paper}</button>
+    <button class="ib" class:on={store.view === "settings"} aria-label="Settings" title="Settings" onclick={() => (store.view = store.view === "settings" ? "order" : "settings")}>{@html I.gear}</button>
+  </div>
 </aside>
 
 <style>
-  .rail { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: hidden auto; }
+  /* The column scrolls in its middle only. `margin-top: auto` cannot pin a foot inside a
+     scrolling box -- it scrolls away with everything else, which is how Save and Play ended up
+     below the fold on a short window. So the column is a grid with one scrolling row. */
+  .rail { display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; min-height: 0; overflow: hidden; padding: 12px; background: var(--bg-2); gap: 0; }
+  .mark { display: flex; align-items: center; gap: 9px; padding: 4px 2px 12px; color: var(--text); font-size: 15px; font-weight: 700; letter-spacing: -0.01em; flex: none; }
+  .mark svg { width: 18px; height: 18px; flex: none; }
+  .mark:hover { color: var(--amber); }
+  .rail .scroll { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: hidden auto; }
+  .marks { display: flex; flex-direction: column; gap: 3px; flex: none; padding-top: 8px; }
+  .marks .busy { font-family: var(--mono); font-size: 10.5px; color: var(--amber); padding: 0 2px; }
+  .mk { display: flex; align-items: center; gap: 7px; padding: 5px 6px; margin: 0 -6px; font-size: 11.5px; color: var(--text-3); text-align: left; min-width: 0; }
+  .mk span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mk :global(svg) { width: 13px; height: 13px; flex: none; }
+  .mk:hover, .mk.on { background: var(--surface-2); color: var(--text-2); }
+  .mk.att { color: var(--amber); }
+  /* Two committed actions and two switches. Play is the only filled button in the window, which
+     is the whole of the button hierarchy: one thing the window exists to reach, everything else
+     a rule. */
+  .acts { display: flex; gap: 6px; flex: none; border-top: 1px solid var(--surface-3); padding-top: 10px; }
+  .acts .btn { flex: 1; min-width: 0; }
+  .acts .ib { width: 34px; height: 34px; flex: none; display: grid; place-items: center; color: var(--text-3); box-shadow: var(--shadow-card); }
+  .acts .ib :global(svg) { width: 15px; height: 15px; }
+  .acts .ib:hover, .acts .ib.on { background: var(--surface-2); color: var(--text); }
   .help { display: flex; align-items: center; gap: 7px; flex: none; padding: 7px 12px; border-radius: 9px; color: var(--text-3); font-size: 12px; font-weight: 600; }
   .help :global(svg) { width: 14px; height: 14px; }
   .help:hover { background: var(--surface-2); color: var(--text-2); }

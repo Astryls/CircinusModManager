@@ -4,6 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Circinus Mod Manager</title>
+    <!-- Paint the right ground before any stylesheet or script lands, or the window flashes the
+         other paper on every launch. Mirrors lib/theme.svelte.ts; keep the key in step. -->
+    <script>
+      try {
+        var p = localStorage.getItem("circinus.paper");
+        if (p !== "dark" && p !== "light") p = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        if (p === "light") document.documentElement.setAttribute("data-theme", "light");
+        document.documentElement.style.background = p === "light" ? "#e4e1d9" : "#131210";
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="app"></div>

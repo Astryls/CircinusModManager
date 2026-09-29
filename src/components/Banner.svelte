@@ -164,22 +164,26 @@
 {/each}
 
 <style>
-  .banner { display: flex; align-items: center; gap: 12px; border-radius: 12px; padding: 10px 14px; font-weight: 700; font-size: 13.5px; box-shadow: var(--shadow-raised); }
-  .banner + .banner { margin-top: -4px; }
+  /* Three stacked slabs of saturated fill was the loudest thing in the window, and two of the
+     three were advisory. A banner is a quiet panel carrying a coloured edge: the edge is the only
+     colour, and it is 3px. An error keeps its fill, because an error is the one thing that has
+     earned the right to interrupt. */
+  .banner { display: flex; align-items: center; gap: 12px; padding: 10px 14px; font-weight: 600; font-size: 13.5px; box-shadow: inset 0 0 0 1px var(--surface-3); }
+  .banner + .banner { margin-top: 0; }
   .banner.compact { padding: 5px 10px 5px 12px; font-size: 13px; }
   .banner.compact .ico { width: 20px; height: 20px; }
   .banner.compact .ico :global(svg) { width: 10px; height: 10px; }
   .banner.compact button { padding: 4px 9px; font-size: 12.5px; }
   .banner.compact button.x { width: 24px; height: 24px; }
   .inline { font-weight: 500; opacity: 0.8; font-size: 12.5px; margin-left: 6px; }
-  .banner.note, .banner.warning { background: var(--amber-deep); color: var(--amber-ink); }
-  .banner.info { background: var(--surface-3); color: var(--text); }
-  .banner.error { background: #b8433c; color: #fff4f3; }
+  .banner.note, .banner.warning { background: var(--bg-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--surface-3), inset 3px 0 0 var(--amber); }
+  .banner.info { background: var(--bg-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--surface-3), inset 3px 0 0 var(--text-3); }
+  .banner.error { background: var(--red-soft); color: var(--text); box-shadow: inset 0 0 0 1px var(--red), inset 3px 0 0 var(--red); }
   /* A newer build: good news, in the blue the app uses for "something to fetch". */
-  .banner.update { background: #2f63c4; color: #eef3ff; }
-  .banner.update .bar { flex: 0 0 200px; height: 8px; border-radius: 4px; background: rgba(0, 0, 0, 0.28); overflow: hidden; }
-  .banner.update .bar i { display: block; height: 100%; border-radius: 4px; background: #fff; transition: width 0.12s linear; }
-  .banner.update .bar.indeterminate i { background: repeating-linear-gradient(-45deg, #fff 0 10px, rgba(255, 255, 255, 0.55) 10px 20px); background-size: 28px 100%; animation: slide 0.8s linear infinite; }
+  .banner.update { background: var(--bg-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--surface-3), inset 3px 0 0 var(--text-2); }
+  .banner.update .bar { flex: 0 0 200px; height: 6px; background: var(--bar-held); overflow: hidden; }
+  .banner.update .bar i { display: block; height: 100%; background: var(--bar); transition: width 0.12s linear; }
+  .banner.update .bar.indeterminate i { background: repeating-linear-gradient(-45deg, var(--bar) 0 10px, var(--bar-held) 10px 20px); background-size: 28px 100%; animation: slide 0.8s linear infinite; }
   @keyframes slide { to { background-position: 28px 0; } }
   .banner.update .pct { width: 38px; text-align: right; font-size: 12.5px; opacity: 0.9; }
   /* Where you are in the review. Beside the button rather than in the detail, which is elided

@@ -2,6 +2,10 @@ import { mount } from "svelte";
 import "./app.css";
 import Root from "./Root.svelte";
 import { api } from "./lib/api";
+import { theme } from "./lib/theme.svelte";
+
+// Before the first mount, so the window never paints one paper and then swaps to the other.
+theme.start();
 
 // Anything that escapes goes into the same log as the rest of the app. A message that only ever
 // reaches a console nobody opens is a message nobody has: the window went black for a user and

@@ -144,11 +144,11 @@
       <button class="btn split" class:on={store.splitMode === "halo"} aria-pressed={store.splitMode === "halo"} onclick={() => (store.split = store.split === "halo" ? null : "halo")} title={t("toolbar.whatChanges.title")}>
         {@html I.change}<span class="split-lbl">{t("toolbar.whatChanges")}</span>
       </button>
-      <button class="btn primary" onclick={() => store.haloApply()} title={t("toolbar.apply.title", { n: previewCount })}>{@html I.check}{t("toolbar.apply")}<span class="cnt-lbl">{t("toolbar.apply.moves", { n: previewCount })}</span></button>
+      <button class="btn strong" onclick={() => store.haloApply()} title={t("toolbar.apply.title", { n: previewCount })}>{@html I.check}{t("toolbar.apply")}<span class="cnt-lbl">{t("toolbar.apply.moves", { n: previewCount })}</span></button>
       <button class="btn" onclick={() => store.clearPreview()} title={t("toolbar.discard.title")} aria-label={t("toolbar.discard.aria")}>{@html I.close}<span class="opt-lbl">{t("toolbar.discard")}</span></button>
     </span>
   {:else}
-    <button class="btn primary" onclick={() => store.haloPreview()} title={t("toolbar.sortWithHalo.title")}>{@html I.halo}{t("toolbar.sortWithHalo")}</button>
+    <button class="btn strong" onclick={() => store.haloPreview()} title={t("toolbar.sortWithHalo.title")}>{@html I.halo}{t("toolbar.sortWithHalo")}</button>
   {/if}
 </div>
 

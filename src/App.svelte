@@ -2,8 +2,8 @@
   import { onMount } from "svelte";
   import { store } from "$lib/store.svelte";
   import { actions, chord, matches } from "$lib/keys.svelte";
-  import TitleBar from "./components/TitleBar.svelte";
   import Rail from "./components/Rail.svelte";
+  import SearchLine from "./components/SearchLine.svelte";
   import Stats from "./components/Stats.svelte";
   import Banner from "./components/Banner.svelte";
   import Toolbar from "./components/Toolbar.svelte";
@@ -83,25 +83,29 @@
 <svelte:window onkeydown={onKey} />
 
 <div class="app">
-  <TitleBar />
-  {#if store.view === "settings"}
-    <Panel name="Settings"><SettingsView /></Panel>
-  {:else if store.view === "analyzer"}
-    <div class="frame two"><Panel name="Sidebar"><Rail /></Panel><Panel name="Analyzer"><AnalyzerView /></Panel></div>
-  {:else if store.view === "downloads"}
-    <div class="frame two"><Panel name="Sidebar"><Rail /></Panel><Panel name="Downloads"><DownloadsView /></Panel></div>
-  {:else if store.view === "textures"}
-    <div class="frame two"><Panel name="Sidebar"><Rail /></Panel><Panel name="Textures"><TexturesView /></Panel></div>
-  {:else if store.view === "defs"}
-    <div class="frame two"><Panel name="Sidebar"><Rail /></Panel><Panel name="Defs"><DefsView /></Panel></div>
-  {:else if store.view === "patches"}
-    <div class="frame two"><Panel name="Sidebar"><Rail /></Panel><Panel name="Patches"><PatchesView /></Panel></div>
-  {:else if store.view === "halo"}
-    <div class="frame two"><Panel name="Sidebar"><Rail /></Panel><Panel name="HALO"><HaloView /></Panel></div>
-  {:else}
-    <div class="frame">
-      <Panel name="Sidebar"><Rail /></Panel>
-      <main class="center" bind:clientWidth={centre}>
+  <!-- The Directory layout: one fixed column is the whole navigation -- instance, views, groups,
+       collections, and the two committed actions at its foot -- and there is no title bar above
+       it. The column is outside the view switch because it is the constant; only what sits
+       beside it changes. -->
+  <div class="frame" class:two={store.view !== "order"}>
+    <Panel name="Sidebar"><Rail /></Panel>
+    <main class="center" bind:clientWidth={centre}>
+      <SearchLine />
+      {#if store.view === "settings"}
+        <Panel name="Settings"><SettingsView /></Panel>
+      {:else if store.view === "analyzer"}
+        <Panel name="Analyzer"><AnalyzerView /></Panel>
+      {:else if store.view === "downloads"}
+        <Panel name="Downloads"><DownloadsView /></Panel>
+      {:else if store.view === "textures"}
+        <Panel name="Textures"><TexturesView /></Panel>
+      {:else if store.view === "defs"}
+        <Panel name="Defs"><DefsView /></Panel>
+      {:else if store.view === "patches"}
+        <Panel name="Patches"><PatchesView /></Panel>
+      {:else if store.view === "halo"}
+        <Panel name="HALO"><HaloView /></Panel>
+      {:else}
         <Panel name="Summary"><Stats /></Panel>
         <Panel name="Attention banner"><Banner /></Panel>
         <Panel name="Toolbar"><Toolbar /></Panel>
@@ -124,16 +128,16 @@
         {:else}
           <Panel name="Mod list"><ModList /></Panel>
         {/if}
-      </main>
-      <Panel name="Inspector"><Inspector /></Panel>
-      <div class="foot">
-        {#if store.snap}
-          {store.snap.mods.length} mods installed · {store.active.length} active · {store.snap.inspecting ? `reading ${store.snap.inspecting} folders in the background · ` : ""}{store.snap.missing.length ? `${store.snap.missing.length} in ModsConfig.xml but not installed · ` : ""}
-          {store.snap.dbLoaded.length ? `Rule databases: ${store.snap.dbLoaded.join(", ")}` : "No rule databases loaded yet: Settings, Update now"}
-        {/if}
-      </div>
+      {/if}
+    </main>
+    {#if store.view === "order"}<Panel name="Inspector"><Inspector /></Panel>{/if}
+    <div class="foot">
+      {#if store.snap}
+        {store.snap.mods.length} mods installed · {store.active.length} active · {store.snap.inspecting ? `reading ${store.snap.inspecting} folders in the background · ` : ""}{store.snap.missing.length ? `${store.snap.missing.length} in ModsConfig.xml but not installed · ` : ""}
+        {store.snap.dbLoaded.length ? `Rule databases: ${store.snap.dbLoaded.join(", ")}` : "No rule databases loaded yet: Settings, Update now"}
+      {/if}
     </div>
-  {/if}
+  </div>
   {#if store.showImport}<ImportDialog />{/if}
   {#if store.showChanges}<Panel name="Changes"><ChangesDialog /></Panel>{/if}
   {#if store.showCollection != null}<Panel name="Collection"><CollectionDialog /></Panel>{/if}
@@ -153,11 +157,17 @@
 </div>
 
 <style>
-  .app { height: 100vh; display: grid; grid-template-rows: 56px minmax(0, 1fr); overflow: hidden; }
-  .frame { display: grid; grid-template-columns: 236px minmax(0, 1fr) 340px; grid-template-rows: minmax(0, 1fr) auto; gap: 12px 14px; padding: 0 14px 10px; min-height: 0; }
-  .frame.two { grid-template-columns: 236px minmax(0, 1fr); }
+  /* No title bar row: the directory column runs the full height of the window, and its width is
+     the site's own --dirw. Panels are separated by rules, not by gaps, so the gap is gone too --
+     a gap between flat squares reads as a mistake, where between shadowed cards it read as depth. */
+  .app { height: 100vh; display: grid; grid-template-rows: minmax(0, 1fr); overflow: hidden; }
+  .frame { display: grid; grid-template-columns: 266px minmax(0, 1fr) 340px; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; }
+  .frame.two { grid-template-columns: 266px minmax(0, 1fr); }
+  .frame > :global(.rail), .frame > :global(*:first-child) { border-right: 1px solid var(--surface-3); }
+  .frame > :global(.inspector) { border-left: 1px solid var(--surface-3); }
   .frame > :global(*) { min-width: 0; min-height: 0; }
-  .center { display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; }
+  .center { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .center > :global(*) { min-width: 0; }
   .panes { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .panes.one { grid-template-columns: minmax(0, 1fr); }
   .panes > :global(*) { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
@@ -168,15 +178,15 @@
   .narrow { font-size: 11.5px; color: var(--text-3); padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .narrow button { color: var(--text-2); font-size: 11.5px; font-weight: 600; text-decoration: underline; }
   .narrow button:hover { color: var(--text); }
-  .foot { grid-column: 1 / -1; font-size: 11.5px; color: var(--text-3); text-align: center; padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: -4px; }
-  .loading { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(11, 11, 13, 0.7); backdrop-filter: blur(4px); z-index: 50; color: var(--text-2); font-weight: 600; }
+  .foot { grid-column: 1 / -1; font-family: var(--mono); font-size: 10.5px; color: var(--text-3); padding: 7px 14px; border-top: 1px solid var(--surface-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .loading { position: fixed; inset: 0; display: grid; place-items: center; background: var(--scrim); backdrop-filter: blur(4px); z-index: 50; color: var(--text-2); font-weight: 600; }
   .loading > * { grid-area: 1 / 1; }
   .loading span { margin-top: 70px; max-width: 60ch; text-align: center; line-height: 1.5; user-select: text; }
-  .loading .err { color: #ffb4ae; margin-top: 0; }
+  .loading .err { color: var(--red); margin-top: 0; }
   .loading .err .btn { margin-top: 12px; }
-  .spin { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--surface-4); border-top-color: var(--amber); animation: spin 0.8s linear infinite; }
+  .spin { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--surface-3); border-top-color: var(--amber); animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  @media (max-width: 1240px) { .frame { grid-template-columns: 220px minmax(0, 1fr); } .frame :global(.inspector) { display: none; } }
-  @media (min-width: 1700px) { .frame { grid-template-columns: 250px minmax(0, 1fr) 380px; } }
+  @media (max-width: 1240px) { .frame { grid-template-columns: 240px minmax(0, 1fr); } .frame :global(.inspector) { display: none; } }
+  @media (min-width: 1700px) { .frame { grid-template-columns: 266px minmax(0, 1fr) 380px; } }
   @media (max-width: 980px) { .frame { grid-template-columns: minmax(0, 1fr); } .frame :global(.rail) { display: none; } }
 </style>

@@ -313,6 +313,53 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   measures the **content** box, 28px narrower than the card at this padding, so thresholds read
   as card widths fire about 30px early; that is what once clamped the caption at a width where
   two lines cost nothing.
+- **The Directory layout, and the two papers.** There is no title bar. One fixed 266px column —
+  the site's own `--dirw` — is the whole navigation: wordmark, instance, views, groups,
+  collections, then the status marks and Save/Play/theme at its foot. It lives outside the view
+  switch in `App.svelte` because it is the constant; only what sits beside it changes. Search is
+  a line at the top of the content column, which is the one control that acts on the content.
+  The column is a **grid**, not a flex column, with one scrolling row in the middle:
+  `margin-top: auto` cannot pin a foot inside a scrolling box — it scrolls away with everything
+  else, which is how Save and Play ended up below the fold on a short window.
+  Neither paper is invented here. Dark is circinus.sh's `:root`; light is an e-ink step of its
+  light set, pulled off white in both directions (ground down to `#e4e1d9`, ink up to `#26241f`)
+  so the range closes to about 11.9:1 the way a reflective panel's does. **Every colour is a
+  token defined in one of those two blocks in `app.css`.** A literal hex in a component is a
+  colour that only works on one paper, and that is the bug this structure exists to prevent —
+  `#f2ad4a`, `#b8433c` and `rgba(11,11,13,.7)` were all found that way.
+  `lib/theme.svelte.ts` owns the choice; it writes `data-theme` on `<html>` (not a wrapper, or
+  the scrollbars and form controls keep the other `color-scheme`) and remembers it in
+  localStorage, never in user data — a list moved between machines must not drag a theme with it.
+  `index.html` repeats that read in a tiny inline script so the window never flashes the other
+  paper before the bundle lands; **keep the key in step with the module.**
+- **Colour means an error, with one exception.** Two accents: `--amber` is the site's `--hold`,
+  `--red` its `--bad`. Everything advisory carries its weight in words and ink — the five weight
+  bands are mono inside a rule, banners are quiet panels with a 3px coloured edge, and `.pos` is
+  ink rather than green, because a "good" colour spends attention saying nothing happened. Only
+  an error keeps a fill.
+  The exception is **groups**, because a group is identity and not severity, and that is the one
+  place hue does real work. Seven families solved against three rules at once: every pair at
+  least 15 ΔE apart in OKLab, every one at least 15 from *both* accents so a group can never be
+  mistaken for an error, and every one at least 3:1 on its own ground. Dark clears all three
+  (15.7 / 16.8 / 3.14); paper lands slightly under on the first two (14.7 / 14.9 / 3.13), which
+  is the medium rather than the values — a light ground forces dark marks, dark marks have less
+  chroma to spend, and `--red` is itself a dark brick sitting in the middle of the range.
+  Two things to know before touching `--g-*`. The keys (`blue`, `amber`, `coral`…) are the
+  strings already in user data, **not descriptions** — `--g-amber` is not amber, and renaming a
+  key silently repaints every group that has it. And `.c-<name>` is a *group slot*, so a meter or
+  a badge that borrows `.c-amber` for a tint picks up a group's hue; meters take `--bar`, or
+  `.c-red` when the thing they measure is an error. Chroma has a floor around 0.10 in OKLCH:
+  below it a hue stops reading as a hue, so "more muted" is not available without losing the
+  identity the slot exists for.
+  None of this is colourblind-safe and no seven-hue set is — under deuteranopia the worst pair
+  collapses to about 4 ΔE. It is acceptable only because the group name is always printed beside
+  its dot. **A dot without its name is the bug**, not the palette.
+- **The icon set is cut paper.** One solid shape in `currentColor` and a second sheet behind it
+  at 38% opacity; no strokes, no gradients, nothing on a grid finer than 3 units of 24, so no
+  limb disappears at the 15px the directory uses. The previous set had its hues compiled in,
+  which is why a second paper was impossible: every glyph had to be redrawn and none could take
+  the ink of the thing it sat in. Only `error` and `warn` ever carry colour and they take it from
+  the caller. Keys in `lib/icons.ts` are unchanged from the old set, so call sites still resolve.
 - Keeping your own copy. *Keep my own copy* on a Workshop mod copies Steam's folder into the
   game's own `Mods/<workshop id>` and writes `About/PublishedFileId.txt`, which is exactly the
   shape a SteamCMD download has — so it is the same mod to everything downstream, Force update

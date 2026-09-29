@@ -17,8 +17,8 @@
     "i18n": "node tools/i18n-check.mjs --todo"
   },
   "dependencies": {
-    "@fontsource-variable/figtree": "^5.3.0",
-    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/archivo": "^5.3.0",
+    "@fontsource/red-hat-mono": "^5.3.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2",
     "@tauri-apps/plugin-opener": "^2",
