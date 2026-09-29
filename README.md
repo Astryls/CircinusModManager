@@ -192,22 +192,31 @@ node tools/release.mjs 0.2.0    # cuts it, then follows the run
 
 `--checks-in-ci` skips the local tests and lets the three build jobs be the judge; `--local` builds and pushes only the platform you are on, for a one-platform fix; `--dry-run` says what would happen. `docs/update-feed.md` has the whole of it, including what the site refuses and why.
 
-## Thanks
+## Where the load figures come from
 
 **[Loading Progress](https://steamcommunity.com/sharedfiles/filedetails/?id=3535481557)**, by
-**ilyvion** ([source](https://github.com/ilyvion/loading-progress), Apache-2.0 / MIT). Every
-per-mod load figure Circinus shows was measured by that mod. It times each mod's share of
-start-up and writes the result to `StartupImpactData.xml`; Circinus reads it and does none of
-the timing itself, so the load-time card would have one number instead of a breakdown without
-it. Its startup impact tracking is, by its own README, loosely based on **Startup Impact**.
+**ilyvion** ([source](https://github.com/ilyvion/loading-progress), Apache-2.0 / MIT).
+
+Every per-mod load figure Circinus shows was measured by that mod, and by nothing else. It
+times each mod's share of start-up and writes the result to `StartupImpactData.xml`; Circinus
+reads that file and does none of the timing itself. Without it the load-time card has one
+number for the whole start and no breakdown at all.
 
 If you want the breakdown, install it and switch on **Track startup loading impact** and then
 **Auto-save startup impact report** in its settings. Both are off out of the box, which is a
 sensible default for a mod that would otherwise profile every launch.
 
-**[Harmony](https://github.com/pardeike/Harmony)** by Andreas Pardeike, **RimSort** and the
-**Community Rules Database** for the rule data Circinus reads, and **Ludeon Studios** for
-RimWorld. Circinus is an independent project and none of them are affiliated with it.
+Thank you to ilyvion for building it and for making the data readable.
+
+## Other thanks
+
+Unrelated to the load figures above, and listed separately for that reason.
+
+**[Harmony](https://github.com/pardeike/Harmony)** by Andreas Pardeike, which most of the
+ecosystem depends on. **RimSort** and the **Community Rules Database** for the load-order rule
+data Circinus reads: rules about what loads before what, nothing to do with timing. And
+**Ludeon Studios** for RimWorld. Circinus is an independent project and none of them are
+affiliated with it.
 
 ## Getting help
 
