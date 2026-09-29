@@ -147,6 +147,10 @@ const phaseOfSeed: Record<string, Phase> = Object.fromEntries(SEED.map((s) => [u
 const byUid = new Map(mods.map((m) => [m.uid, m]));
 /** What "the file on disk" holds, for the save-confirmation diff. Frozen at load: the session
  *  edits `active` from here, and the difference between the two is what the dialog shows. */
+let sharing = new URLSearchParams(location.search).has("consent")
+  ? { installId: "", shareLoadRuns: false, consentVersion: 0, answeredAt: 0 }
+  : { installId: "4f2a91c0be7d3518a6042cc9", shareLoadRuns: false, consentVersion: 1, answeredAt: Math.floor(Date.now() / 1000) - 172800 };
+
 const SAVED_ACTIVE: string[] = active.map((uid) => (byUid.get(uid)?.packageId ?? uid).toLowerCase());
 /** Mods that arrived while Circinus was watching: ?new=3 (the default) for a handful, ?new=0 for
  *  none. Spread over the last few days so the New tab has something to sort by, and always a
@@ -388,6 +392,7 @@ function snapshot(): Snapshot {
           patchOps: 14022
         },
     startupImpactAt: Math.floor(Date.now() / 1000) - 3600,
+    sharing,
     // Only what is switched on, the way the backend now reports it: a source that is off is not
     // read and does not claim to be loaded. The mock said both were loaded whatever the switches
     // did, which is exactly the bug it should have been showing.
@@ -1245,6 +1250,17 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
     }
     case "validate":
       return issues(active) as T;
+    // Sharing. `?consent` clears the answer so the first-launch card can be seen; the default
+    // is an install that has already said no, since that is the state most screenshots want.
+    case "set_sharing": {
+      const yes = !!(args as { yes?: boolean }).yes;
+      sharing = { installId: yes ? (sharing.installId || "4f2a91c0be7d3518a6042cc9") : sharing.installId, shareLoadRuns: yes, consentVersion: 1, answeredAt: Math.floor(Date.now() / 1000) };
+      return undefined as T;
+    }
+    case "rotate_install_id": {
+      sharing = { ...sharing, installId: "b81e7730a4c25f9613d8ae02" };
+      return sharing.installId as unknown as T;
+    }
     case "pending_save": {
       // The mock has no ModsConfig.xml to diff against, so it answers with the shape a real
       // one would: what the session has activated and deactivated since it loaded, and a

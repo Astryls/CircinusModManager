@@ -386,6 +386,29 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   Play does **not** go through it. `launch_game` saves in Rust when `launch.save_first` is on,
   and a modal between the button and the game is the wrong place to ask a question; the toast
   says what was written instead.
+- **Sharing is off until answered, and the answer is to a version.** `src-tauri/src/sharing.rs`
+  holds the decision and the id; `crates/circinus-core/src/telemetry.rs` holds the envelope;
+  `docs/telemetry.md` and `ADD-LOAD-COSTS.md` in the CircinusWeb workspace are the two halves of
+  the contract. Nothing sends yet — the queue and the HTTP call are not written.
+  The policy is the one already published at circinus.sh/privacy for the Performance Analyzer,
+  word for word, because a second tool sending a slightly different set under the same promise
+  would make the promise worthless. Three parts of it are mechanical rather than aspirational:
+  `Sharing::default()` shares nothing and there is no path where it starts on; `answered()`
+  compares against `telemetry::CONSENT_VERSION`, so a yes given to version 1 does not authorise
+  a version 2 payload and the player is asked afresh; and **`build()` cannot see a path, a name
+  or the filesystem** — it takes numbers and ids as arguments, so there is no line anyone can
+  add later that leaks one. `no_path_can_reach_the_wire` and `no_mod_name_can_reach_the_wire`
+  hold that shut and the privacy page says out loud that they run on every build.
+  The source file is full of things that must not travel: `StartupImpactData.xml` carries a
+  `modName` for every mod and is read from inside the player's home directory.
+  **The install id is this tool's own, not the analyzer's.** A load cost and a frame cost meet
+  on the mod's page by package id, which is the only join the site performs, so nothing needed
+  the two tied at the machine. The consequence is two ids and two deletes, and Settings has to
+  say so. It is minted lazily on the first yes — an install that never shares never has one —
+  from the OS random source and nothing else, because the page claims it is not derived from
+  hardware or an account and a hash of something real would break that.
+  `may_send()` is the only gate anything should ask; a no is stored as an answer, because "said
+  no" and "never asked" have to behave differently.
 - **The icon set is cut paper.** One solid shape in `currentColor` and a second sheet behind it
   at 38% opacity; no strokes, no gradients, nothing on a grid finer than 3 units of 24, so no
   limb disappears at the 15px the directory uses. The previous set had its hues compiled in,

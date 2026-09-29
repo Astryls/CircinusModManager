@@ -13,6 +13,7 @@
   import ImportDialog from "./components/ImportDialog.svelte";
   import ChangesDialog from "./components/ChangesDialog.svelte";
   import SaveDialog from "./components/SaveDialog.svelte";
+  import SharingCard from "./components/SharingCard.svelte";
   import SettingsView from "./components/SettingsView.svelte";
   import AnalyzerView from "./components/AnalyzerView.svelte";
   import DownloadsView from "./components/DownloadsView.svelte";
@@ -32,6 +33,17 @@
 
   onMount(() => {
     store.load();
+  });
+
+  /** Ask about sharing once, after the window has something on it.
+   *
+   *  Not during the loading spinner: a question about data policy over an empty window is one
+   *  people dismiss to get to the app. And not at all until the snapshot has arrived, because
+   *  until then we cannot tell "never asked" from "not loaded yet". */
+  $effect(() => {
+    if (store.loading || !store.snap) return;
+    if (store.sharingAnswered) return;
+    store.showConsent = true;
   });
 
   /** The game writes how long it took to start; Circinus is not in front while it does.
@@ -154,6 +166,7 @@
   {#if store.showImport}<ImportDialog />{/if}
   {#if store.showChanges}<Panel name="Changes"><ChangesDialog /></Panel>{/if}
   {#if store.showSave}<Panel name="Save"><SaveDialog /></Panel>{/if}
+  {#if store.showConsent}<Panel name="Sharing"><SharingCard /></Panel>{/if}
   {#if store.showCollection != null}<Panel name="Collection"><CollectionDialog /></Panel>{/if}
   <!-- A dialog rather than a view with a rail row of its own: most installs follow no packs, and
        a permanent nav entry reading zero is the thing the New tab was deliberately not. -->

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { store } from "$lib/store.svelte";
+  import { t } from "$lib/i18n.svelte";
   import { api, pickFile, pickFolder, inTauri, openUrl } from "$lib/api";
   import { I } from "$lib/icons";
   import { DISCORD, type LaunchInfo, type LaunchMethod, type Locations } from "$lib/types";
@@ -194,6 +195,26 @@
     </section>
 
     <section class="card">
+      <h3>Sharing <span class="aside">{store.sharing?.shareLoadRuns ? "on" : "off"}</span></h3>
+      <label class="switch"><input type="checkbox" checked={store.sharing?.shareLoadRuns ?? false} onchange={(e) => store.setSharing(e.currentTarget.checked)} />{t("sharing.settings.on")}</label>
+      <p class="hint">{store.sharing?.shareLoadRuns ? t("sharing.fine") : t("sharing.settings.off")}</p>
+      <button class="btn sm" onclick={() => (store.showConsent = true)}>{t("sharing.settings.review")}</button>
+
+      <!-- The id is shown whether sharing is on or off, because it is what a player needs in
+           order to ask for a deletion, and needing it is not conditional on still sharing. -->
+      {#if store.sharing?.installId}
+        <div class="fld idrow">
+          <label for="installid">{t("sharing.settings.id")}</label>
+          <input id="installid" class="input mono" readonly value={store.sharing.installId} onclick={(e) => e.currentTarget.select()} />
+          <p class="hint">{t("sharing.settings.idhint")}</p>
+          <p class="hint">{t("sharing.settings.separate")}</p>
+          <button class="btn sm" onclick={() => store.rotateInstallId()}>{t("sharing.settings.rotate")}</button>
+          <p class="hint">{t("sharing.settings.rotatehint")}</p>
+        </div>
+      {/if}
+    </section>
+
+    <section class="card">
       <h3>Performance figures</h3>
       <p class="hint">How much frame time each mod costs, measured by the <button class="lnk" onclick={() => openUrl("https://circinus.sh")}>Circinus profiler</button>. Shown as a share of frame time, the median across clean runs. A mod is ranked after 25 runs from 10 players. Long lists spread the total thin, so compare mods rather than adding them up.</p>
       <label class="switch"><input type="checkbox" checked={s?.showWeight ?? false} onchange={(e) => store.updateSettings({ showWeight: e.currentTarget.checked })} />Show the figure next to each mod</label>
@@ -294,4 +315,7 @@
   .seg button.on { background: var(--surface-4); color: var(--text); }
   .lv .input { height: 30px; font-size: 12.5px; flex: 1; }
   @media (max-width: 980px) { .settings { columns: 1; } }
+  .idrow { margin-top: 12px; gap: 5px; }
+  .idrow .input { max-width: 340px; }
+  .idrow .btn { align-self: flex-start; margin-top: 4px; }
 </style>

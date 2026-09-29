@@ -6,6 +6,7 @@ pub mod instances;
 pub mod logs;
 pub mod packs;
 pub mod patches;
+pub mod sharing;
 pub mod state;
 pub mod subscribe;
 pub mod textures;
@@ -228,6 +229,8 @@ pub fn run() {
             commands::save_mods_config,
             commands::pending_save,
             commands::refresh_last_run,
+            commands::set_sharing,
+            commands::rotate_install_id,
             commands::import_list,
             commands::apply_import,
             commands::update_settings,

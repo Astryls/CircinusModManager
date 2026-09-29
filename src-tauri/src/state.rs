@@ -234,6 +234,10 @@ pub struct UserData {
     /// which is what happened. Set the first time the app opens, whether or not the groups were
     /// needed, so from then on an empty list means an empty list.
     pub groups_seeded: bool,
+    /// Whether load runs go to circinus.sh, and the id they go under. Off until answered; see
+    /// `sharing.rs` for why the id is this tool's own rather than the analyzer's.
+    #[serde(default)]
+    pub sharing: crate::sharing::Sharing,
     /// The user's edits to HALO's classification, from the HALO page.
     pub halo: HaloRules,
     /// Collection id → the timestamp of the newest announcement the user has read.
@@ -391,6 +395,9 @@ pub struct Snapshot {
     pub load_run: Option<LoadRun>,
     /// Unix seconds of the log that figure came from, so the screen can say how old it is.
     pub load_run_at: i64,
+    /// Whether load runs are shared, and under which id.
+    #[serde(default)]
+    pub sharing: crate::sharing::Sharing,
     /// Per-mod measured start-up, when the Loading Progress mod has written one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub startup_impact: Option<StartupImpact>,
@@ -1042,6 +1049,7 @@ impl App {
             announcements_checked_at: self.announcements_checked_at,
             load_run: self.load_run.clone(),
             load_run_at: self.load_run_at,
+            sharing: self.user.sharing.clone(),
             startup_impact: self.startup_impact.clone(),
             startup_impact_at: self.startup_impact_at,
         }

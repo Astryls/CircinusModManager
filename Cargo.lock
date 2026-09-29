@@ -522,6 +522,8 @@ name = "circinus"
 version = "0.1.0"
 dependencies = [
  "circinus-core",
+ "getrandom 0.3.4",
+ "hex",
  "rayon",
  "reqwest 0.12.28",
  "serde",

@@ -789,6 +789,37 @@ pub async fn get_launch_info(state: State<'_, Shared>) -> CmdResult<LaunchInfo> 
 }
 
 /// Start RimWorld the way the settings say, saving ModsConfig.xml first if asked to.
+/// Record the player's answer about sharing load runs.
+///
+/// `yes = false` is stored as an answer rather than as an absence, because "said no" and
+/// "never asked" have to behave differently: one leaves them alone, the other asks again.
+#[tauri::command]
+pub async fn set_sharing(yes: bool, state: State<'_, Shared>) -> CmdResult<()> {
+    with_app(&state, move |app| {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        app.user.sharing.answer(yes, now);
+        app.persist().map_err(err)
+    })
+    .await
+}
+
+/// Start sharing under a new id, after the old one's data has been asked to be deleted.
+///
+/// Deliberately not offered before a delete: the site's delete is keyed on the id, so rotating
+/// first would strand the old runs under an id nobody holds any more.
+#[tauri::command]
+pub async fn rotate_install_id(state: State<'_, Shared>) -> CmdResult<String> {
+    with_app(&state, |app| {
+        app.user.sharing.rotate();
+        app.persist().map_err(err)?;
+        Ok(app.user.sharing.install_id.clone())
+    })
+    .await
+}
+
 /// Re-read how long the last start-up took.
 ///
 /// Called when the window comes back to the front, which is where this actually matters: the

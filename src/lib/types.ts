@@ -373,6 +373,7 @@ export interface Snapshot {
   loadRun?: LoadRun | null;
   /** Unix seconds of the log that came from. */
   loadRunAt?: number;
+  sharing?: Sharing;
   /** Per-mod measured start-up, when the Loading Progress mod has written one. */
   startupImpact?: StartupImpact | null;
   startupImpactAt?: number;
@@ -428,6 +429,8 @@ export interface Announcement {
  *
  *  Mirrors `loadcost::VANILLA_SECS`. A round number on purpose: it is a stand-in until a log
  *  carries Prepatcher's real figure, and nobody should mistake it for a measurement. */
+/** Mirrors `circinus_core::telemetry::CONSENT_VERSION`; keep the two in step. */
+export const CONSENT_VERSION = 1;
 export const VANILLA_SECS = 40;
 
 /** How long the game took to load, the last time its log recorded it.
@@ -435,6 +438,16 @@ export const VANILLA_SECS = 40;
  *  RimWorld itself never says. These figures come from lines other mods print — Prepatcher's
  *  vanilla load, the def-cache mods' pipeline — so `source` names whoever measured it and the
  *  screen shows that beside the number rather than passing it off as Circinus's own. */
+/** Whether load runs go to circinus.sh, and the id they go under. */
+export interface Sharing {
+  /** Empty until something is first shared: an install that never shares never has an id. */
+  installId: string;
+  shareLoadRuns: boolean;
+  /** Which set of fields the answer was about. 0 means never asked. */
+  consentVersion: number;
+  answeredAt: number;
+}
+
 /** What one mod cost, as the Loading Progress mod measured it on this machine. */
 export interface ModImpact {
   /** Lowercased and without the `_steam` suffix: the shape Circinus joins on. */

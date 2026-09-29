@@ -4,7 +4,7 @@
 import { api, appVersion, listen, openFolder } from "./api";
 import { t } from "./i18n.svelte";
 import type { AuditReport, BuiltinRule, CollectionPreview, DefMatch, DefQuery, DefsState, DefTree, Group, HaloRules, ImportPreview, Instance, Issue, ItemState, LaunchSettings, Locations, LogAnalysis, LogFile, ModChange, ModInfo, ModPatchDetail, ModTextures, PatchJob, PatchReport, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamClientStatus, SteamCmdStatus, SubscribeOutcome, SubscriptionProgress, TexState, TrackedCollection, UpdateCheck, UpdateProgress, UserData, Weight, ListChange } from "./types";
-import { EMPTY_HALO, GROUP_COLORS, loadBand, PHASES, primaryUid, severityOf, VANILLA_SECS, type LoadBand, type Severity } from "./types";
+import { CONSENT_VERSION, EMPTY_HALO, GROUP_COLORS, loadBand, PHASES, primaryUid, severityOf, VANILLA_SECS, type LoadBand, type Severity } from "./types";
 
 export type View = "order" | "library" | "downloads" | "textures" | "defs" | "patches" | "analyzer" | "halo" | "settings";
 
@@ -92,6 +92,9 @@ class Store {
    *  opens rather than derived, because only the backend can turn the edited uid list into the
    *  package ids that actually go in the file. */
   showSave = $state(false);
+  /** The consent card. Shown once, when the player has not answered about *this* set of
+   *  fields -- an answer about an older set is not an answer about this one. */
+  showConsent = $state(false);
   pendingSave = $state<ListChange | null>(null);
   preview = $state<SortResult | null>(null);
   importPreview = $state<ImportPreview | null>(null);
@@ -350,6 +353,22 @@ class Store {
   loadRun = $derived(this.snap?.loadRun ?? null);
   loadRunAt = $derived(this.snap?.loadRunAt ?? 0);
   startupImpact = $derived(this.snap?.startupImpact ?? null);
+  sharing = $derived(this.snap?.sharing ?? null);
+  /** Has the player answered about the fields this build would send? */
+  sharingAnswered = $derived((this.sharing?.consentVersion ?? 0) === CONSENT_VERSION);
+
+  async rotateInstallId() {
+    await api.rotateInstallId();
+    this.snap = await api.snapshot();
+    this.say("Sharing under a new id");
+  }
+
+  async setSharing(yes: boolean) {
+    await api.setSharing(yes);
+    this.showConsent = false;
+    this.snap = await api.snapshot();
+    this.say(yes ? "Load runs will be shared with circinus.sh" : "Nothing will be shared");
+  }
   startupImpactAt = $derived(this.snap?.startupImpactAt ?? 0);
   /** Vanilla's own load. The measurement knows it exactly -- it is the part of the total that
    *  no mod accounted for -- so the round stand-in is only for when nothing has measured. */
