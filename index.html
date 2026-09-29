@@ -5,13 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Circinus Mod Manager</title>
     <!-- Paint the right ground before any stylesheet or script lands, or the window flashes the
-         other paper on every launch. Mirrors lib/theme.svelte.ts; keep the key in step. -->
+         other paper on every launch. Mirrors lib/theme.svelte.ts; keep BOTH keys in step. The
+         second one matters more than it looks: flashing #131210 on the way to an OLED black is
+         the one wrong ground somebody chose that theme specifically to never see. -->
     <script>
       try {
         var p = localStorage.getItem("circinus.paper");
         if (p !== "dark" && p !== "light") p = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-        if (p === "light") document.documentElement.setAttribute("data-theme", "light");
-        document.documentElement.style.background = p === "light" ? "#e4e1d9" : "#131210";
+        var oled = p === "dark" && localStorage.getItem("circinus.dark") === "oled";
+        var a = p === "light" ? "light" : oled ? "oled" : null;
+        if (a) document.documentElement.setAttribute("data-theme", a);
+        document.documentElement.style.background = p === "light" ? "#e4e1d9" : oled ? "#000000" : "#131210";
       } catch (e) {}
     </script>
   </head>
