@@ -1,6 +1,6 @@
 // Thin wrapper over Tauri's invoke, with a browser mock so the UI can run outside Tauri.
 
-import type { AddResult, AuditReport, BuiltinRule, CollectionPreview, DdsReport, DefQuery, DefsState, DefTree, ImportPreview, Instance, Issue, ItemSubscription, LaunchInfo, LaunchSettings, Locations, LogAnalysis, LogFile, ModFiles, ModPatchDetail, ModTextures, PatchJob, PatchReport, QueueState, RentryPreview, RestoreResult, Rule, RulesFile, SavedList, Settings, Snapshot, SortResult, SteamClientStatus, SteamCmdStatus, SubscribeOutcome, TestOutcome, TexState, UpdateCheck, UserData, ListChange } from "./types";
+import type { AddResult, AuditReport, BuiltinRule, CollectionPreview, DdsReport, DefQuery, DefsState, DefTree, ImportPreview, Instance, Issue, ItemSubscription, LaunchInfo, LaunchSettings, Locations, LogAnalysis, LogFile, ModFiles, ModPatchDetail, ModTextures, PatchJob, PatchReport, Placement, QueueState, RentryPreview, RestoreResult, Rule, RulesFile, SavedList, Settings, Snapshot, SortResult, SteamClientStatus, SteamCmdStatus, SubscribeOutcome, TestOutcome, TexState, UpdateCheck, UserData, ListChange } from "./types";
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -126,6 +126,7 @@ export const api = {
   importCollection: (text: string) => invoke<CollectionPreview>("import_collection", { text }),
   importRentry: (url: string) => invoke<RentryPreview>("import_rentry", { url }),
   checkUpdates: () => invoke<number>("check_updates"),
+  inactivePlacements: () => invoke<Placement[]>("inactive_placements"),
   haloRules: () => invoke<BuiltinRule[]>("halo_rules"),
   // a newer Circinus, from circinus.sh
   updateCheck: () => invoke<UpdateCheck>("update_check"),

@@ -167,6 +167,10 @@ async function openFirstNotice(p) {
   ok('it opens on the page the settings name', /Load times/.test(where), where);
   // `plain` turns off the by-phase sections. Sorting by name inside each phase is correct and
   // is what the list does by default, but it is not a check of the opening sort.
+  // Layout is remembered per machine, not per list, so an earlier page in this browser has
+  // already stored one. Set it explicitly: `?plain` only sets the old backend field, which
+  // seeds the layout once and never again.
+  await fresh.addInitScript(() => localStorage.setItem('circinus.layout', JSON.stringify({ order: 'flat', active: 'flat', inactive: 'flat', linked: true, seeded: true })));
   await fresh.goto(`${BASE}/?plain&sort=name`, { waitUntil: 'load' });
   await fresh.waitForSelector('.list .row[data-uid]', { timeout: 15000 });
   await fresh.waitForTimeout(900);

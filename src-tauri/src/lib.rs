@@ -227,6 +227,7 @@ pub fn run() {
             commands::halo,
             commands::validate,
             commands::halo_rules,
+            commands::inactive_placements,
             commands::save_mods_config,
             commands::pending_save,
             commands::refresh_last_run,

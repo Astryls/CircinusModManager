@@ -122,7 +122,15 @@ export const EN: Catalogue = {
   "toolbar.arr.order.title": "The list exactly as ModsConfig.xml has it, top to bottom",
   "toolbar.arr.phase": "By phase",
   "toolbar.arr.phase.short": "Phase",
-  "toolbar.arr.phase.title": "The same mods, gathered under the phase HALO files them in",
+  "toolbar.arr.phase.title": "The same mods, gathered under the phase HALO files them in, with your groups inside. The numbers are still each mod's real place in the load order.",
+  // The inactive pane has no load order, so calling its one-run layout "Load order" would be a
+  // lie about a list sorted by name.
+  "toolbar.arr.az": "A\u2013Z",
+  "toolbar.arr.az.title": "One run, by name. An inactive mod has no place in the load order, so there is no order to show it in.",
+  "toolbar.link.linked": "Both panes use the same layout. Click to let them differ.",
+  "toolbar.link.independent": "Each pane keeps its own layout. Click to make them match the pane you last used.",
+  "toolbar.link.linked.aria": "Layouts are linked. Unlink them.",
+  "toolbar.link.independent.aria": "Layouts are independent. Link them.",
   "toolbar.split.label": "Inactive | Active",
   "toolbar.col.cost": "Cost",
   "toolbar.col.cost.title": "Share of frame time, once weights are loaded",

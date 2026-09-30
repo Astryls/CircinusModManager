@@ -17,6 +17,9 @@
   import SettingsView from "./components/SettingsView.svelte";
   import AnalyzerView from "./components/AnalyzerView.svelte";
   import LoadTimesView from "./components/LoadTimesView.svelte";
+  import LayoutPicker from "./components/LayoutPicker.svelte";
+  import { layouts, type Surface } from "$lib/layout.svelte";
+  import { t } from "$lib/i18n.svelte";
   import DownloadsView from "./components/DownloadsView.svelte";
   import TexturesView from "./components/TexturesView.svelte";
   import DefsView from "./components/DefsView.svelte";
@@ -67,6 +70,9 @@
   let centre = $state(1200);
   let only = $state(0);
   const twoUp = $derived(centre >= TWO_UP);
+  /** Which pane was used last, so linking adopts the layout you were just looking at rather
+   *  than the left one by convention. */
+  let lastTouched = $state<Surface>("active");
   const panes = $derived(store.splitMode !== "library" ? [] : [
     { pane: "inactive" as const, title: "Inactive", count: `${store.visibleInactive.length}`, note: "the mods you are not using" },
     { pane: "active" as const, title: "Active", count: `${store.visibleActive.length}`, note: "your active list" }
@@ -144,12 +150,38 @@
           <div class="panes" class:one={!twoUp}>
             {#each twoUp ? panes : [panes[only]] as p (p.pane)}
               <Panel name={p.title}>
-                <section class="pane">
-                  <div class="phead"><span class="t">{p.title}</span><span class="sep">·</span><span class="n num">{p.count}</span></div>
+                <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+                <section class="pane" role="group" onpointerdowncapture={() => (lastTouched = p.pane)} onfocusincapture={() => (lastTouched = p.pane)}>
+                  <!-- Each pane's picker sits at its OUTER edge, so the middle of the split
+                       stays clear for the link. Both pushed right would put the left pane's
+                       control hard against the divider, and the = would read as belonging
+                       to it. -->
+                  <div class="phead" class:right={p.pane === "active" && twoUp}>
+                    <span class="t">{p.title}</span><span class="sep">·</span><span class="n num">{p.count}</span>
+                    {#if p.pane === "inactive"}
+                      <LayoutPicker surface={p.pane} compact />
+                      <span class="grow"></span>
+                    {:else}
+                      <span class="grow"></span>
+                      <LayoutPicker surface={p.pane} compact />
+                    {/if}
+                  </div>
                   <ModList pane={p.pane} />
                 </section>
               </Panel>
             {/each}
+            <!-- The one control that belongs to neither pane, so it sits on the line between
+                 them rather than in either one's header, where it would read as that pane's
+                 setting. Bare: no box, no label, because it is punctuation. -->
+            {#if twoUp}
+              <button
+                class="link"
+                aria-pressed={layouts.linked}
+                aria-label={layouts.linked ? t("toolbar.link.linked.aria") : t("toolbar.link.independent.aria")}
+                title={layouts.linked ? t("toolbar.link.linked") : t("toolbar.link.independent")}
+                onclick={() => layouts.toggleLinked(lastTouched)}
+              >{layouts.linked ? "=" : "\u2260"}</button>
+            {/if}
           </div>
           {#if !twoUp}
             <div class="narrow">Not enough width for two panels, so this is {panes[only].note} on its own. <button onclick={() => (only = only ? 0 : 1)}>Show {panes[only ? 0 : 1].note}</button></div>
@@ -200,11 +232,20 @@
   .frame > :global(*) { min-width: 0; min-height: 0; }
   .center { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   .center > :global(*) { min-width: 0; }
-  .panes { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .panes { position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  /* On the line, not in a box. A few pixels of the page's own ground either side so the gap
+     appears to pass behind the glyph rather than through it. */
+  .link { position: absolute; left: 50%; top: 3px; transform: translateX(-50%); z-index: 3;
+    border: 0; width: 24px; height: 24px; padding: 0; background: var(--bg); color: var(--text-3);
+    font: 700 16px var(--mono); line-height: 1; cursor: pointer; }
+  .link:hover { color: var(--text); }
   .panes.one { grid-template-columns: minmax(0, 1fr); }
   .panes > :global(*) { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
   .pane { display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; flex: 1; }
-  .phead { display: flex; align-items: baseline; gap: 6px; padding: 0 4px; white-space: nowrap; overflow: hidden; }
+  .phead { display: flex; align-items: center; gap: 6px; padding: 0 4px 4px; white-space: nowrap; overflow: hidden; container-type: inline-size; }
+  .phead .grow { flex: 1; }
+  /* The right pane's title starts clear of the divider, because the link sits on it. */
+  .phead.right { padding-left: 20px; }
   .phead .t { font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-2); }
   .phead .sep, .phead .n { font-size: 11.5px; font-weight: 600; color: var(--text-3); }
   .narrow { font-size: 11.5px; color: var(--text-3); padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

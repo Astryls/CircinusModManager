@@ -196,7 +196,12 @@
     {/if}
     {#each snap?.user.groups ?? [] as g (g.id)}
       <div class="grow" class:on={store.group === g.id} class:editing={editing === g.id}>
-        <button class="g" onclick={() => (store.group = store.group === g.id ? null : g.id)} title={marker(g) || "Show only this group"}>
+        <button
+          class="g"
+          onclick={() => store.jumpToGroup(g.id)}
+          ondblclick={() => (editing = editing === g.id ? null : g.id)}
+          oncontextmenu={(e) => { e.preventDefault(); store.group = store.group === g.id ? null : g.id; }}
+          title="{marker(g) ? marker(g) + '. ' : ''}Click to jump to it in the list, double-click to edit it, right-click to show only its mods">
           <span class="dot c-{g.color}"></span><span class="n">{g.name}</span>
           {#if g.auto}<span class="ov auto" title={autoLabel(g)}>{@html I.halo}</span>{/if}
           {#if g.phase}<span class="ov" title={marker(g)}>{@html I.over}</span>{/if}
@@ -206,8 +211,8 @@
       </div>
       {#if editing === g.id}<GroupEditor group={g} onclose={() => (editing = null)} />{/if}
     {/each}
-    {#if store.group}<button class="clear" onclick={() => (store.group = null)}>Show all groups</button>{/if}
-    <p class="ghint">Click a group to show only its mods. The gear sets what a group takes in by itself and where its members sort: a phase, or a section of their own.</p>
+    {#if store.group}<button class="clear" onclick={() => (store.group = null)}>Showing only {store.groupsById.get(store.group)?.name ?? "one group"} &mdash; show all</button>{/if}
+    <p class="ghint">Click a group to jump to it in the list. Double-click, or the gear, to edit it: what it takes in by itself, and where its members sort. Right-click to show only its mods.</p>
   </section>
 
   <section class="card cols">

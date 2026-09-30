@@ -1,10 +1,11 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { store, type Pane, type SortKey } from "$lib/store.svelte";
+  import { store, type Pane, type Section, type SortKey } from "$lib/store.svelte";
   import { I } from "$lib/icons";
   import { describe, explainLoad } from "$lib/describe";
   import { BAND_LABEL, LOAD_BAND_LABEL, describeChange, severityOf, type Issue, type ModChange, type ModInfo, type UpdateInfo } from "$lib/types";
   import { NOTICE_ICON, noticesFor } from "$lib/notices";
+  import { layouts, type Surface } from "$lib/layout.svelte";
 
   // One list, shown three ways. Without `pane` this is the whole list and the tabs decide what is
   // in it; with one it is half of the side-by-side library and shows only its own half.
@@ -13,10 +14,17 @@
   // ---- virtualization: only the rows in view exist in the DOM ----
   const ROW = 40;
   const HEADER = 44;
+  /** A group header inside a band is a line of small caps, not a section title. */
+  const SUBHEADER = 26;
+  const heightOf = (it: Item) => (it.kind !== "header" ? ROW : it.depth === 1 ? SUBHEADER : HEADER);
   /** The column header at the top of the list; the rows scroll under it. */
   const TOP = 34;
   const OVERSCAN = 8;
-  type Item = { kind: "header"; key: string; name: string; color: string; note: string; count: number } | { kind: "row"; key: string; mod: ModInfo; inactive: boolean };
+  /** `depth` 0 is a band (a HALO phase, or one of the user's own); 1 is a group inside it.
+   *  `groupId` is set on any header that stands for a group, so the sidebar can scroll to it. */
+  type Item =
+    | { kind: "header"; key: string; name: string; color: string; note: string; count: number; depth: 0 | 1; groupId?: string; mine?: boolean }
+    | { kind: "row"; key: string; mod: ModInfo; inactive: boolean; depth: 0 | 1 };
 
   let scroller = $state<HTMLDivElement | null>(null);
   let scrollTop = $state(0);
@@ -133,36 +141,72 @@
   const ordered = $derived(store.visibleActive);
   const indexOf = $derived(store.indexOf);
   const placementOf = (uid: string) => store.placement(uid);
+  /** Which stored layout this list follows. The single list and the two panes are three
+   *  surfaces because they answer different questions, and somebody can want different answers
+   *  at once -- A to Z on the left to find a mod, phases on the right to check the order. */
+  const surface = $derived<Surface>(pane === null ? "order" : pane === "active" ? "active" : "inactive");
+  const byPhase = $derived(layouts.byPhase(surface));
+  /* The inactive pane's classification is not in the snapshot -- hundreds of placements, each
+     with a prose reason, for a pane most people never switch. Asked for when it is wanted. */
+  $effect(() => {
+    if (surface === "inactive" && byPhase) store.loadInactivePlacements();
+  });
+
+  /** Push a band and the groups inside it. Rows under a group header are indented one step. */
+  function pushSection(out: Item[], sec: Section) {
+    if (sec.group) out.push({ kind: "header", key: `h:${sec.phase.id}:${sec.group.id}`, name: sec.group.name, color: sec.group.color, note: `Your own band, after ${sec.phase.name.toLowerCase()}`, count: sec.mods.length, depth: 0, groupId: sec.group.id, mine: true });
+    else out.push({ kind: "header", key: `h:${sec.phase.id}`, name: sec.phase.name, color: sec.phase.color, note: sec.phase.note, count: sec.mods.length, depth: 0 });
+    // `subs` is empty when the second level would say nothing: a band that is one group would
+    // print its own name twice, and a phase with one group and no ungrouped mods is the same.
+    if (!sec.subs.length) {
+      for (const m of sec.mods) out.push({ kind: "row", key: m.uid, mod: m, inactive: false, depth: 0 });
+      return;
+    }
+    for (const sub of sec.subs) {
+      out.push({
+        kind: "header",
+        key: `h:${sec.phase.id}:${sec.group?.id ?? ""}:g:${sub.group?.id ?? "none"}`,
+        name: sub.group?.name ?? "Ungrouped",
+        color: sub.group?.color ?? "slate",
+        note: "",
+        count: sub.mods.length,
+        depth: 1,
+        groupId: sub.group?.id
+      });
+      for (const m of sub.mods) out.push({ kind: "row", key: m.uid, mod: m, inactive: false, depth: 1 });
+    }
+  }
+
   const items = $derived.by((): Item[] => {
     const out: Item[] = [];
     if (pane === "inactive") {
-      // Its own pane says what it is in the strip above it, so the list needs no header.
-      for (const m of store.visibleInactive) out.push({ kind: "row", key: m.uid, mod: m, inactive: true });
+      // Its own pane says what it is in the strip above it, so the list needs no band heading
+      // unless the pane has been asked for phases.
+      if (byPhase) for (const sec of store.inactiveSections) pushSection(out, sec);
+      else for (const m of store.visibleInactive) out.push({ kind: "row", key: m.uid, mod: m, inactive: true, depth: 0 });
+      // An inactive row is inactive whatever band it is drawn in.
+      for (const it of out) if (it.kind === "row") it.inactive = true;
       return out;
     }
     // The New tab is the new mods and nothing else: no phase sections, because what you want
     // from it is when each one arrived, not where it will load.
     if (pane === null && store.tab === "new") {
-      for (const m of store.visibleNew) out.push({ kind: "row", key: m.uid, mod: m, inactive: !store.activeSet.has(m.uid) });
+      for (const m of store.visibleNew) out.push({ kind: "row", key: m.uid, mod: m, inactive: !store.activeSet.has(m.uid), depth: 0 });
       return out;
     }
     if (pane !== null || store.tab !== "inactive") {
-      if (store.byPhase) {
-        for (const sec of sections) {
-          if (sec.group) out.push({ kind: "header", key: `h:${sec.phase.id}:${sec.group.id}`, name: sec.group.name, color: sec.group.color, note: `Your group, after ${sec.phase.name.toLowerCase()}`, count: sec.mods.length });
-          else out.push({ kind: "header", key: `h:${sec.phase.id}`, name: sec.phase.name, color: sec.phase.color, note: sec.phase.note, count: sec.mods.length });
-          for (const m of sec.mods) out.push({ kind: "row", key: m.uid, mod: m, inactive: false });
-        }
+      if (byPhase) {
+        for (const sec of sections) pushSection(out, sec);
       } else {
         // The plain load order, exactly as ModsConfig.xml has it.
-        if (pane === null && store.tab === "all") out.push({ kind: "header", key: "h:active", name: "Active", color: "blue", note: "In load order, as ModsConfig.xml has it", count: ordered.length });
-        for (const m of ordered) out.push({ kind: "row", key: m.uid, mod: m, inactive: false });
+        if (pane === null && store.tab === "all") out.push({ kind: "header", key: "h:active", name: "Active", color: "blue", note: "In load order, as ModsConfig.xml has it", count: ordered.length, depth: 0 });
+        for (const m of ordered) out.push({ kind: "row", key: m.uid, mod: m, inactive: false, depth: 0 });
       }
     }
     if (pane === null && store.tab !== "active") {
       const vi = store.visibleInactive;
-      out.push({ kind: "header", key: "h:inactive", name: "Inactive", color: "", note: "Installed, not in ModsConfig.xml", count: vi.length });
-      for (const m of vi) out.push({ kind: "row", key: m.uid, mod: m, inactive: true });
+      out.push({ kind: "header", key: "h:inactive", name: "Inactive", color: "", note: "Installed, not in ModsConfig.xml", count: vi.length, depth: 0 });
+      for (const m of vi) out.push({ kind: "row", key: m.uid, mod: m, inactive: true, depth: 0 });
     }
     return out;
   });
@@ -171,7 +215,7 @@
     let y = 0;
     for (let i = 0; i < items.length; i++) {
       o[i] = y;
-      y += items[i].kind === "header" ? HEADER : ROW;
+      y += heightOf(items[i]);
     }
     o[items.length] = y;
     return o;
@@ -600,7 +644,7 @@
   <div class="spacer" style="height: {total}px">
     {#each visible as { it, y } (it.key)}
       {#if it.kind === "header"}
-        <div class="ph" style="transform: translateY({y}px)"><span class="dot c-{it.color}"></span><span class="n">{it.name}</span><span class="c num">{it.count}</span><span class="note">{it.note}</span></div>
+        <div class="ph" class:sub={it.depth === 1} class:mine={it.mine} class:lit={it.groupId != null && it.groupId === store.flashGroup} style="transform: translateY({y}px)" data-group={it.groupId ?? ""}><span class="dot c-{it.color}"></span><span class="n">{it.name}</span><span class="c num">{it.count}</span>{#if it.mine}<em class="yours">yours</em>{/if}{#if it.note}<span class="note">{it.note}</span>{/if}</div>
       {:else}
         {@const m = it.mod}
         {@const issues = store.issuesByUid.get(m.uid) ?? []}
@@ -617,6 +661,7 @@
         {@const arrived = whenItCame(m.uid)}
         <div
           class="row"
+          class:ind={it.depth === 1}
           class:off={it.inactive}
           class:sel={store.selected.includes(m.uid)}
           class:moved={pane !== null && delta != null}
@@ -698,6 +743,21 @@
   .hdr .b :global(svg) { width: 13px; height: 13px; }
   .hdr .b i { font-style: normal; }
   .ph { position: absolute; left: 0; right: 0; height: 44px; display: flex; align-items: center; gap: 10px; padding: 14px 10px 6px; background: var(--surface); }
+  /* A group inside a band: a line of small caps rather than a section title, so the eye reads
+     the band first and the group second. Same ground as the rows, not the header's. */
+  .ph.sub { height: 26px; padding: 8px 10px 2px 26px; background: transparent; }
+  .ph.sub .n { font-size: 9.5px; letter-spacing: 0.07em; color: var(--text-4); }
+  .ph.sub .c { font-size: 9.5px; color: var(--text-4); }
+  .ph.sub .dot { width: 6px; height: 6px; }
+  /* A band of the user's own, so it is never taken for one of HALO's eight. */
+  .ph .yours { font: 700 9px var(--mono); font-style: normal; letter-spacing: 0.04em; text-transform: uppercase; color: var(--amber); background: var(--amber-soft); padding: 1px 5px; }
+  .ph.mine .n { color: var(--text); }
+  /* Jumped to from the sidebar. One flash, then it goes: a header that stayed lit would look
+     like a selection, and nothing here is selected. */
+  .ph.lit { background: var(--amber-soft); animation: phflash 1.4s ease-out 1 forwards; }
+  @keyframes phflash { 0%, 55% { background: var(--amber-soft); } 100% { background: var(--surface); } }
+  .ph.sub.lit { animation-name: phflashsub; }
+  @keyframes phflashsub { 0%, 55% { background: var(--amber-soft); } 100% { background: transparent; } }
   /* Sticky overlay of the current section, under the column header; the negative bottom margin keeps it out of the flow so row offsets stay exact. */
   .ph.floating { position: sticky; top: 34px; z-index: 3; box-shadow: 0 6px 8px -6px rgba(0, 0, 0, 0.5); margin: 0 -6px -44px; padding-left: 16px; padding-right: 16px; }
   .ph .dot { width: 7px; height: 7px; }
@@ -705,6 +765,9 @@
   .ph .c { font-size: 11px; color: var(--text-3); font-weight: 600; }
   .ph .note { margin-left: auto; font-size: 11.5px; color: var(--text-3); }
   .row { position: absolute; left: 0; right: 0; height: 40px; border-radius: 0; cursor: default; }
+  /* One step in under a group header, so a row's indent says which heading it belongs to
+     without the heading having to be on screen. */
+  .row.ind { padding-left: 20px; }
   .row:hover { background: var(--surface-2); }
   .row.sel { background: var(--surface-3); }
   .row.off { opacity: 0.72; }

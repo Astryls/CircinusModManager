@@ -115,6 +115,16 @@ pub fn halo_rules() -> Vec<circinus_core::order::BuiltinRule> {
 }
 
 
+/// Where HALO would file the mods that are not in the list.
+///
+/// Its own command rather than a snapshot field: there are usually hundreds of them, each
+/// carrying a prose reason, and only somebody who has switched the inactive pane to phases
+/// ever needs them.
+#[tauri::command]
+pub async fn inactive_placements(state: State<'_, Shared>) -> CmdResult<Vec<circinus_core::Placement>> {
+    with_app(&state, |app| Ok(app.inactive_placements())).await
+}
+
 /// What saving would change, so the window can show it before it happens.
 ///
 /// Read-only: it builds the file in memory and throws it away.

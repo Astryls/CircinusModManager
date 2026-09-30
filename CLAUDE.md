@@ -147,6 +147,60 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   the query string (`?open=loadtimes&sort=name`), since its settings live in a module and a
   reload throws away whatever the window wrote — "set it, restart, check" is not something the
   browser mock can do.
+- **Layout is not organization, and they live in different places.** Organization is on disk and
+  is the user's: the order in ModsConfig.xml, which group a mod is in, what a group takes in by
+  itself, whether it has a band of its own. Layout is this window on this machine: whether the
+  rows are one run or broken into bands. `lib/layout.svelte.ts` owns it, in localStorage beside
+  the paper, and **never in user data** -- a list moved between machines must not drag a layout
+  with it, for the same reason it must not drag a theme.
+  `settings.listByPhase` used to be the only control: it lived in the file that holds the
+  groups and the folder paths, and `setByPhase` called `updateSettings`, so glancing at the
+  phases *wrote that file*. It is now read across once (`seedFrom`, guarded by a `seeded` flag
+  so a later edit is not undone by the next snapshot), never written again, and left where it
+  is -- deleting a field an older build still reads is how a downgrade loses somebody's setting.
+  Three surfaces, because they answer different questions and a person can want different
+  answers at once: the single list, and the two panes of the split. A pane cannot offer a layout
+  it has no data for, so the inactive pane's flat is **A to Z** rather than "Load order"; the
+  stored value is the same, since the choice is between one run and bands rather than between
+  two words. `start()` heals a linked-but-differing value (the active pane wins) because two
+  panes that claim to be linked while showing different things reads as a bug in the link.
+- **Bands outer, groups inner, and a heading that distinguishes nothing is never drawn.**
+  `store.layout` builds `Section[]`, each a HALO phase or a band of the user's own, each with
+  `subs`: the groups inside it, ordered by where their first member sits (not alphabetically --
+  the headers have to come in the order the rows do, or a header sits above rows that are not
+  under it). Mods in no group get an **Ungrouped** header so every row in the band is at one
+  indent.
+  `subs` is empty whenever the second level would say nothing, and that rule is the same in
+  both places it applies: a band *is* a group, so printing its name again inside itself is the
+  same word twice; and a phase whose members are all in one group is "Game and DLC" followed by
+  "Core", which is the same fact twice. One sub-group is no sub-groups.
+  A band draws in the run of phases where its members actually are, with the group's colour and
+  a **yours** mark so it is never taken for one of HALO's eight. No new model behind it: a group
+  with `section: true` and a `phase` already was one, and `section_rank` already orders several
+  after the same phase.
+  **The numbers are untouched.** The active list is already arranged in phase order, so a band
+  is contiguous by construction and each row's number is its real index in ModsConfig.xml. There
+  was a long detour designing around non-contiguous bands; it only exists if *groups* are the
+  outer level, which this is not.
+- The inactive pane's classification is **not in the snapshot** (`inactive_placements`, its own
+  command). There are usually hundreds of them, each carrying a prose reason, the payload is
+  already dominated by prose, and only somebody who has switched that pane to phases ever needs
+  them. An inactive mod has no place in the order, so what HALO answers there is *what kind of
+  mod it is*, which comes from its ids and contents rather than from where it sits.
+- **The `=` between the panes.** Linked, the two panes follow each other; released it reads `≠`
+  and they are independent. It sits bare on the divider -- no box, no label -- because it
+  belongs to neither pane and putting it in either one's header would read as that pane's
+  setting; each pane's own picker sits at its *outer* edge to leave the middle clear. Linking
+  adopts the layout of the pane last touched rather than the left one by convention, and
+  unlinking changes nothing on screen: it only stops the next change propagating, so the button
+  is never a surprise in either direction.
+- **A group in the sidebar: click jumps, double-click edits, right-click narrows.** Clicking
+  used to hide every other mod, which is a large act for the cheapest gesture in the window.
+  Now it scrolls to the group and flashes its header; where the group has no header -- a flat
+  list, or a group that does not share its phase with another -- the first member is selected
+  instead, because scrolling with nothing marked leaves somebody looking at a list that moved
+  for no visible reason. One of the two always happens. Filtering is still there, on the
+  context menu, and the banner says which group it is showing.
 - Sorting: any column heading orders the list, and the Sort menu in the toolbar offers the same
   keys plus the ones that are not columns — date modified, date updated on Steam, Steam id. The
   load order is the default and the only real one. Sorting `visibleActive` rather than the

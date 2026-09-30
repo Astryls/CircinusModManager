@@ -1017,6 +1017,24 @@ impl App {
         self.with_context(|ctx| order::placements(&order, ctx))
     }
 
+    /// Where HALO would file the mods that are NOT in the list.
+    ///
+    /// Not in the snapshot, and deliberately: there are usually hundreds of them, each
+    /// placement carries a prose reason, and the payload is already dominated by prose. It is
+    /// asked for only when the inactive pane is switched to phases, which most people never do.
+    ///
+    /// An inactive mod has no place in the load order, so there is no sequence to reason about.
+    /// What HALO can still answer is *what kind of mod it is* -- a library, a texture pack, a
+    /// performance mod -- because that comes from the mod's own ids and contents rather than
+    /// from where it sits. So they are classified as though they were switched on, in name
+    /// order, which is the order the pane shows them in anyway.
+    pub fn inactive_placements(&self) -> Vec<Placement> {
+        let active: HashSet<&str> = self.active.iter().map(|u| u.as_str()).collect();
+        let mut rest: Vec<&ModInfo> = self.mods.iter().filter(|m| !active.contains(m.uid.as_str()) && m.invalid.is_none()).collect();
+        rest.sort_by_key(|m| m.name.to_lowercase());
+        self.with_context(|ctx| order::placements(&rest, ctx))
+    }
+
     pub fn snapshot(&self) -> Snapshot {
         let started = std::time::Instant::now();
         // Descriptions are the bulk of the payload and only one is ever shown at a time:

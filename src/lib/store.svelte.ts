@@ -3,8 +3,24 @@
 
 import { api, appVersion, listen, openFolder } from "./api";
 import { t } from "./i18n.svelte";
+import { layouts, type Surface } from "./layout.svelte";
 import type { AuditReport, BuiltinRule, CollectionPreview, DefMatch, DefQuery, DefsState, DefTree, Group, HaloRules, ImportPreview, Instance, Issue, ItemState, LaunchSettings, Locations, LogAnalysis, LogFile, ModChange, ModInfo, ModPatchDetail, ModTextures, PatchJob, PatchReport, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamClientStatus, SteamCmdStatus, SubscribeOutcome, SubscriptionProgress, TexState, TrackedCollection, UpdateCheck, UpdateProgress, UserData, Weight, ListChange } from "./types";
 import { CONSENT_VERSION, EMPTY_HALO, GROUP_COLORS, loadBand, PHASES, primaryUid, severityOf, VANILLA_SECS, type LoadBand, type Severity } from "./types";
+
+/** One group's rows inside a band. `group` absent means the mods that are in no group. */
+export interface SubSection {
+  group: Group | undefined;
+  mods: ModInfo[];
+}
+/** One band of the list: a HALO phase, or a group the user gave its own place in the order. */
+export interface Section {
+  phase: (typeof PHASES)[number];
+  /** Set when this band is the user's own rather than one of HALO's eight. */
+  group?: Group;
+  mods: ModInfo[];
+  /** The groups inside it. Empty when there is nothing worth saying at the second level. */
+  subs: SubSection[];
+}
 
 export type View = "order" | "library" | "downloads" | "textures" | "defs" | "patches" | "analyzer" | "loadtimes" | "halo" | "settings";
 /** Every view, for the "open on" setting. A stored value that is not in here falls through to
@@ -84,7 +100,44 @@ class Store {
   patchesSort = $state<{ by: PatchesCol; desc: boolean }>({ by: "patches", desc: true });
   patchesOpen = $state<string | null>(null);
   query = $state("");
+  /** Narrow the list to one group. Now reached from a group's right-click menu rather than from
+   *  a plain click, which jumps to it instead -- hiding forty rows is a bigger act than the
+   *  cheapest gesture in the window should perform. */
   group = $state<string | null>(null);
+  /** The group whose header is flashing after a jump. Cleared on a timer by whoever set it. */
+  flashGroup = $state<string | null>(null);
+  private flashTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Scroll the list to a group and say where it went.
+   *
+   * In a phase layout the group has headers to jump to, and there may be several: a group's
+   * members can be spread over more than one phase, and the first one is the one to show. With
+   * no header -- a flat list, or a group with no section of its own -- the first member is the
+   * next best thing, so the row is scrolled to and selected.
+   */
+  jumpToGroup(id: string) {
+    const first = this.mods.find((m) => this.groupOf(m.uid)?.id === id && (this.activeSet.has(m.uid) || this.tab !== "active"));
+    if (!first) {
+      this.say("Nothing in that group is in this list");
+      return;
+    }
+    if (this.view !== "order" && this.view !== "library") this.view = "order";
+    if (!this.activeSet.has(first.uid) && this.tab === "active") this.tab = "all";
+    /* Flash the header when the group has one, and select the first member when it does not.
+     *
+     * Not every group gets a heading: a flat list has none at all, and in a phase layout a
+     * group only earns a sub-header where it shares a phase with another group. Scrolling with
+     * nothing marked leaves somebody looking at a list that moved for no visible reason, so the
+     * fallback puts the mark on the row instead. One of the two always happens. */
+    const hasHeader = this.byPhase && this.sections.some((sec) => sec.group?.id === id || sec.subs.some((sub) => sub.group?.id === id));
+    if (hasHeader) {
+      this.flashGroup = id;
+      if (this.flashTimer) clearTimeout(this.flashTimer);
+      this.flashTimer = setTimeout(() => (this.flashGroup = null), 1600);
+    }
+    this.scrollTo(first.uid, { select: !hasHeader, focus: false });
+  }
   sources = $state<Source[]>([...ALL_SOURCES]);
   onlyCurrentVersion = $state(false);
   showOnly = $state<ShowOnly>(null);
@@ -252,7 +305,9 @@ class Store {
     return c;
   });
   /** The active list shown in HALO's phase sections (true) or as the plain load order (false). */
-  byPhase = $derived(this.snap?.settings.listByPhase ?? false);
+  /** Is the single list drawn in phases? Now a view preference on this machine rather than a
+   *  field in the file that holds the groups -- see `lib/layout.svelte.ts` for why. */
+  byPhase = $derived(layouts.byPhase("order"));
   /** Column widths the user dragged, CSS px, by key; absent = the default. */
   columns = $derived(this.snap?.settings.columns ?? {});
   /** The optional list columns that are on. */
@@ -730,20 +785,84 @@ class Store {
   /** An order laid out for the list: each phase's ordinary members, then the groups placed after
    *  it. Used for the order you have and, with HALO's placements, for the one it proposes. */
   private layout(mods: ModInfo[], where: Map<string, Placement>) {
-    const out: { phase: (typeof PHASES)[number]; group?: Group; mods: ModInfo[] }[] = [];
+    const out: Section[] = [];
+    /* The second level: the groups inside one band, in the order their first member appears.
+     *
+     * First appearance rather than alphabetical, because the band is a run of the load order
+     * and the headers have to come in the order the rows do -- sorting them would put a header
+     * above rows that are not under it.
+     *
+     * Mods in no group get a header of their own rather than sitting bare at the top. Every row
+     * in the band is then at the same indent, which is the difference between a list with one
+     * shape and a list with two. */
+    const within = (rows: ModInfo[]): SubSection[] => {
+      const seen = new Map<string, SubSection>();
+      const subs: SubSection[] = [];
+      for (const m of rows) {
+        const g = this.groupOf(m.uid);
+        const key = g?.id ?? "";
+        let sub = seen.get(key);
+        if (!sub) {
+          sub = { group: g, mods: [] };
+          seen.set(key, sub);
+          subs.push(sub);
+        }
+        sub.mods.push(m);
+      }
+      return subs;
+    };
     for (const p of PHASES) {
       const inPhase = mods.filter((m) => (where.get(m.uid)?.phase ?? "content") === p.id);
       const plain = inPhase.filter((m) => !where.get(m.uid)?.section);
-      if (plain.length) out.push({ phase: p, mods: plain });
+      if (plain.length) {
+        /* One sub-group is no sub-groups. The second level exists to tell one group from
+         * another inside a band, so a phase whose members are all in the same group -- or all
+         * in none -- gains nothing from a header that says so: "Game and DLC" followed by
+         * "Core" is the same fact twice, and "Preloads" followed by "Ungrouped" is furniture.
+         * Same rule the bands use, for the same reason. */
+        const subs = within(plain);
+        out.push({ phase: p, mods: plain, subs: subs.length > 1 ? subs : [] });
+      }
       for (const g of this.sectionGroups.filter((g) => g.phase === p.id)) {
         const mods = inPhase.filter((m) => where.get(m.uid)?.section === g.id);
-        if (mods.length) out.push({ phase: p, group: g, mods });
+        if (!mods.length) continue;
+        /* A band IS a group, so its members are almost always that one group and printing a
+         * sub-header would set the same name twice in a row. Dropped when there is only one,
+         * kept when a band has somehow collected more than one -- then the headers are saying
+         * something. */
+        const subs = within(mods);
+        out.push({ phase: p, group: g, mods, subs: subs.length > 1 ? subs : [] });
       }
     }
     return out;
   }
   /** The load order as shown: each phase's ordinary members, then the groups placed after it. */
   sections = $derived(this.layout(this.visibleActive, this.placementByUid));
+  /** The same, for the inactive pane when it has been asked for phases.
+   *
+   *  An inactive mod has no place in the load order, so `placementByUid` says nothing about it.
+   *  HALO's classification is a property of the mod rather than of the list, though, so the
+   *  question "what kind of mod is this" still has an answer: it is classified here on its own,
+   *  and the band it lands in is the band it would land in if it were switched on. */
+  inactivePlacements = $state<Placement[]>([]);
+  private inactiveAsked = 0;
+  /** Fetch them when the pane first wants them, and again when the corpus has changed. */
+  async loadInactivePlacements() {
+    const stamp = this.snap?.scannedAt ?? 0;
+    if (this.inactiveAsked === stamp && this.inactivePlacements.length) return;
+    this.inactiveAsked = stamp;
+    try {
+      this.inactivePlacements = await api.inactivePlacements();
+    } catch (e) {
+      // The pane falls back to one flat run, which is what it showed before any of this.
+      console.warn("[circinus] inactive_placements failed", e);
+    }
+  }
+  inactiveSections = $derived.by(() => {
+    if (!layouts.byPhase("inactive") || !this.inactivePlacements.length) return [];
+    const where = new Map<string, Placement>(this.inactivePlacements.map((p) => [p.uid, p]));
+    return this.layout(this.visibleInactive, where);
+  });
   /** Where HALO would file each mod while a preview is up. */
   proposedPlacementByUid = $derived(new Map((this.preview?.placements ?? []).map((p) => [p.uid, p])));
   /** The split actually in effect: the HALO comparison needs a preview to compare against. */
@@ -813,6 +932,9 @@ class Store {
     // chance to say why.
     if (snap && this.accept(snap)) {
       this.snap = snap;
+      // Read the old `listByPhase` across once, so nobody's view changes on upgrade. After
+      // that the field is never written again; see `lib/layout.svelte.ts`.
+      layouts.seedFrom(snap.settings.listByPhase);
       this.applyOpeningPreferences(snap);
       queueMicrotask(() => log("first render scheduled"));
       this.announceChanges(snap);
@@ -1931,9 +2053,13 @@ class Store {
       return u;
     });
   }
-  /** Show the active list in phase sections, or as the plain load order. Remembered in settings. */
+  /** Show the single list in phase sections, or as the plain load order.
+   *
+   *  No longer a settings write. It used to be `updateSettings({ listByPhase })`, which sent the
+   *  whole settings file to the backend and saved it -- so glancing at the phases touched the
+   *  same file that holds somebody's groups and folders. */
   setByPhase(v: boolean) {
-    return this.updateSettings({ listByPhase: v });
+    layouts.set("order", v ? "phase" : "flat");
   }
   /** Show or hide one of the optional list columns. */
   setListColumn(key: string, on: boolean) {

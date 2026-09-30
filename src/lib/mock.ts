@@ -195,6 +195,10 @@ let dirty = false;
 
 let user: UserData = {
   groups: [
+    // A band: a group the user gave its own place in the order, which draws in the run of
+    // phases rather than inside one. Without one in the mock, that whole level is untested.
+    { id: "combat", name: "My combat stack", color: "coral", phase: "content", section: true },
+
     { id: "core", name: "Core", color: "blue", auto: { kind: "official" } },
     { id: "frameworks", name: "Frameworks", color: "teal", auto: { kind: "phase", phase: "framework" } },
     { id: "qol", name: "Quality of life", color: "green" },
@@ -204,7 +208,7 @@ let user: UserData = {
     { id: "rjw-x1y2", name: "Adult content", color: "violet", phase: "content", section: true }
   ],
   // Core, Frameworks and Performance fill themselves; the rest is assigned by hand.
-  modGroups: { ...Object.fromEntries(SEED.filter((s) => !["core", "frameworks", "performance"].includes(s[6]) && !s[1].includes("Oskar")).map((s) => [uidOf(s[2]), s[6]])), [uidOf("orion.hospitality")]: "rjw-x1y2", [uidOf("dubwise.rimatomics")]: "rjw-x1y2" },
+  modGroups: { ...Object.fromEntries(SEED.filter((s) => !["core", "frameworks", "performance"].includes(s[6]) && !s[1].includes("Oskar")).map((s) => [uidOf(s[2]), s[6]])), [uidOf("orion.hospitality")]: "rjw-x1y2", [uidOf("dubwise.rimatomics")]: "rjw-x1y2", [uidOf("mo.ancienturbanruins")]: "combat", [uidOf("dankpyon.medieval.overhaul")]: "combat" },
   // Pinned on purpose, and on a mod that also carries an error: the collapsing rule says the
   // row shows the error and not the pin, and a corpus where no row holds two notices cannot
   // tell a correct ranking from a broken one.
@@ -1374,6 +1378,12 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
       return Object.keys(weights).length as T;
     // Reading the file again finds the same file. True of the real thing too whenever the game
     // has not been launched since, which is the ordinary case for anyone pressing it twice.
+    // Classified as though they were switched on: the pane shows what kind of mod each is,
+    // which is a property of the mod rather than of a list it is not in.
+    case "inactive_placements": {
+      const off = mods.filter((m) => !active.includes(m.uid)).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+      return placements(off.map((m) => m.uid), true) as T;
+    }
     case "refresh_last_run":
       return false as T;
     case "refresh_local_weights":

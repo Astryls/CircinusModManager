@@ -4,6 +4,7 @@
   import { keyLabel } from "$lib/keys.svelte";
   import { I } from "$lib/icons";
   import { SOURCE_LABEL, type Source } from "$lib/types";
+  import LayoutPicker from "./LayoutPicker.svelte";
 
   // New is only there when there is something in it: a tab that always reads zero is a tab
   // nobody presses, and it costs the other three the width it takes.
@@ -84,11 +85,10 @@
          rather than remembered as "click the same heading twice more". -->
     <button class="btn sm sortoff" onclick={() => store.clearSort()} title={t("toolbar.sorted.title")}>{@html I.close}<span class="lbl">{t("toolbar.sorted")}</span></button>
   {/if}
-  {#if store.splitMode === "library" || (!store.splitMode && store.tab !== "inactive")}
-    <div class="seg arr" role="radiogroup" aria-label={t("toolbar.arrangement")}>
-      <button role="radio" class:on={!store.byPhase} aria-checked={!store.byPhase} title={t("toolbar.arr.order.title")} onclick={() => store.byPhase && store.setByPhase(false)}><span class="lg">{t("toolbar.arr.order")}</span><span class="sm">{t("toolbar.arr.order.short")}</span></button>
-      <button role="radio" class:on={store.byPhase} aria-checked={store.byPhase} title={t("toolbar.arr.phase.title")} onclick={() => !store.byPhase && store.setByPhase(true)}><span class="lg">{t("toolbar.arr.phase")}</span><span class="sm">{t("toolbar.arr.phase.short")}</span></button>
-    </div>
+  <!-- Only for the single list. Each pane of the split carries its own, in its own header,
+       because the two can differ and one control in the toolbar could not say which it meant. -->
+  {#if !store.splitMode && store.tab !== "inactive"}
+    <LayoutPicker surface="order" />
   {/if}
   <button class="btn split" class:on={store.splitMode === "library"} aria-pressed={store.splitMode === "library"} onclick={() => (store.split = store.split === "library" ? null : "library")} title={t("toolbar.split.title")}>
     {@html I.split}<span class="split-lbl">{t("toolbar.split.label")}</span>
@@ -164,19 +164,17 @@
      squeezing "Show: All mods" down to a lone icon while Import and Refresh keep theirs. */
   .toolbar .filter { flex: 0 1 auto; min-width: 172px; }
   .filter > .btn { max-width: 100%; }
-  .seg.arr button { font-size: 12px; padding: 0 10px; }
   .filter > .btn .lbl { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pair { display: inline-flex; gap: 6px; flex: none; }
   .btn.split.on { background: var(--amber-soft); color: var(--amber); }
-  .seg.arr .sm { display: none; }
   /* Narrower toolbars give words up in order of what they are worth, and each step is set where
      the step above it stops fitting rather than at a round number — a toolbar that overflows puts
      Discard under the panel beside it, which is how this was found. Icons and tooltips remain. */
   @container (max-width: 1420px) { .opt-lbl { display: none; } }
   @container (max-width: 1300px) { .seg .num { display: none; } .filter > .btn .lbl { max-width: 90px; } }
   @container (max-width: 1200px) { .btn.split .split-lbl { display: none; } }
-  @container (max-width: 980px) { .seg.arr button { padding: 0 8px; } .filter > .btn .lbl { display: none; } .toolbar .filter { min-width: 0; } }
-  @container (max-width: 800px) { .seg.arr .lg { display: none; } .seg.arr .sm { display: inline; } .cnt-lbl { display: none; } .toolbar .btn { padding: 0 9px; } }
+  @container (max-width: 980px) { .filter > .btn .lbl { display: none; } .toolbar .filter { min-width: 0; } }
+  @container (max-width: 800px) { .cnt-lbl { display: none; } .toolbar .btn { padding: 0 9px; } }
   .filter { position: relative; }
   .sortm { min-width: 0; }
   .sortm .menu { max-height: 60vh; overflow-y: auto; }
