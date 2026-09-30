@@ -203,7 +203,7 @@ let user: UserData = {
     { id: "combat", name: "My combat stack", color: "coral", phase: "content", section: true },
 
     { id: "core", name: "Core", color: "blue", auto: { kind: "official" } },
-    { id: "frameworks", name: "Frameworks", color: "teal", auto: { kind: "phase", phase: "framework" } },
+    { id: "frameworks", name: "Libraries", color: "teal", auto: { kind: "phase", phase: "framework" } },
     { id: "qol", name: "Quality of life", color: "green" },
     { id: "visual", name: "Visual", color: "amber" },
     { id: "performance", name: "Performance", color: "coral", phase: "optimization", auto: { kind: "phase", phase: "optimization" } },
@@ -258,11 +258,12 @@ let settings: Settings = {
   ],
   showWeight: true,
   includeLocalRuns: true,
+  refreshWeightsOnSort: true,
   alphabeticalWithinPhase: false,
   updateDatabasesOnStart: false,
   listByPhase: typeof location === "undefined" || !location.search.includes("plain"),
   haloAdvanced: typeof location !== "undefined" && location.search.includes("advanced"),
-  listColumns: ["time", "load", "versions"],
+  listColumns: ["startup", "versions"],
   // Seeded from the query string, because the mock's settings live in a module and a reload
   // throws away anything the window wrote -- so "set it in Settings, restart, check" is not a
   // thing the browser mock can do. `?open=loadtimes&sort=name` stands in for a settings file
@@ -309,6 +310,24 @@ const MACHINE_FACTOR = 1.3;
 const LOAD_OUTLIERS: Record<string, number> = { "sarg.alphaanimals": 3.4, "razuhl.rimmsqol": 2.1 };
 const impactMs = new Map(MOCK_IMPACT.map((m) => [m.packageId, m.totalMs]));
 
+/** What the Circinus profiler measured *here*, as a multiple of the pooled share.
+ *
+ *  Typical and Yours only earn two columns if the two can disagree, so the corpus has to
+ *  contain a disagreement or a loadtest cannot tell a working comparison from one that draws
+ *  the pooled figure twice. Three shapes, on purpose:
+ *    - `brrainz.harmony` and `unlimitedhugs.hugslib` sit near 1x, the ordinary case, and the
+ *      one the pair must not cry wolf over
+ *    - `krkr.rocketman` is well above its pooled share and `ceteam.combatextended` well below
+ *      it, so the comparison has a finding in each direction and "different" is not a synonym
+ *      for "worse"
+ *  A mod absent from here has no local figure at all, which is the fourth shape and the one
+ *  the empty cell is for.
+ *
+ *  The keys are real package ids out of `weightSeed`, checked against it rather than typed
+ *  from memory: a ratio under an id nothing matches applies to nothing, and the corpus then
+ *  quietly stops containing the disagreement the whole pair of columns exists to show. */
+const LOCAL_RATIO: Record<string, number> = { "ceteam.combatextended": 0.15, "sarg.alphaanimals": 0.35, "brrainz.harmony": 1.1, "unlimitedhugs.hugslib": 0.95, "krkr.rocketman": 2.6 };
+
 /** One row as the site sends it. `share` is null for a mod the profiler has never measured,
  *  which is most of them: a start-up figure and a frame figure arrive independently. */
 function weightRow(pkg: string, i: number, share: number | null, ranked: boolean): Weight {
@@ -318,7 +337,13 @@ function weightRow(pkg: string, i: number, share: number | null, ranked: boolean
   // against a blank as well as against a number.
   const shared = mine != null && i % 4 !== 3;
   const loadMsMedian = shared ? Math.round((mine / (MACHINE_FACTOR * (LOAD_OUTLIERS[pkg] ?? 1))) * 10) / 10 : null;
-  return { packageId: pkg, share, band, ranked, seen: 300, measured: 240, rankedRuns: ranked ? 200 : 12, installs: ranked ? 48 : 3, netLow: null, netHigh: null, withheld: false, loadMsMedian, loadRuns: shared ? 40 + i * 3 : null, loadInstalls: shared ? 12 + i : null, origin: "api" } satisfies Weight;
+  // A local figure is its own measurement, so a mod with no pooled share can still have one
+  // (`onlyLocal`) and a mod with a pooled share can have none.
+  const ratio = LOCAL_RATIO[pkg];
+  const onlyLocal = share == null && ratio != null ? 0.4 : null;
+  const localShare = ratio != null && share != null ? Math.round(share * ratio * 100) / 100 : onlyLocal;
+  const localBand = localShare == null ? null : localShare < 0.5 ? "negligible" : localShare <= 2 ? "light" : localShare <= 5 ? "moderate" : localShare <= 15 ? "heavy" : "veryheavy";
+  return { packageId: pkg, share, band, ranked, seen: 300, measured: 240, rankedRuns: ranked ? 200 : 12, installs: ranked ? 48 : 3, netLow: null, netHigh: null, withheld: false, loadMsMedian, loadRuns: shared ? 40 + i * 3 : null, loadInstalls: shared ? 12 + i : null, localShare, localBand, localRuns: localShare == null ? null : 9, origin: "api" } satisfies Weight;
 }
 const weights: Record<string, Weight> = {};
 {

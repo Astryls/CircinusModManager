@@ -194,6 +194,9 @@ export interface Settings {
   dbSources: DbSource[];
   showWeight: boolean;
   includeLocalRuns: boolean;
+  /** Pull fresh figures from circinus.sh before previewing a HALO sort. It refreshes what the
+   *  columns say, not where HALO puts anything: the sort reads rules and never weights. */
+  refreshWeightsOnSort: boolean;
   alphabeticalWithinPhase: boolean;
   updateDatabasesOnStart: boolean;
   /** Show the active list in HALO's phase sections rather than as the plain load order. */
@@ -203,7 +206,7 @@ export interface Settings {
   /** Column widths dragged in the list, CSS px, by column key (`name`, `pkg`). */
   columns?: Record<string, number>;
   /** Optional list columns that are shown: `time`, `load`, `loadmedian`, `versions`, `phase`,
-   *  `group`. (The Cost column follows `showWeight`.) */
+   *  `group`. (The two frame-time columns follow `showWeight`.) */
   listColumns?: string[];
   /** The view Circinus opens on. Empty or unknown means the load order. */
   defaultView?: string;
@@ -328,6 +331,13 @@ export interface Weight {
   loadMsMedian: number | null;
   loadRuns: number | null;
   loadInstalls: number | null;
+  /** This machine's own share of frame time, from the Circinus profiler runs beside the saves.
+   *  The same unit and the same kind of measurement as `share`, on one machine instead of the
+   *  pool -- so the two are a pair to read across, never a fallback for one another. Null when
+   *  you have not profiled, and never filled in from `share`. */
+  localShare: number | null;
+  localBand: Band | null;
+  localRuns: number | null;
   origin: "api" | "local";
 }
 

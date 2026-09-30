@@ -108,20 +108,58 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   says they have seen it. The list marks them green on the *right* edge, since amber on the left
   already means HALO would move this and one row can be both. There is a New tab, shown only when
   something is in it.
-- The list's measures: **Time** is the seconds a mod is expected to add to loading, **Load** the
-  same estimate as a share of the list, **Cost** its frame-time share from circinus.sh. Time and
-  Load come from one number (`contents.load.scoreMs`) so they always agree; only Load is
-  coloured, since colouring both would draw one fact twice. All three are estimates from what the
-  folder holds, and every tooltip says so. **Median** is the fourth and the only one that is not
-  an estimate: what the mod typically adds to a start-up on *other people's* machines, measured
-  by Loading Progress and pooled by circinus.sh (`Weight::load_ms_median`). It is wall-clock
-  milliseconds spent once, so it is never added to Cost and never compared with it, and a mod
-  nobody has timed shows a dash — the site sends `-1` for that and a zero there would be a
-  measurement nobody took.
+- **The list's measures: one column, one measurement, one source, and the name says which.**
+  **Start-up** is seconds measured by Loading Progress (`store.measuredMsOf`), **Typical** the
+  pooled share of frame time from circinus.sh (`Weight::share`), **Yours** the same share
+  measured on this machine by the Circinus profiler (`Weight::local_share`), **Median** what the
+  mod typically adds to a start-up on other people's machines (`Weight::load_ms_median`). A cell
+  with no measurement behind it is an em dash, never a zero and never a model — the site sends
+  `-1` for "below the floors" and a zero there would be a measurement nobody took.
+  The three they replace were each broken in a different way, and the ways are worth keeping
+  written down because none of them was visible in a screenshot. **Time** returned
+  `expectedMsOf`, which is a Loading Progress reading where one exists and `loadcost::score`
+  scaled by a calibration factor everywhere else — and its tooltip said flatly "not measured
+  with a stopwatch", so a real measurement was presented as a guess and the mod that took it
+  went uncredited, while the Stats card three inches away got the same distinction right.
+  **Load** was `Time ÷ Σ Time`: not a second measurement at all, which is why `case "time"` and
+  `case "load"` both returned `loadOf(uid)?.ms` and the two headings ran one comparison.
+  And Load sat next to **Cost**, a genuine pooled frame share, in the same unit and the same
+  mono digits, so the invented percentage and the measured one read as a pair — Combat Extended
+  showed Cost 0.1 % beside Load 9.8 % in red, and the alarming one was the invented one.
+  The folder model is still there and still earns its place: HALO ranks with it and the Stats
+  card falls back to it *with a caption that says so*. It is simply never again printed in a
+  column, because a model and a reading set in the same digits cannot be told apart by a
+  reader, and the hedge that was supposed to do it lived in a tooltip nobody opens.
+  Typical and Yours are the same quantity in two places, which is the only reason to put two
+  frame columns side by side: the gap between them is about this install. That comparison was
+  impossible until `merge_local_weights` stopped *choosing* — it used to insert a local row
+  over a pooled one or drop it, so whichever it kept, the other was gone. It now writes only
+  the local fields, `Weight::blank` is the starting point for a local-only row, and
+  `clear_local_weights` empties them when `include_local_runs` goes off, because a merge that
+  only ever adds leaves the last reading on screen under a setting that no longer collects it.
+  **Version** is one chip: the newest version the mod actually declares, filled when it matches
+  the installed game and outlined amber when it is behind. It used to draw two fixed chips —
+  the installed version and the one before — lit by membership, so it never showed what a mod
+  supports, only whether it supported those two: "stopped at 1.4" and "declares nothing" were
+  the same two grey chips on a 1.6 install, and the column disagreed with its own sort, which
+  reads the real declared maximum.
+  `tools/loadtest/columns.cjs` holds all of this, and every assertion in it is about
+  provenance rather than layout — that an unmeasured cell is empty, that the two frame columns
+  can disagree, that no two of the three sort by the same value — because a geometry check
+  passed on every one of the old columns. Two sabotages were run against it: restoring the
+  model to Start-up, and letting Yours fall back to `share`. Both fail it by name.
 - **One notice column, and severity decides what it shows.** There used to be six columns of
   icons (Changed, Update, Errors, Warning, Notes, Pinned) costing 232px of every row for ever,
   and the reader still had to scan all six to answer one question. Now there is one mark, it
   shows the most serious thing the row carries, and the 190px goes to the mod name.
+  **It is a fixed 24px gutter at the head of the row, before the number.** It was last, so its
+  position moved with the elastic middle of the row -- a different place at every width -- and
+  in a pane the strip was too narrow for its own heading, which was simply hidden. The heading
+  is the bell glyph rather than the word, which retires an exemption instead of patching it:
+  `.hdr .b` had given itself 9.5px/600/mixed case against every other heading's
+  10.5px/700/uppercase, left over from when six icon columns needed six tiny words, and that
+  is what made the column read as belonging to a different table. The word stays for a screen
+  reader in a `.sr` span, and the full explanation stays in the tooltip where it already was.
   `src/lib/notices.ts` holds the whole rule and is deliberately free of runes, the store and
   Svelte, so "which of these seven is the one to show" can be tested without rendering a row.
   `NOTICE_ORDER` *is* the ranking; nothing else defines it. A pinned mod with an error shows the
@@ -583,6 +621,14 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   which is why a second paper was impossible: every glyph had to be redrawn and none could take
   the ink of the thing it sat in. Only `error` and `warn` ever carry colour and they take it from
   the caller. Keys in `lib/icons.ts` are unchanged from the old set, so call sites still resolve.
+  `warn` was the one glyph that broke those rules, and it showed. Its apex was a point at
+  (12,2) with a 10:19 slope — off the grid on both edges, and under three units thick for the
+  top quarter of its height — so the only shape on the row that was not rectilinear went soft
+  at 15px while everything beside it stayed crisp. It is the same silhouette rebuilt on the
+  grid: a flat three-unit top, edges at exactly 1:2, base on a whole unit. It stays a triangle
+  rather than becoming a second square sheet because warning and error have to differ in shape
+  and not only in hue — the colour rule says meaning must survive without colour, and two
+  identical sheets in two reds do not.
 - **A mod is replaced where it already lives** (reported as #2). Every SteamCMD download used
   to land in `Mods/<id>`, Force update of a subscribed mod included. With the same packageId in
   Mods and in Steam's folder RimWorld suffixes the *Workshop* copy `_steam`, so ModsConfig.xml's
@@ -685,6 +731,21 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   back in the folder, and reading the switch alone leaves a database nobody wanted on disk. The
   switch used to do neither — it was written down and nothing read it, so the community rules
   went on ordering mods and the footer went on reporting them as loaded.
+- `settings_version` 6 renamed the columns (`time` → `startup`, `cost` → `typical`) and dropped
+  `load`, which maps to nothing: the column it named was Time ÷ Σ Time, and its honest
+  replacement, Yours, is a different measurement nobody asked to see by switching Load on.
+  Turning a column somebody chose into a column they did not is worse than dropping it, because
+  Yours is one click away and a column you never chose is not.
+- The seeded group **Frameworks** became **Libraries**, under its own `default_group_names_v2`
+  flag. `95ac090` relabelled the HALO phases and never touched `default_groups`, so the group
+  said Frameworks while the phase it fills itself from — and the line under its own name in the
+  sidebar — both said Libraries. Two things make that migration safe: it renames only a group
+  still carrying the exact old default string, so a group the user renamed is theirs; and the
+  flag is **its own**, not a ride on `auto_groups_adopted`, which is the obvious place and is
+  wrong — that one is already true on every install old enough to need this, so hanging the
+  rename off it would have migrated precisely the installs that do not have the old name. A
+  migration behind a flag that is already set runs nowhere and looks correct in the diff.
+  `renaming_a_seeded_group_cannot_touch_one_the_user_named` is the four cases written down.
 - `settings_version` 5 leaves an existing install's switches alone. Anyone already running with
   the community rules has a list built with them; turning them off on the strength of a new
   default would rearrange it overnight. What changes for them is that the switch now works.

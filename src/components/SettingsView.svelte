@@ -6,13 +6,13 @@
   import { theme } from "$lib/theme.svelte";
   import { SORTS, sortLabel, VIEWS, type SortKey, type View } from "$lib/store.svelte";
 
-  /** The optional list columns, in the order they appear in the list. Cost is absent on purpose:
-   *  it follows `showWeight`, because it needs figures Circinus only has once they are fetched. */
+  /** The optional list columns, in the order they appear in the list. Typical and Yours are
+   *  absent on purpose: both follow `showWeight`, because both need figures Circinus only has
+   *  once they are fetched. */
   const LIST_COLUMNS = [
-    { key: "time", label: "Time", hint: "Seconds this mod is expected to add to loading" },
-    { key: "load", label: "Load", hint: "The same estimate as a share of the whole list" },
+    { key: "startup", label: "Start-up", hint: "Seconds this mod added to the last start-up, measured by the Loading Progress mod. Never estimated" },
     { key: "loadmedian", label: "Median", hint: "What the mod typically adds to a start-up on everyone else's machine, from circinus.sh" },
-    { key: "versions", label: "Versions", hint: "The game versions the mod says it supports" },
+    { key: "versions", label: "Version", hint: "The newest game version the mod says it supports, marked when that is behind the game installed here" },
     { key: "phase", label: "Phase", hint: "Where HALO files the mod" },
     { key: "group", label: "Group", hint: "The group the mod is in" }
   ];
@@ -252,8 +252,11 @@
     <section class="card">
       <h3>Performance figures</h3>
       <p class="hint">How much frame time each mod costs, measured by the <button class="lnk" onclick={() => openUrl("https://circinus.sh")}>Circinus profiler</button>. Shown as a share of frame time, the median across clean runs. A mod is ranked after 25 runs from 10 players. Long lists spread the total thin, so compare mods rather than adding them up.</p>
-      <label class="switch"><input type="checkbox" checked={s?.showWeight ?? false} onchange={(e) => store.updateSettings({ showWeight: e.currentTarget.checked })} />Show the figure next to each mod</label>
-      <label class="switch"><input type="checkbox" checked={s?.includeLocalRuns ?? true} onchange={(e) => store.updateSettings({ includeLocalRuns: e.currentTarget.checked })} />Include my own runs (the Circinus/Runs folder next to the config folder)</label>
+      <p class="hint">Two columns, because they are two measurements of the same thing in two places. <b>Typical</b> is what the mod costs everybody else, pooled here. <b>Yours</b> is what it costs on this machine, from your own profiler runs. Neither is ever filled in from the other, so a gap between them is real and is about this install.</p>
+      <label class="switch"><input type="checkbox" checked={s?.showWeight ?? false} onchange={(e) => store.updateSettings({ showWeight: e.currentTarget.checked })} />Show Typical and Yours next to each mod</label>
+      <label class="switch"><input type="checkbox" checked={s?.includeLocalRuns ?? true} onchange={(e) => store.updateSettings({ includeLocalRuns: e.currentTarget.checked })} />Read my own runs, for the Yours column (the Circinus/Runs folder next to the config folder)</label>
+      <label class="switch"><input type="checkbox" checked={s?.refreshWeightsOnSort ?? true} onchange={(e) => store.updateSettings({ refreshWeightsOnSort: e.currentTarget.checked })} />Fetch fresh figures before Sort with HALO</label>
+      <p class="hint">This updates what the columns say. It does not change the order: HALO sorts from rules, the mod authors&rsquo; own declarations and your overrides, and never reads these figures. The lists that <em>can</em> change the order are the rule databases above.</p>
       <div class="row">
         <button class="btn" onclick={() => store.refreshWeights()}>{@html I.gauge}Fetch from circinus.sh</button>
         <span class="hint">{Object.keys(store.snap?.weights ?? {}).length.toLocaleString()} mods have figures ({withNumber.toLocaleString()} with a frame share, {withLoad.toLocaleString()} timed at start-up) · fetched {fetchedAgo}</span>

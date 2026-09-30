@@ -284,7 +284,11 @@ impl Phase {
     pub fn label(self) -> &'static str {
         match self {
             Phase::Core => "Game and DLC",
-            Phase::Prepatch => "Before the game",
+            // "Preloads", not "Before the game": the second one is what this table said while
+            // `PHASES` in types.ts -- the copy the window actually renders -- said the first,
+            // and nobody noticed because nothing on screen reads this one. Two copies of one
+            // table drift; keeping them in step is the only thing holding that shut.
+            Phase::Prepatch => "Preloads",
             Phase::Framework => "Libraries",
             Phase::Content => "Content",
             Phase::Patch => "Patches",

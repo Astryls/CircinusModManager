@@ -43,27 +43,54 @@
   const pkgW = $derived(live?.key === "pkg" ? live.px : (store.columns.pkg ?? PKG_DEFAULT));
   /** An inactive mod has no place in the order, so nothing HALO could move it by. */
   const showMove = $derived(!!store.preview && pane !== "inactive");
-  /** The optional columns, in the order they appear. Cost follows its own setting (it needs
-      figures Circinus only has once weights are loaded); the rest are the user's to choose. */
+  /** The optional columns, in the order they appear.
+   *
+   *  Each one is now a single measurement with a single source, and the name says which. That
+   *  was not true of the three they replace. **Time** mixed a Loading Progress reading with a
+   *  folder model and told everybody, in its tooltip, that it was the model -- so a real
+   *  stopwatch figure was presented as a guess, and the mod that took the measurement went
+   *  uncredited. **Load** was not a second measurement at all: it was Time divided by the sum
+   *  of Time, which is why sorting by it and sorting by Time ran the same comparison. And it
+   *  sat beside **Cost**, in the same unit and the same typeface, so the modelled percentage
+   *  and the measured one read as a pair when only one of them had ever been observed.
+   *
+   *  What is here instead:
+   *    Start-up  seconds, measured by Loading Progress. No model, ever -- a mod it has not
+   *              timed reads as a dash, because a guess in this column is indistinguishable
+   *              from a reading and people quote it as one.
+   *    Typical   share of frame time, pooled from circinus.sh. Everybody else's machines.
+   *    Yours     share of frame time, from the Circinus profiler runs on *this* machine.
+   *  Typical and Yours are the same quantity measured in two places, which is the whole reason
+   *  to draw them next to each other: the gap between them is about this install.
+   *
+   *  Typical and Yours follow `showWeight` rather than the column picker, as Cost did: both
+   *  need figures that only exist once weights are loaded. */
   const on = $derived(new Set(store.listColumns));
   const optional = $derived([
-    { key: "time", w: 62, show: on.has("time") },
-    { key: "cost", w: 64, show: store.showWeight },
-    { key: "load", w: 58, show: on.has("load") },
+    { key: "startup", w: 66, show: on.has("startup") },
+    { key: "typical", w: 68, show: store.showWeight },
+    { key: "yours", w: 66, show: store.showWeight },
     { key: "loadmedian", w: 72, show: on.has("loadmedian") },
     { key: "versions", w: 64, show: on.has("versions") },
     { key: "phase", w: 106, show: on.has("phase") },
     { key: "group", w: 106, show: on.has("group") }
   ]);
   const wanted = $derived(optional.filter((c) => c.show));
-  /** One notice mark, so the strip is one icon wide plus room for a count.
+  /** One notice mark, in a fixed gutter at the head of the row.
    *
    *  This used to be six columns and 232px of every row, for ever, and the reader still had to
    *  scan all six to answer one question. The 190px it gives back goes to the mod name, which
-   *  is what the window is actually for. */
-  const BADGES = $derived(pane === null ? 42 : 38);
+   *  is what the window is actually for.
+   *
+   *  It sits before the number rather than after the last column because a severity mark is
+   *  the first thing anybody scans a list for, and on the right it was the one thing whose
+   *  position moved: the middle of the row is elastic, so the marks landed in a different
+   *  place at every width, and in a pane the strip was too narrow for its own heading, which
+   *  was simply hidden. A fixed gutter is in the same place in both panes at every width, and
+   *  the row reads mark, then position, then name. */
+  const BADGES = 24;
   const minName = $derived(pane === null ? NAME_MIN : PANE_NAME_MIN);
-  /** What a row costs before any optional column: the number, the badges, the move, the gaps. */
+  /** What a row costs before any optional column: the gutter, the number, the move, the gaps. */
   const baseW = $derived(34 + BADGES + (showMove ? 40 + 6 : 0) + 3 * 6);
   /** The one list shows every column the user asked for. A pane is half as wide, so it keeps them
       from the left and drops the rest rather than squeeze the names past reading. */
@@ -89,11 +116,10 @@
       left instead of pushing the row past its edge. */
   const nameW = $derived(savedNameW == null || pane === null ? savedNameW : Math.max(minName, Math.min(savedNameW, listW - 24 - fixedW - (showPkg ? pkgW + 6 : 0))));
   const template = $derived.by(() => {
-    const cols = ["34px", nameW != null ? `${nameW}px` : `minmax(${minName}px, 1fr)`];
+    const cols = [`${BADGES}px`, "34px", nameW != null ? `${nameW}px` : `minmax(${minName}px, 1fr)`];
     if (showPkg) cols.push(`${pkgW}px`);
     if (nameW != null) cols.push("minmax(0, 1fr)");
     for (const c of shown) cols.push(`${c.w}px`);
-    cols.push(`${BADGES}px`);
     if (showMove) cols.push("40px");
     return cols.join(" ");
   });
@@ -243,11 +269,52 @@
     for (let i = 0; i < items.length && offsets[i] <= scrollTop; i++) if (items[i].kind === "header") cur = items[i];
     return cur && cur.kind === "header" && offsets[items.indexOf(cur)] < scrollTop ? cur : null;
   });
-  const versions = $derived.by(() => {
-    const cur = store.snap?.gameVersion.majorMinor ?? "1.6";
-    const [ma, mi] = cur.split(".").map(Number);
-    return [`${ma}.${mi - 1}`, cur];
-  });
+  /** The one version worth printing: the newest the mod actually says it supports.
+   *
+   *  The column used to draw two fixed chips -- the installed game version and the one before
+   *  it -- lit or greyed by whether the mod declared them. So it never showed what a mod
+   *  actually supports, only whether it supports those two: a mod that stopped at 1.4 and a
+   *  mod that declares nothing at all drew identically, two grey chips, on a 1.6 install. That
+   *  also put the column out of step with its own sort, which reads the real declared maximum,
+   *  so rows with identical chips reordered when you sorted by them.
+   *
+   *  Newest-declared answers the question the column is for -- is this mod keeping up -- and
+   *  says something different in each of the three cases rather than the same thing in two. */
+  const gameVersion = $derived(store.snap?.gameVersion.majorMinor ?? "1.6");
+  function versionOf(m: ModInfo): { label: string; state: "on" | "behind" | "ahead"; title: string } | null {
+    const declared = m.supportedVersions ?? [];
+    if (!declared.length) return null;
+    const newest = declared.reduce((a, b) => (store.versionRank(b) > store.versionRank(a) ? b : a));
+    const d = store.versionRank(newest) - store.versionRank(gameVersion);
+    const all = declared.length > 1 ? `\nSays it supports ${declared.join(", ")}.` : "";
+    if (d === 0) return { label: newest, state: "on", title: `Supports ${gameVersion}, the version installed.${all}` };
+    if (d < 0)
+      return {
+        label: newest,
+        state: "behind",
+        title: `The newest version this mod claims is ${newest}; the game installed is ${gameVersion}. It may still work, and it may not.${all}`
+      };
+    return { label: newest, state: "ahead", title: `Built for ${newest}, ahead of the ${gameVersion} installed here.${all}` };
+  }
+
+  /** Why a Start-up cell is empty. Two sentences, because "no data" is not actionable and the
+   *  mod's tracking settings are off out of the box -- absent is the normal case, not a fault. */
+  const MEASURE_MISSING =
+    "Not measured. The Loading Progress mod times each mod as the game starts; Circinus reads what it writes and never estimates this number. Enable it, start the game once, and this fills in.";
+  const PROFILER_MISSING = "You have not profiled this mod. The Circinus profiler mod measures frame time on this machine; Typical is what everybody else measured.";
+
+  function yoursTitle(w: { localShare: number | null; localBand: string | null; localRuns: number | null; share: number | null }): string {
+    const mine = w.localShare ?? 0;
+    const runs = w.localRuns ?? 0;
+    const head = `${mine.toFixed(2)} % of frame time on this machine, over ${runs} of your own run${runs === 1 ? "" : "s"}.`;
+    if (w.share == null) return `${head}\nNobody has pooled a figure for this mod, so there is nothing to compare it with.`;
+    // The comparison is the reason both columns exist, so it is stated rather than left to be
+    // worked out from two numbers in different columns.
+    const ratio = w.share > 0 ? mine / w.share : null;
+    if (ratio == null || (ratio > 0.75 && ratio < 1.33)) return `${head}\nAbout what it costs everybody else (${w.share.toFixed(2)} %).`;
+    const word = ratio >= 1 ? `${ratio.toFixed(1)}× more` : `${(1 / ratio).toFixed(1)}× less`;
+    return `${head}\n${word} than it costs everybody else (${w.share.toFixed(2)} %). That gap is about this install, not about the mod.`;
+  }
 
   // ---- keeping the place ----
   /** Which list this is. Side by side there are two, and they scroll independently. */
@@ -621,21 +688,28 @@
   style="--cols: {template}"
 >
   <div class="hdr" role="presentation" onpointermove={colMove} onpointerup={colUp} onpointercancel={colUp}>
+    <!-- The notice gutter. An icon rather than the word: one heading over one column used to
+         buy itself an exemption from the header's own type rules (9.5px, weight 600, mixed
+         case, no tracking, against everything else's 10.5px/700/uppercase), which is what made
+         it read as belonging to a different table. A glyph has no type to disagree with, and
+         what the column holds is already spelled out at length in the tooltip. -->
+    <span
+      class="h b"
+      title="Notices: errors first, then warnings, an available update, HALO notes, what changed since you last opened Circinus, and whether the mod is pinned. The row shows the most serious one; click it to read them all and put any of them down."
+      >{@html I.bell}<span class="sr">Notices</span></span
+    >
     <!-- Nothing inactive has a place in the order, so its pane numbers nothing and says so. -->
     <span class="h idx">{pane === "inactive" ? "" : "#"}</span>
     <span class="h name" class:by={store.sortKey === "name"}>{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("name")} title="Sort by name">Mod{#if store.sortKey === "name"}<i class="dir">{arrowFor("name")}</i>{/if}</button>{:else}Mod{/if}<span class="grab" role="separator" aria-orientation="vertical" title="Drag to change the width; double-click for the default" onpointerdown={(e) => colDown(e, "name")} ondblclick={() => colReset("name")}></span></span>
     {#if showPkg}<span class="h pkg" class:by={store.sortKey === "pkg"}>{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("pkg")} title="Sort by package id">Package id{#if store.sortKey === "pkg"}<i class="dir">{arrowFor("pkg")}</i>{/if}</button>{:else}Package id{/if}<span class="grab" role="separator" aria-orientation="vertical" title="Drag to change the width; double-click for the default" onpointerdown={(e) => colDown(e, "pkg")} ondblclick={() => colReset("pkg")}></span></span>{/if}
     {#if nameW != null}<span class="fill"></span>{/if}
-    {#if has.has("time")}<span class="h tm" class:by={store.sortKey === "time"} title="How much of the game's loading time this mod is expected to add, in seconds. Estimated from what the folder holds, not measured with a stopwatch: use it to rank mods against each other rather than to predict the clock.">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("time")}>Time{#if store.sortKey === "time"}<i class="dir">{arrowFor("time")}</i>{/if}</button>{:else}Time{/if}</span>{/if}
-    {#if has.has("cost")}<span class="h wt" class:by={store.sortKey === "cost"} title="Share of frame time, from circinus.sh or your own runs">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("cost")}>Cost{#if store.sortKey === "cost"}<i class="dir">{arrowFor("cost")}</i>{/if}</button>{:else}Cost{/if}</span>{/if}
-    {#if has.has("load")}<span class="h load" class:by={store.sortKey === "load"} title="Expected share of the list's loading time, estimated from what the folder holds: Defs XML, patch operations and how far they search, PNG textures without DDS, assemblies. A ranking, not a stopwatch.">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("load")}>Load{#if store.sortKey === "load"}<i class="dir">{arrowFor("load")}</i>{/if}</button>{:else}Load{/if}</span>{/if}
-    {#if has.has("loadmedian")}<span class="h lmed" title="What this mod typically adds to a start-up on everyone else's machine: the median of the start-ups shared with circinus.sh, measured by the Loading Progress mod. Wall-clock milliseconds spent once, not a share of every frame, so it is never added to Cost. Blank means nobody has timed it yet.">Median</span>{/if}
-    {#if has.has("versions")}<span class="h vers" class:by={store.sortKey === "versions"} title="Game versions the mod says it supports">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("versions")}>Versions{#if store.sortKey === "versions"}<i class="dir">{arrowFor("versions")}</i>{/if}</button>{:else}Versions{/if}</span>{/if}
+    {#if has.has("startup")}<span class="h tm" class:by={store.sortKey === "startup"} title="Seconds this mod added to the last start-up, measured by the Loading Progress mod. Circinus times nothing itself and never estimates this: a mod Loading Progress has not timed reads as a dash rather than as a guess.">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("startup")}>Start-up{#if store.sortKey === "startup"}<i class="dir">{arrowFor("startup")}</i>{/if}</button>{:else}Start-up{/if}</span>{/if}
+    {#if has.has("typical")}<span class="h wt" class:by={store.sortKey === "typical"} title="What this mod typically costs everybody else: the median share of frame time across the runs pooled by circinus.sh. Compare it with Yours.">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("typical")}>Typical{#if store.sortKey === "typical"}<i class="dir">{arrowFor("typical")}</i>{/if}</button>{:else}Typical{/if}</span>{/if}
+    {#if has.has("yours")}<span class="h load" class:by={store.sortKey === "yours"} title="What this mod costs on this machine: the median share of frame time across the runs the Circinus profiler mod has written here. The same measurement as Typical, taken on one machine instead of the pool, so the gap between the two is about this install.">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("yours")}>Yours{#if store.sortKey === "yours"}<i class="dir">{arrowFor("yours")}</i>{/if}</button>{:else}Yours{/if}</span>{/if}
+    {#if has.has("loadmedian")}<span class="h lmed" title="What this mod typically adds to a start-up on everyone else's machine: the median of the start-ups shared with circinus.sh, measured by the Loading Progress mod. Wall-clock milliseconds spent once, not a share of every frame, so it is never added to Typical or Yours. Blank means nobody has timed it yet.">Median</span>{/if}
+    {#if has.has("versions")}<span class="h vers" class:by={store.sortKey === "versions"} title="Game versions the mod says it supports">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("versions")}>Version{#if store.sortKey === "versions"}<i class="dir">{arrowFor("versions")}</i>{/if}</button>{:else}Version{/if}</span>{/if}
     {#if has.has("phase")}<span class="h phz" class:by={store.sortKey === "phase"} title="Where HALO files the mod: the game, a library, content, a patch, a texture pack, a late loader, a performance mod">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("phase")}>Phase{#if store.sortKey === "phase"}<i class="dir">{arrowFor("phase")}</i>{/if}</button>{:else}Phase{/if}</span>{/if}
     {#if has.has("group")}<span class="h g" class:by={store.sortKey === "group"} title="The group the mod is in">{#if canSort}<button class="sortbtn" onclick={() => store.sortBy("group")}>Group{#if store.sortKey === "group"}<i class="dir">{arrowFor("group")}</i>{/if}</button>{:else}Group{/if}</span>{/if}
-    <span class="badges">
-      <span class="h b" title="Notices: errors first, then warnings, an available update, HALO notes, what changed since you last opened Circinus, and whether the mod is pinned. The row shows the most serious one; click it to read them all and put any of them down."><i>Notices</i></span>
-    </span>
     {#if showMove}<span class="h delta" title="How far HALO would move the mod">Move</span>{/if}
   </div>
   {#if floating}
@@ -655,8 +729,11 @@
         {@const pl = it.inactive ? undefined : placementOf(m.uid)}
         {@const grp = store.groupOf(m.uid)}
         {@const nt = noticesOf(m, issues, upd, chg, it.inactive)}
-        {@const ld = it.inactive ? undefined : store.loadOf(m.uid)}
-        {@const tm = m.contents.load ? store.loadOf(m.uid)?.ms : undefined}
+        <!-- Measured or nothing. `expectedMsOf` would answer for every mod, because it falls
+             back to the folder model, and that fallback is exactly what this column must not
+             have: a modelled figure and a stopwatch reading are indistinguishable once they
+             are both set in the same mono digits. -->
+        {@const tm = store.measuredMsOf(m.uid)}
         {@const isNew = store.isNew(m.uid)}
         {@const arrived = whenItCame(m.uid)}
         <div
@@ -679,19 +756,6 @@
           ondblclick={() => toggle(m)}
           onpointerdown={(e) => pointerDown(e, m)}
         >
-          <span class="idx num"><span class="grip">{@html I.grip}</span>{it.inactive ? "" : (indexOf.get(m.uid) ?? 0) + 1}</span>
-          <span class="name"><b>{m.name ?? m.uid}{#if isNew}<i class="newtag">New</i>{/if}</b><span>{arrived ?? m.invalid ?? (m.authors ?? []).join(", ")}</span></span>
-          {#if showPkg}<span class="pkg">{m.packageId}</span>{/if}
-          {#if nameW != null}<span class="fill"></span>{/if}
-          {#if has.has("time")}<span class="tm num">{#if tm != null}<span title="About {secs(tm)} of the game's loading time, of an estimated {store.loadTotalSeconds >= 60 ? `${(store.loadTotalSeconds / 60).toFixed(1)} min` : `${store.loadTotalSeconds.toFixed(0)} s`} for the whole list.&#10;{explainLoad(m).join('\n')}&#10;&#10;Estimated from the folder; a ranking, not a stopwatch.">{secs(tm)}</span>{:else if m.contents.load == null}<span class="unread" title="Not read yet: the folder is still being inspected">…</span>{/if}</span>{/if}
-          {#if has.has("cost")}
-            <span class="wt">{#if w && w.share != null}<span class="band {w.band}" title="Performance cost: {w.share.toFixed(2)} % of frame time, {BAND_LABEL[w.band].toLowerCase()}. {w.measured ?? '?'} runs measured, from {w.origin === 'local' ? 'your runs' : 'circinus.sh'}">{w.share.toFixed(1)} %</span>{:else if w}<span class="band {w.band}" title="Performance cost: {BAND_LABEL[w.band].toLowerCase()}">{w.band === "negligible" ? "<0.1 %" : "n/a"}</span>{/if}</span>
-          {/if}
-          {#if has.has("load")}<span class="load">{#if ld && m.contents.load}<span class="band {ld.band}" title="Expected share of loading time: {ld.share >= 0.0005 ? (ld.share * 100).toFixed(ld.share < 0.01 ? 2 : 1) : 'under 0.05'} % ({LOAD_BAND_LABEL[ld.band].toLowerCase()}), about {ld.ms >= 1000 ? `${(ld.ms / 1000).toFixed(1)} s` : `${ld.ms} ms`} of an estimated {store.loadTotalSeconds >= 60 ? `${(store.loadTotalSeconds / 60).toFixed(1)} min` : `${store.loadTotalSeconds.toFixed(0)} s`} for the list.&#10;{explainLoad(m).join('\n')}&#10;&#10;Estimated from the folder; a ranking, not a stopwatch.">{ld.share >= 0.001 ? `${(ld.share * 100).toFixed(ld.share < 0.01 ? 2 : 1)} %` : "<0.1 %"}</span>{:else if !it.inactive && m.contents.load == null}<span class="band unknown" title="Not read yet: the folder is still being inspected">…</span>{/if}</span>{/if}
-          {#if has.has("loadmedian")}<span class="lmed num">{#if w?.loadMsMedian != null}<span title="Typically adds about {w.loadMsMedian >= 1000 ? `${(w.loadMsMedian / 1000).toFixed(1)} s` : `${Math.round(w.loadMsMedian)} ms`} to a start-up, over {w.loadRuns ?? 0} shared start-up{w.loadRuns === 1 ? '' : 's'} from {w.loadInstalls ?? 0} install{w.loadInstalls === 1 ? '' : 's'}. Measured by Loading Progress, pooled by circinus.sh. Start-up only: never added to Cost.">{w.loadMsMedian >= 1000 ? `${(w.loadMsMedian / 1000).toFixed(1)} s` : `${Math.round(w.loadMsMedian)} ms`}</span>{:else}<span class="unread" title="Nobody has shared a start-up with this mod loaded yet. Not the same as costing nothing.">&mdash;</span>{/if}</span>{/if}
-          {#if has.has("versions")}<span class="vers">{#each versions as v}<span class:off={!(m.supportedVersions ?? []).includes(v)}>{v}</span>{/each}</span>{/if}
-          {#if has.has("phase")}<span class="phz">{#if pl}{@const ph = store.phaseInfo(pl.phase)}<em class="tag" title="{ph.name} · {pl.reason}">{ph.name}</em>{/if}</span>{/if}
-          {#if has.has("group")}<span class="g">{#if grp}<em class="tag" title="{grp.name}{grp.auto && !store.snap?.user.modGroups[m.uid] ? ' (by the group’s own rule)' : ''}">{grp.name}</em>{/if}</span>{/if}
           <span class="badges">
             {#if nt.shown.length || nt.hidden.length}
               {@const top = nt.shown[0]}
@@ -705,6 +769,19 @@
               >{@html top ? I[NOTICE_ICON[top.kind]] : I.check}{#if nt.shown.length > 1}<em class="num">{nt.shown.length}</em>{/if}</button>
             {/if}
           </span>
+          <span class="idx num"><span class="grip">{@html I.grip}</span>{it.inactive ? "" : (indexOf.get(m.uid) ?? 0) + 1}</span>
+          <span class="name"><b>{m.name ?? m.uid}{#if isNew}<i class="newtag">New</i>{/if}</b><span>{arrived ?? m.invalid ?? (m.authors ?? []).join(", ")}</span></span>
+          {#if showPkg}<span class="pkg">{m.packageId}</span>{/if}
+          {#if nameW != null}<span class="fill"></span>{/if}
+          {#if has.has("startup")}<span class="tm num">{#if tm != null}<span title="Added about {secs(tm)} to the last start-up, measured by the Loading Progress mod. Of {store.measuredTotalSeconds >= 60 ? `${(store.measuredTotalSeconds / 60).toFixed(1)} min` : `${store.measuredTotalSeconds.toFixed(0)} s`} it measured across this list.">{secs(tm)}</span>{:else}<span class="unread" title={MEASURE_MISSING}>&mdash;</span>{/if}</span>{/if}
+          {#if has.has("typical")}
+            <span class="wt">{#if w && w.share != null}<span class="band {w.band}" title="Typically {w.share.toFixed(2)} % of frame time, {BAND_LABEL[w.band].toLowerCase()}. Pooled by circinus.sh over {w.measured ?? '?'} measured run{w.measured === 1 ? '' : 's'} on other people's machines.">{w.share.toFixed(1)} %</span>{:else}<span class="dash" title="Nobody has pooled a measurement of this mod yet. Not the same as costing nothing.">&mdash;</span>{/if}</span>
+          {/if}
+          {#if has.has("yours")}<span class="load">{#if w?.localShare != null}<span class="band {w.localBand ?? 'unknown'}" title={yoursTitle(w)}>{w.localShare.toFixed(1)} %</span>{:else}<span class="dash" title={PROFILER_MISSING}>&mdash;</span>{/if}</span>{/if}
+          {#if has.has("loadmedian")}<span class="lmed num">{#if w?.loadMsMedian != null}<span title="Typically adds about {w.loadMsMedian >= 1000 ? `${(w.loadMsMedian / 1000).toFixed(1)} s` : `${Math.round(w.loadMsMedian)} ms`} to a start-up, over {w.loadRuns ?? 0} shared start-up{w.loadRuns === 1 ? '' : 's'} from {w.loadInstalls ?? 0} install{w.loadInstalls === 1 ? '' : 's'}. Measured by Loading Progress, pooled by circinus.sh. Start-up only: never added to Typical or Yours.">{w.loadMsMedian >= 1000 ? `${(w.loadMsMedian / 1000).toFixed(1)} s` : `${Math.round(w.loadMsMedian)} ms`}</span>{:else}<span class="unread" title="Nobody has shared a start-up with this mod loaded yet. Not the same as costing nothing.">&mdash;</span>{/if}</span>{/if}
+          {#if has.has("versions")}{@const vr = versionOf(m)}<span class="vers">{#if vr}<span class={vr.state} title={vr.title}>{vr.label}</span>{/if}</span>{/if}
+          {#if has.has("phase")}<span class="phz">{#if pl}{@const ph = store.phaseInfo(pl.phase)}<em class="tag" title="{ph.name} · {pl.reason}">{ph.name}</em>{/if}</span>{/if}
+          {#if has.has("group")}<span class="g">{#if grp}<em class="tag" title="{grp.name}{grp.auto && !store.snap?.user.modGroups[m.uid] ? ' (by the group’s own rule)' : ''}">{grp.name}</em>{/if}</span>{/if}
           {#if showMove}<span class="delta num" class:down={delta && delta > 0} class:up={delta && delta < 0}>{#if delta}{delta > 0 ? "+" : ""}{delta}{/if}</span>{/if}
         </div>
       {/if}
@@ -739,9 +816,13 @@
   .hdr .grab { position: absolute; top: -8px; bottom: -8px; right: -6px; width: 11px; cursor: col-resize; touch-action: none; z-index: 1; }
   .hdr .grab::after { content: ""; position: absolute; top: 8px; bottom: 8px; left: 5px; width: 1px; background: var(--surface-4); }
   .hdr .grab:hover::after { background: var(--amber); width: 2px; left: 4px; }
-  .hdr .b { display: grid; justify-items: center; gap: 1px; text-transform: none; letter-spacing: 0; font-size: 9px; font-weight: 600; }
+  /* The heading is the glyph and nothing else, so there is no type here to disagree with the
+     rest of the row. It used to be the word "Notices" under its own rules -- 9.5px, weight
+     600, mixed case, no tracking, against every other heading's 10.5px/700/uppercase -- an
+     exemption six icon columns once needed and one column never did. Retiring the exemption
+     was the fix; overriding it back to match would have left the next person the same trap. */
+  .hdr .b { display: grid; place-items: center; color: var(--text-3); }
   .hdr .b :global(svg) { width: 13px; height: 13px; }
-  .hdr .b i { font-style: normal; }
   .ph { position: absolute; left: 0; right: 0; height: 44px; display: flex; align-items: center; gap: 10px; padding: 14px 10px 6px; background: var(--surface); }
   /* A group inside a band: a line of small caps rather than a section title, so the eye reads
      the band first and the group second. Same ground as the rows, not the header's. */
@@ -810,18 +891,19 @@
      so it keeps a mark -- at the weight of punctuation rather than of a warning. */
   .flag.nt.quiet { color: var(--text-4); opacity: 0.55; }
   .flag.nt.quiet:hover { opacity: 1; }
-  /* One heading over one column, so it can be a word at a readable size rather than the 8.5px
-     abbreviation six columns forced. */
-  .hdr .b { font-size: 9.5px; }
-  .hdr .b i { display: block; max-width: 100%; overflow: hidden; text-overflow: clip; }
-  /* A pane is half as wide and its strip is narrower still; the mark under it says the same
-     thing, and the row's own tooltip names it. */
-  .list.pane .hdr .b i { display: none; }
   .list.pane .ph .note { display: none; }
-  .badges .b { display: grid; place-items: center; height: 24px; }
+  /* The gutter is the same 24px in the single list and in either pane. That is the point of
+     moving it here: it used to be the last column, so its position moved with the elastic
+     middle of the row and was different at every width, and in a pane it lost its heading
+     entirely for want of room. A fixed gutter needs neither concession. */
+  .badges { justify-self: center; }
   .flag { display: inline-flex; align-items: center; gap: 1px; height: 20px; padding: 0 2px; border-radius: 0; }
   .flag :global(svg) { width: 15px; height: 15px; flex: none; }
   .flag em { font-style: normal; font-size: 10.5px; font-weight: 700; color: var(--text-2); }
+  .sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  /* A measurement nobody took. Punctuation weight, never a zero: a dash cannot be read as
+     "this mod is free", and a 0 can. */
+  .dash { font: 500 11.5px var(--mono); color: var(--text-4); }
   .delta { font: 700 11.5px var(--mono); text-align: right; color: var(--text-3); }
   .delta.down { color: var(--amber); }
   .delta.up { color: var(--blue); }

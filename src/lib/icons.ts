@@ -50,7 +50,15 @@ export const I = {
   // ---- status. The only two that ever carry a hue, and they take it from the caller. -----
   check: svg(back("M3 3h18v18H3z") + front("M6 12.5l4 4L18 8.5l-2.2-2.2L10 12.1 8.2 10.3z")),
   error: svg(back("M3 3h18v18H3z") + front("M10.5 4h3v10h-3zM10.5 17h3v3h-3z")),
-  warn: svg(back("M12 2l10 19H2z") + front("M10.5 9h3v6h-3zM10.5 16.5h3v3h-3z")),
+  // The one glyph in the set that broke the set's own rules, and it showed. Its apex was a
+  // point at (12,2) with a 10:19 slope -- off the grid on both edges, and thinner than three
+  // units for the top quarter of its height -- so at the 15px the list draws it at, the only
+  // rectilinear thing on the row went soft while everything beside it stayed crisp.
+  //
+  // Same silhouette, rebuilt on the grid: a flat three-unit top, edges at exactly 1:2, and a
+  // base that lands on a whole unit. It stays a triangle rather than becoming another square
+  // sheet because warning and error must differ in shape and not only in hue.
+  warn: svg(back("M10.5 3h3l7.5 15v3H3v-3z") + front("M10.5 8h3v6h-3zM10.5 15.5h3v3h-3z")),
   note: svg(back("M3 3h18v18H3z") + front("M10.5 9h3v9h-3zM10.5 5h3v3h-3z")),
   plus: svg(back("M3 3h18v18H3z") + front("M10.5 6h3v12h-3zM6 10.5h12v3H6z")),
   minus: svg(back("M3 3h18v18H3z") + front("M6 10.5h12v3H6z")),

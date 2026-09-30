@@ -41,7 +41,7 @@ export type PatchesCol = "name" | "patches" | "prefixes" | "postfixes" | "transp
 
 /** What the list is ordered by. `order` is the load order, which is the only one that is real:
  *  every other value sorts the view without touching what the game will read. */
-export type SortKey = "order" | "name" | "pkg" | "versions" | "time" | "load" | "cost" | "phase" | "group" | "arrived" | "modified" | "updated" | "steamid";
+export type SortKey = "order" | "name" | "pkg" | "versions" | "startup" | "typical" | "yours" | "phase" | "group" | "arrived" | "modified" | "updated" | "steamid";
 
 /** Every way the list can be ordered, in the order the Sort menu offers them.
  *
@@ -55,7 +55,7 @@ export type SortKey = "order" | "name" | "pkg" | "versions" | "time" | "load" | 
 /** The sorts that start A to Z rather than largest first. */
 const ASCENDING_FIRST = new Set<SortKey>(["name", "pkg", "group"]);
 
-export const SORTS: SortKey[] = ["order", "name", "pkg", "versions", "time", "load", "cost", "phase", "group", "arrived", "modified", "updated", "steamid"];
+export const SORTS: SortKey[] = ["order", "name", "pkg", "versions", "startup", "typical", "yours", "phase", "group", "arrived", "modified", "updated", "steamid"];
 export const sortLabel = (k: SortKey) => t(`sort.${k}.label`);
 export const sortHint = (k: SortKey) => t(`sort.${k}.hint`);
 /** Which list one pane of a side-by-side view shows. `null` is the ordinary single list, where
@@ -66,6 +66,13 @@ export type Pane = "inactive" | "active";
 export type Split = "library" | "halo";
 /** What the list is narrowed to: mods with errors, warnings, HALO notes, conflicts, changes, or moves. */
 export type ShowOnly = "attention" | "error" | "warning" | "note" | "conflict" | "collision" | "heavy" | "slow" | "changed" | "moved" | null;
+
+/** Column keys a settings file written by an older Circinus may hold, and what they are now.
+ *
+ *  `time` and `cost` are the same measurements renamed, so they carry over. `load` maps to
+ *  nothing on purpose -- see `listColumns`. Read on the way out and never written back, so a
+ *  downgrade still finds the keys it wrote rather than a file it cannot read. */
+const COLUMN_RENAMES: Record<string, string | null> = { time: "startup", cost: "typical", load: null };
 
 const ALL_SOURCES: Source[] = ["ludeon", "workshop", "local", "steamcmd", "git"];
 
@@ -310,8 +317,23 @@ class Store {
   byPhase = $derived(layouts.byPhase("order"));
   /** Column widths the user dragged, CSS px, by key; absent = the default. */
   columns = $derived(this.snap?.settings.columns ?? {});
-  /** The optional list columns that are on. */
-  listColumns = $derived(this.snap?.settings.listColumns ?? ["time", "load", "versions"]);
+  /** The optional list columns that are on.
+   *
+   *  `COLUMN_RENAMES` is read on the way out rather than written back into settings, so a
+   *  downgrade still finds the keys it wrote. A stored `load` becomes nothing at all: the
+   *  column it named was Time divided by the sum of Time, and the honest replacement for it
+   *  is Yours, which is a different measurement that nobody asked to see by switching Load
+   *  on. Turning a column somebody chose into a column they did not is worse than dropping
+   *  it, because they can switch Yours on and cannot switch off a thing they never chose. */
+  listColumns = $derived.by(() => {
+    const stored = this.snap?.settings.listColumns ?? ["time", "versions"];
+    const out: string[] = [];
+    for (const k of stored) {
+      const to = k in COLUMN_RENAMES ? COLUMN_RENAMES[k] : k;
+      if (to && !out.includes(to)) out.push(to);
+    }
+    return out;
+  });
   // ---- how long the game takes to start -----------------------------------------------------
   //
   // Three numbers, and keeping them apart is the point of showing any of them.
@@ -405,6 +427,18 @@ class Store {
   loadTotalSeconds = $derived.by(() => {
     let total = 0;
     for (const uid of this.active) total += this.expectedMsOf(uid);
+    return total / 1000;
+  });
+  /** What Loading Progress actually measured across the active list, in seconds -- nothing
+   *  modelled in it.
+   *
+   *  The Start-up column's denominator, and deliberately not `loadTotalSeconds`: that one
+   *  includes the model for every mod nobody has timed, so a measured cell shown as a share
+   *  of it would be a real number over a partly invented total. This one only ever counts the
+   *  mods the column can also show a figure for, so the parts add up to the whole. */
+  measuredTotalSeconds = $derived.by(() => {
+    let total = 0;
+    for (const uid of this.active) total += this.measuredMsOf(uid) ?? 0;
     return total / 1000;
   });
 
@@ -580,6 +614,7 @@ class Store {
 
   pinned = $derived(new Set(this.snap?.user.pinned ?? []));
   showWeight = $derived(this.snap?.settings.showWeight ?? false);
+  refreshWeightsOnSort = $derived(this.snap?.settings.refreshWeightsOnSort ?? true);
   /** What the last Workshop check found out of date, pruned on every rescan by the backend so
    *  a mod Steam has since updated stops being listed. */
   updates = $derived(this.snap?.updates ?? []);
@@ -718,7 +753,7 @@ class Store {
     this.sortDir = 1;
   }
   /** "1.6" as a number that sorts, so 1.10 comes after 1.9 rather than before it. */
-  private versionRank(v: string): number {
+  versionRank(v: string): number {
     const [maj, min] = v.split(".").map((n) => Number(n) || 0);
     return (maj ?? 0) * 1000 + (min ?? 0);
   }
@@ -731,14 +766,15 @@ class Store {
       // The newest game version the mod claims. A list sorted by "versions" is being asked
       // which mods are furthest behind, and the highest number is what answers that.
       case "versions": return (m.supportedVersions ?? []).map((v) => this.versionRank(v)).reduce((a, b) => Math.max(a, b), -1);
-      // Time and Load are the same measurement, one in seconds and one as a share of the list,
-      // so they sort identically. Both are here rather than one aliasing the other, because a
-      // column that quietly sorts by a different column is a surprise waiting to happen.
-      case "time": return this.loadOf(m.uid)?.ms;
-      case "load": return this.loadOf(m.uid)?.ms;
-      // A null share is a mod circinus.sh has no measurement for, which sorts with the ones
-      // that have no weight at all rather than as a zero.
-      case "cost": return this.weightOf(m)?.share ?? undefined;
+      // Three measurements, three keys, and no two of them share a value. That is worth
+      // saying because two of them used to: Time and Load were `loadOf().ms` apiece, so the
+      // two headings ran the same comparison and a reader had no way to tell.
+      //
+      // Each is undefined when unmeasured rather than zero, so a mod nobody has timed sorts
+      // with the unknowns instead of claiming to be the cheapest thing in the list.
+      case "startup": return this.measuredMsOf(m.uid);
+      case "typical": return this.weightOf(m)?.share ?? undefined;
+      case "yours": return this.weightOf(m)?.localShare ?? undefined;
       case "phase": return PHASES.findIndex((p) => p.id === (this.placement(m.uid)?.phase ?? "content"));
       case "group": return this.groupOf(m.uid)?.name?.toLowerCase();
       case "arrived": return this.firstSeenByUid.get(m.uid);
@@ -1369,8 +1405,31 @@ class Store {
     const order = [...rest.slice(0, before), ...uids, ...rest.slice(before)];
     return this.setActive(order);
   }
+  /** Fetch fresh figures, and swallow whatever goes wrong.
+   *
+   *  Used where a refresh is a courtesy attached to something else the user asked for. The
+   *  button in Settings reports its failures because the fetch *is* the thing that was asked
+   *  for; here it is not, and an error toast about circinus.sh in front of somebody who
+   *  pressed Sort is noise about a thing they did not ask for and cannot fix. */
+  private async refreshWeightsQuietly(): Promise<void> {
+    try {
+      await api.refreshWeights();
+      this.snap = await api.snapshot();
+    } catch (e) {
+      console.warn("could not refresh weights before sorting", e);
+    }
+  }
   haloPreview() {
     return this.run("Computing HALO order…", async () => {
+      // Fresh figures first, when the setting says so. This does not change the order and is
+      // not meant to: `Context` has no weights in it, so HALO cannot see them. What it changes
+      // is what Typical and Median say while somebody is looking at the preview and deciding
+      // whether to take it -- which is the moment those numbers are worth having current.
+      //
+      // It runs before the sort rather than alongside it so the preview is computed against
+      // one snapshot rather than against a snapshot arriving underneath it, and it can never
+      // stop the sort happening: a failed fetch leaves the figures stale and nothing else.
+      if (this.refreshWeightsOnSort) await this.refreshWeightsQuietly();
       this.preview = await api.halo(false);
       const n = this.preview.moves.length;
       this.say(n ? `HALO would move ${n} mod${n === 1 ? "" : "s"}. Check the arrows, then apply` : "Already in HALO order");
@@ -2063,9 +2122,10 @@ class Store {
   }
   /** Show or hide one of the optional list columns. */
   setListColumn(key: string, on: boolean) {
-    // The order the columns appear in, whatever order they were switched on in. Time is first
-    // because it sits left of Cost, and Cost is not in here: it follows showWeight.
-    const order = ["time", "load", "loadmedian", "versions", "phase", "group"];
+    // The order the columns appear in, whatever order they were switched on in. Typical and
+    // Yours are not in here: both follow showWeight, since both need figures that only exist
+    // once weights are loaded.
+    const order = ["startup", "loadmedian", "versions", "phase", "group"];
     const set = new Set(this.listColumns);
     on ? set.add(key) : set.delete(key);
     return this.updateSettings({ listColumns: order.filter((k) => set.has(k)) });

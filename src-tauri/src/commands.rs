@@ -241,7 +241,15 @@ pub async fn refresh_weights(state: State<'_, Shared>) -> CmdResult<usize> {
     with_app(&state, move |app| {
         app.store_weights_sample(sample);
         let n = app.store_weights(fetched).map_err(err)?;
-        let local = if app.settings.include_local_runs { app.merge_local_weights() } else { 0 };
+        // `store_weights` replaces whole rows from the API payload, which carries no local
+        // fields, so the local figures have to be folded back in after it rather than being
+        // left to survive it.
+        let local = if app.settings.include_local_runs {
+            app.merge_local_weights()
+        } else {
+            app.clear_local_weights();
+            0
+        };
         Ok(n + local)
     })
     .await
@@ -249,7 +257,14 @@ pub async fn refresh_weights(state: State<'_, Shared>) -> CmdResult<usize> {
 
 #[tauri::command]
 pub async fn refresh_local_weights(state: State<'_, Shared>) -> CmdResult<usize> {
-    with_app(&state, |app| Ok(app.merge_local_weights())).await
+    with_app(&state, |app| {
+        if !app.settings.include_local_runs {
+            app.clear_local_weights();
+            return Ok(0);
+        }
+        Ok(app.merge_local_weights())
+    })
+    .await
 }
 
 #[tauri::command]

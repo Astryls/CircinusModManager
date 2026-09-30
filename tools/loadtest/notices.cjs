@@ -52,12 +52,54 @@ async function openFirstNotice(p) {
   await page.waitForTimeout(800);
 
   // ---- one column, not six -------------------------------------------------------------------
-  const hdr = await page.evaluate(() => [...document.querySelectorAll('.hdr .badges .h')].map((x) => x.textContent.trim()));
-  ok('there is one notice heading', hdr.length === 1, hdr.join(' | '));
-  ok('and it is called Notices', /Notices/.test(hdr[0] ?? ''), hdr[0]);
+  const head = await page.evaluate(() => {
+    const h = document.querySelector('.hdr .h.b');
+    if (!h) return null;
+    const r = h.getBoundingClientRect();
+    return { svg: !!h.querySelector('svg'), text: h.textContent.trim(), w: Math.round(r.width), x: Math.round(r.x) };
+  });
+  ok('there is one notice heading', !!head, JSON.stringify(head));
   // The 190px those five columns were costing every row is the point of the change.
-  const stripW = await page.evaluate(() => Math.round(document.querySelector('.hdr .badges').getBoundingClientRect().width));
-  ok('and the strip is one icon wide, not six', stripW <= 60, `${stripW}px`);
+  ok('and the strip is one icon wide, not six', (head?.w ?? 999) <= 60, `${head?.w}px`);
+
+  // The heading is a glyph. It used to be the word "Notices" under type rules it had given
+  // itself -- 9.5px, weight 600, mixed case, no tracking, against every other heading's
+  // 10.5px/700/uppercase -- which is what made the column read as belonging to another table.
+  ok('the heading is a glyph, not a word in its own typeface', head?.svg === true && head?.text === 'Notices', JSON.stringify(head));
+  const sr = await page.evaluate(() => {
+    const el = document.querySelector('.hdr .h.b .sr');
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { w: Math.round(r.width), h: Math.round(r.height) };
+  });
+  ok('with the word still there for a screen reader', sr != null && sr.w <= 2 && sr.h <= 2, JSON.stringify(sr));
+
+  // ---- the gutter is first, and is in the same place at every width ----------------------------
+  // It sat last, so its position moved with the elastic middle of the row -- different at every
+  // width, and in a pane too narrow for its own heading, which was simply hidden. This is the
+  // assertion that the move happened rather than the styling changing.
+  const order = await page.evaluate(() => {
+    const kids = [...document.querySelector('.hdr').children];
+    return kids.map((k) => (k.classList.contains('b') ? 'notices' : k.classList.contains('idx') ? 'idx' : k.classList.contains('name') ? 'name' : 'other'));
+  });
+  ok('the notice gutter comes before the number', order.indexOf('notices') === 0 && order.indexOf('idx') === 1, order.join(' > '));
+  // Measured from the list's own left edge, not the window's: the card itself moves when the
+  // window narrows, and that is the layout doing its job. What must not move is where the mark
+  // sits *inside* the row, which is the thing the old last-column position could not promise.
+  const marksAt = async (p) =>
+    p.evaluate(() => {
+      const left = document.querySelector('.list').getBoundingClientRect().x;
+      const xs = [...document.querySelectorAll('.list .row .flag.nt')].map((b) => Math.round(b.getBoundingClientRect().x - left));
+      return [...new Set(xs)];
+    });
+  const wide = await marksAt(page);
+  ok('every mark is in one column', wide.length === 1, wide.join(', '));
+  await page.setViewportSize({ width: 1040, height: 940 });
+  await page.waitForTimeout(500);
+  const narrow = await marksAt(page);
+  ok('and it is the same column at a narrower width', narrow.length === 1 && narrow[0] === wide[0], `${wide[0]} -> ${narrow[0]}`);
+  await page.setViewportSize({ width: 1500, height: 940 });
+  await page.waitForTimeout(500);
 
   // ---- the collapsing rule ---------------------------------------------------------------------
   // Severity, not category. Read every row's mark against everything its tooltip says it holds:
@@ -131,7 +173,7 @@ async function openFirstNotice(p) {
     return c ? { text: c.textContent, chips: [...c.querySelectorAll('.chip')].map((b) => b.textContent.trim()), selects: c.querySelectorAll('select').length } : null;
   });
   ok('Settings has a page for the list', !!card);
-  ok('with a chip per optional column', (card?.chips.length ?? 0) >= 6, (card?.chips ?? []).join(' | '));
+  ok('with a chip per optional column', (card?.chips.length ?? 0) >= 5, (card?.chips ?? []).join(' | '));
   ok('including the pooled start-up median', (card?.chips ?? []).includes('Median'));
   ok('and a control for what to open on, and how to sort', (card?.selects ?? 0) >= 2, String(card?.selects));
   ok('and a way to bring back everything put down', /Bring them all back/.test(card?.text ?? ''));

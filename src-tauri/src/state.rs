@@ -44,8 +44,8 @@ pub struct Settings {
     pub halo_advanced: bool,
     /// Column widths the user dragged in the list, in CSS pixels, by column key (`name`, `pkg`).
     pub columns: HashMap<String, u32>,
-    /// The optional list columns that are shown: `time`, `load`, `loadmedian`, `versions`,
-    /// `phase`, `group`. (The performance cost column follows `show_weight`.)
+    /// The optional list columns that are shown: `startup`, `loadmedian`, `versions`,
+    /// `phase`, `group`. (The two frame-time columns follow `show_weight`.)
     pub list_columns: Vec<String>,
     /// The view Circinus opens on, as a `View` key from the window (`order`, `library`,
     /// `loadtimes`, ...). Empty means the load order, which is what it has always done.
@@ -71,20 +71,41 @@ pub struct Settings {
     /// Ask circinus.sh for a newer build a few seconds after launch. Nothing is installed
     /// without the user pressing the button.
     pub check_for_updates: bool,
+    /// Pull fresh figures from circinus.sh before previewing a HALO sort.
+    ///
+    /// Worth being exact about what this does, because the name invites the wrong reading:
+    /// **it cannot change the order**. `Context` holds mods, files, rules, the databases, the
+    /// game version and the user's overrides -- no weights, no shares -- so HALO is entirely
+    /// rule-driven and a weight refresh is invisible to it. What goes stale between sorts is
+    /// what the *columns* say: Typical and Median. Sorting is simply the moment somebody is
+    /// looking at those numbers and deciding something, which is the moment worth having them
+    /// current.
+    ///
+    /// The things that would change the order are the rule databases, which are separate
+    /// sources on GitHub and ship switched off. They are deliberately not pulled here: a sort
+    /// button that goes to the network and can quietly come back with a different answer is a
+    /// button people stop trusting.
+    #[serde(default = "yes")]
+    pub refresh_weights_on_sort: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// The current `settings_version`: 2 made "by phase" the default view and hid the phase and
 /// group columns; 3 added the update check on start; 4 added the Time column; 5 made the rule
-/// databases ship switched off.
-pub const SETTINGS_VERSION: u32 = 5;
+/// databases ship switched off; 6 renamed the measurement columns and dropped the one that
+/// was not a measurement.
+pub const SETTINGS_VERSION: u32 = 6;
 
 pub fn default_list_columns() -> Vec<String> {
-    vec!["time".into(), "load".into(), "versions".into()]
+    vec!["startup".into(), "versions".into()]
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { locations: Locations::default(), db_sources: rules::default_sources(), show_weight: false, include_local_runs: true, alphabetical_within_phase: false, update_databases_on_start: false, list_by_phase: true, halo_advanced: false, columns: HashMap::new(), list_columns: default_list_columns(), default_view: String::new(), default_sort: String::new(), default_sort_asc: true, settings_version: SETTINGS_VERSION, dds: DdsSettings::default(), launch: LaunchSettings::default(), check_for_updates: true }
+        Settings { locations: Locations::default(), db_sources: rules::default_sources(), show_weight: false, include_local_runs: true, alphabetical_within_phase: false, update_databases_on_start: false, list_by_phase: true, halo_advanced: false, columns: HashMap::new(), list_columns: default_list_columns(), default_view: String::new(), default_sort: String::new(), default_sort_asc: true, settings_version: SETTINGS_VERSION, dds: DdsSettings::default(), launch: LaunchSettings::default(), check_for_updates: true, refresh_weights_on_sort: true }
     }
 }
 
@@ -109,6 +130,36 @@ impl Settings {
             // who turned Versions off meant that, and a new default is not a reason to undo it.
             // Show -> Columns turns this one off again in one click.
             self.list_columns.insert(0, "time".into());
+        }
+        if self.settings_version < 6 {
+            // The columns were renamed and one of them was retired. `time` and `cost` are the
+            // same measurements under honest names, so they carry over; `load` maps to nothing,
+            // because the column it named was Time divided by the sum of Time and its honest
+            // replacement, Yours, is a different measurement nobody asked to see by switching
+            // Load on. Turning a column somebody chose into a column they did not is worse than
+            // dropping it: Yours is one click away, and a column you never chose is not.
+            let mut out: Vec<String> = Vec::new();
+            for c in std::mem::take(&mut self.list_columns) {
+                let to = match c.as_str() {
+                    "time" => "startup",
+                    "cost" => "typical",
+                    "load" => continue,
+                    other => other,
+                };
+                if !out.iter().any(|x| x == to) {
+                    out.push(to.into());
+                }
+            }
+            self.list_columns = out;
+            if self.default_sort == "time" {
+                self.default_sort = "startup".into();
+            } else if self.default_sort == "cost" {
+                self.default_sort = "typical".into();
+            } else if self.default_sort == "load" {
+                // The key is gone and there is no honest substitute, so the list opens on the
+                // order -- which is what an unrecognised value would have done anyway.
+                self.default_sort = String::new();
+            }
         }
         // 5 made the rule databases ship switched off, and deliberately leaves an existing
         // install's switches alone. Anyone already running with the community rules has a load
@@ -251,6 +302,16 @@ pub struct UserData {
     /// which is what happened. Set the first time the app opens, whether or not the groups were
     /// needed, so from then on an empty list means an empty list.
     pub groups_seeded: bool,
+    /// The seeded group names have been brought into line with the phase labels once. See
+    /// `RENAMED_DEFAULT_GROUPS`.
+    ///
+    /// A flag of its own rather than a ride on `auto_groups_adopted`, which is the obvious
+    /// place and is wrong: that one is already true on every install old enough to need this,
+    /// so hanging the rename off it would migrate precisely the installs that do not have the
+    /// old name. A migration guarded by a flag that is already set is a migration that runs
+    /// nowhere, and it looks correct in the diff.
+    #[serde(default)]
+    pub default_group_names_v2: bool,
     /// Whether load runs go to circinus.sh, and the id they go under. Off until answered; see
     /// `sharing.rs` for why the id is this tool's own rather than the analyzer's.
     #[serde(default)]
@@ -345,11 +406,40 @@ pub fn incompatible_key(a: &str, b: &str) -> String {
 fn default_groups() -> Vec<Group> {
     vec![
         Group { id: "core".into(), name: "Core".into(), color: "blue".into(), phase: None, section: false, auto: Some(AutoRule::Official) },
-        Group { id: "frameworks".into(), name: "Frameworks".into(), color: "teal".into(), phase: None, section: false, auto: Some(AutoRule::Phase { phase: Phase::Framework }) },
+        Group { id: "frameworks".into(), name: "Libraries".into(), color: "teal".into(), phase: None, section: false, auto: Some(AutoRule::Phase { phase: Phase::Framework }) },
         Group { id: "qol".into(), name: "Quality of life".into(), color: "green".into(), phase: None, section: false, auto: None },
         Group { id: "visual".into(), name: "Visual".into(), color: "amber".into(), phase: None, section: false, auto: None },
         Group { id: "performance".into(), name: "Performance".into(), color: "coral".into(), phase: Some(Phase::Optimization), section: false, auto: Some(AutoRule::Phase { phase: Phase::Optimization }) },
     ]
+}
+
+/// A seeded group whose name was left behind by a rename of the thing it names, and the exact
+/// string it must still be carrying for the rename to apply to it.
+///
+/// `95ac090` relabelled the HALO phases -- Frameworks became Libraries, Optimization became
+/// Performance, Core & DLC became Game and DLC -- and did not touch `default_groups`, which is
+/// how one group came to be called Frameworks while the phase it fills itself from, and the
+/// sidebar line under its own name, both say Libraries. `default_groups` is matched by id, so
+/// changing the literal above fixes fresh installs and nobody else: the old name is sitting in
+/// every existing user file.
+///
+/// **The `from` check is the whole safety of this.** A group renamed by the user is theirs, and
+/// a migration that renamed it anyway would be exactly the class of thing that broke people's
+/// organization last time. Only a group still carrying the literal default is touched, which
+/// makes this idempotent and makes a second pass over an already-migrated file a no-op.
+const RENAMED_DEFAULT_GROUPS: &[(&str, &str, &str)] = &[("frameworks", "Frameworks", "Libraries")];
+
+/// Bring a seeded group's name into line with the phase it is named after. See
+/// `RENAMED_DEFAULT_GROUPS`. Returns how many were changed, for the log.
+fn rename_stale_default_groups(user: &mut UserData) -> usize {
+    let mut n = 0;
+    for (id, from, to) in RENAMED_DEFAULT_GROUPS {
+        if let Some(g) = user.groups.iter_mut().find(|g| g.id == *id && g.name == *from) {
+            g.name = (*to).into();
+            n += 1;
+        }
+    }
+    n
 }
 
 /// Give the default groups of an existing install their automatic members, as long as the
@@ -582,6 +672,16 @@ impl App {
         if !user.auto_groups_adopted {
             adopt_auto_groups(&mut user);
             user.auto_groups_adopted = true;
+            if let Err(e) = cache.set("user", &user) {
+                tracing::warn!("could not store the user data: {e}");
+            }
+        }
+        if !user.default_group_names_v2 {
+            let n = rename_stale_default_groups(&mut user);
+            user.default_group_names_v2 = true;
+            if n > 0 {
+                tracing::info!("renamed {n} seeded group(s) to match their phase labels");
+            }
             if let Err(e) = cache.set("user", &user) {
                 tracing::warn!("could not store the user data: {e}");
             }
@@ -1513,20 +1613,48 @@ impl App {
         Ok(entries.len())
     }
 
+    /// Fold this machine's own profiler runs into the weight table.
+    ///
+    /// These used to *replace* a row, on the reasoning that a figure is a figure and the
+    /// better-supported one should win. That was wrong, and it cost us the only comparison
+    /// anybody actually wants out of two frame-time measurements: what a mod costs everybody
+    /// against what it costs you. Whichever of the two the merge picked, the other one was
+    /// gone, so "Typical" and "Yours" could never both be on screen.
+    ///
+    /// Now the local run only ever writes the local fields. A pooled figure is never touched,
+    /// and a mod nobody has pooled gets a row that is local-only -- empty in Typical, filled
+    /// in Yours, which is exactly what is true about it.
     pub fn merge_local_weights(&mut self) -> usize {
         let Some(cfg) = &self.locations.config_dir else { return 0 };
         let dir = weight::local_runs_dir(cfg);
         let local = weight::read_local_runs(&dir).unwrap_or_default();
         let mut n = 0;
         for (id, w) in local {
-            // Local figures only fill gaps; published, ranked figures stay authoritative.
-            let keep_api = self.weights.get(&id).map(|x| x.origin == "api" && x.share.is_some()).unwrap_or(false);
-            if !keep_api {
-                self.weights.insert(id, w);
-                n += 1;
+            match self.weights.get_mut(&id) {
+                Some(cur) => {
+                    cur.local_share = w.local_share;
+                    cur.local_band = w.local_band;
+                    cur.local_runs = w.local_runs;
+                }
+                None => {
+                    self.weights.insert(id, w);
+                }
             }
+            n += 1;
         }
         n
+    }
+
+    /// Drop every local figure, keeping the pooled ones. Turning `include_local_runs` off has
+    /// to actually empty the Yours column: a merge that only ever adds would leave the last
+    /// reading on screen after the setting that produced it was switched off.
+    pub fn clear_local_weights(&mut self) {
+        self.weights.retain(|_, w| !(w.origin == "local" && w.share.is_none()));
+        for w in self.weights.values_mut() {
+            w.local_share = None;
+            w.local_band = None;
+            w.local_runs = None;
+        }
     }
 }
 
@@ -1657,6 +1785,111 @@ mod tests {
         // is the same bug arriving one step later, the first time the player presses the button.
         app.save().unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), before, "saving after a re-read produced a different file");
+    }
+
+    /// **The rename touches a seeded name and never a chosen one, and runs exactly once.**
+    ///
+    /// This is the class of change that broke people's organization last time, so it is
+    /// written down as the four cases rather than as "the group is called Libraries now":
+    /// a stale default is renamed; a group the user renamed is left alone even though its id
+    /// matches; a second pass changes nothing; and no group's id, colour, rule or membership
+    /// moves either way, because the id is what everything downstream joins on.
+    #[test]
+    fn renaming_a_seeded_group_cannot_touch_one_the_user_named() {
+        let seeded = |name: &str| Group {
+            id: "frameworks".into(),
+            name: name.into(),
+            color: "teal".into(),
+            phase: None,
+            section: false,
+            auto: Some(AutoRule::Phase { phase: Phase::Framework }),
+        };
+
+        // 1. The stale default.
+        let mut u = UserData { groups: vec![seeded("Frameworks")], ..Default::default() };
+        u.mod_groups.insert("uid-1".into(), "frameworks".into());
+        assert_eq!(rename_stale_default_groups(&mut u), 1);
+        assert_eq!(u.groups[0].name, "Libraries");
+        // Everything the rest of the program joins on is untouched.
+        assert_eq!(u.groups[0].id, "frameworks");
+        assert_eq!(u.groups[0].color, "teal");
+        assert_eq!(u.groups[0].auto, Some(AutoRule::Phase { phase: Phase::Framework }));
+        assert_eq!(u.mod_groups.get("uid-1").map(String::as_str), Some("frameworks"), "the rename moved a mod out of its group");
+
+        // 2. Idempotent: running it again is a no-op, which is what makes it safe to leave in.
+        assert_eq!(rename_stale_default_groups(&mut u), 0);
+        assert_eq!(u.groups[0].name, "Libraries");
+
+        // 3. A name the user chose, on the same id. This is the one that matters.
+        let mut mine = UserData { groups: vec![seeded("My frameworks")], ..Default::default() };
+        assert_eq!(rename_stale_default_groups(&mut mine), 0, "a group the user named was renamed anyway");
+        assert_eq!(mine.groups[0].name, "My frameworks");
+
+        // 4. A fresh install is already right, so it has nothing to migrate.
+        let mut fresh = UserData { groups: default_groups(), ..Default::default() };
+        assert_eq!(rename_stale_default_groups(&mut fresh), 0);
+        let names: Vec<&str> = fresh.groups.iter().map(|g| g.name.as_str()).collect();
+        assert!(names.contains(&"Libraries"), "the seeded group still says Frameworks: {names:?}");
+        assert!(!names.contains(&"Frameworks"));
+    }
+
+    /// Two frame-time readings of the same mod, and both have to survive the merge.
+    ///
+    /// The old merge chose one. Whichever it chose, the other was gone, and the pair is the
+    /// only reason to have two: a mod that costs the pool 0.10 % and costs this machine 2.7 %
+    /// is worth knowing about, and it cannot be shown if the two numbers never coexist. This
+    /// test is written as the four cases rather than as "a merge happened", because the bug it
+    /// guards is precisely one case quietly overwriting another.
+    #[test]
+    fn a_local_run_and_a_pooled_figure_both_survive() {
+        let (_tmp, mut app) = app_on_fixture();
+        let pooled = |id: &str, share: f64| {
+            let mut w = weight::Weight::blank(id.into(), "api");
+            w.share = Some(share);
+            w.band = weight::Band::for_share(share);
+            w.ranked = true;
+            w
+        };
+        // Both known, pooled first: the case the old merge dropped the local figure on.
+        app.weights.insert("ce.team".into(), pooled("ce.team", 0.10));
+        // Pooled only, and nothing of ours: Yours must stay empty rather than borrowing.
+        app.weights.insert("only.pooled".into(), pooled("only.pooled", 1.4));
+
+        // Real run files in the real place, and the real function over them. Restating the
+        // merge inline here would test this test rather than the program: the whole failure
+        // being guarded against is `merge_local_weights` choosing one figure over the other,
+        // and a copy of the merge in the test file cannot choose wrong.
+        let runs = weight::local_runs_dir(app.locations.config_dir.as_ref().unwrap());
+        std::fs::create_dir_all(&runs).unwrap();
+        for (n, ce) in [("a", 2.6), ("b", 2.7), ("c", 3.1)] {
+            write(
+                &runs.join(format!("{n}.json")),
+                &format!(r#"{{"mods":[{{"packageId":"ce.team","share":{ce}}},{{"packageId":"only.local","share":0.8}}]}}"#),
+            );
+        }
+        app.settings.include_local_runs = true;
+        assert_eq!(app.merge_local_weights(), 2, "the merge did not see both mods in the run files");
+
+        let w = |app: &App, id: &str| app.weights.get(id).cloned().unwrap();
+        let both = w(&app, "ce.team");
+        assert_eq!(both.share, Some(0.10), "the pooled figure was overwritten by a local run");
+        assert_eq!(both.local_share, Some(2.7), "the local run did not land");
+        assert_eq!(both.local_runs, Some(3), "the median is over the wrong number of runs");
+
+        let pooled_only = w(&app, "only.pooled");
+        assert_eq!(pooled_only.share, Some(1.4));
+        assert_eq!(pooled_only.local_share, None, "Yours borrowed a figure from the pool");
+
+        let local_only = w(&app, "only.local");
+        assert_eq!(local_only.share, None, "Typical borrowed this machine's own figure");
+        assert_eq!(local_only.local_share, Some(0.8));
+
+        // And switching the setting off has to empty the column it filled, not leave the last
+        // reading sitting there under a setting that no longer says to collect it.
+        app.clear_local_weights();
+        assert_eq!(w(&app, "ce.team").local_share, None, "turning local runs off left the figure on screen");
+        assert_eq!(w(&app, "ce.team").share, Some(0.10), "turning local runs off took the pooled figure with it");
+        assert!(!app.weights.contains_key("only.local"), "a local-only row outlived the setting that made it");
     }
 
     /// The update list used to be written only by `apply_update_check`, which only runs when

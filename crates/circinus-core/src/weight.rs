@@ -91,8 +91,53 @@ pub struct Weight {
     pub load_runs: Option<i64>,
     pub load_installs: Option<i64>,
 
-    /// "api" or "local".
+    /// This machine's own share of frame time, from the Circinus profiler runs beside the
+    /// saves. The same unit as `share` and measured the same way, but on one machine with one
+    /// mod list, so it is a second reading of the same quantity rather than a substitute for
+    /// the first.
+    ///
+    /// It lives beside `share` instead of replacing it because the interesting thing is the
+    /// pair. A mod that costs everybody 0.1 % and costs you 2.7 % is a finding, and the old
+    /// merge -- which dropped whichever of the two the other one already had -- made that
+    /// comparison impossible to express, let alone to draw.
+    #[serde(default)]
+    pub local_share: Option<f64>,
+    #[serde(default)]
+    pub local_band: Option<Band>,
+    /// How many of your own runs that median is over.
+    #[serde(default)]
+    pub local_runs: Option<i64>,
+
+    /// Where `share` came from: "api", or "local" for a row that only your own runs produced.
+    /// Kept for rows written before local figures had a column of their own.
     pub origin: String,
+}
+
+impl Weight {
+    /// An empty row for `package_id`: known to exist, nothing measured about it yet. The
+    /// starting point for a row that only local runs will fill.
+    pub fn blank(package_id: String, origin: &str) -> Weight {
+        Weight {
+            package_id,
+            share: None,
+            band: Band::Unknown,
+            ranked: false,
+            seen: None,
+            measured: None,
+            ranked_runs: None,
+            installs: None,
+            net_low: None,
+            net_high: None,
+            withheld: false,
+            load_ms_median: None,
+            load_runs: None,
+            load_installs: None,
+            local_share: None,
+            local_band: None,
+            local_runs: None,
+            origin: origin.into(),
+        }
+    }
 }
 
 fn num(v: Option<&Value>) -> Option<f64> {
@@ -222,6 +267,10 @@ pub fn parse_mod(obj: &Value, origin: &str) -> Option<Weight> {
         load_ms_median,
         load_runs,
         load_installs,
+        // The site pools other people's machines and has nothing to say about this one.
+        local_share: None,
+        local_band: None,
+        local_runs: None,
         origin: origin.into(),
     })
 }
@@ -332,29 +381,16 @@ pub fn read_local_runs(dir: &Path) -> Result<HashMap<String, Weight>> {
         xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let median = xs[xs.len() / 2];
         let n = xs.len() as i64;
-        out.insert(
-            id.clone(),
-            Weight {
-                package_id: id.clone(),
-                share: Some(median),
-                band: Band::for_share(median),
-                ranked: false,
-                seen: seen.get(&id).copied(),
-                measured: Some(n),
-                ranked_runs: None,
-                installs: Some(1),
-                net_low: None,
-                net_high: None,
-                withheld: false,
-                // A local profiler run times frames, not start-up. Nothing here has a load
-                // figure and pretending otherwise would put this machine's own number in the
-                // column that is meant to hold everybody else's.
-                load_ms_median: None,
-                load_runs: None,
-                load_installs: None,
-                origin: "local".into(),
-            },
-        );
+        // Your runs fill the *local* fields and leave `share` alone. `share` is what everybody
+        // else measured; nothing this machine did belongs in it, however little the pool has.
+        // A local profiler run also times frames rather than start-up, so the load fields stay
+        // empty here too.
+        let mut w = Weight::blank(id.clone(), "local");
+        w.seen = seen.get(&id).copied();
+        w.local_share = Some(median);
+        w.local_band = Some(Band::for_share(median));
+        w.local_runs = Some(n);
+        out.insert(id, w);
     }
     Ok(out)
 }
@@ -437,8 +473,13 @@ mod tests {
         }
         std::fs::write(dir.path().join("index.json"), "{}").unwrap();
         let w = read_local_runs(dir.path()).unwrap();
-        assert_eq!(w["x.y"].share, Some(3.0));
-        assert_eq!(w["x.y"].measured, Some(3));
-        assert_eq!(w["x.y"].band, Band::Moderate);
+        // The local fields, and only those. `share` is what everybody else measured and this
+        // function has no business filling it -- the merge relies on that being true, because
+        // the pooled figure and this one have to be able to sit in one row at once.
+        assert_eq!(w["x.y"].local_share, Some(3.0));
+        assert_eq!(w["x.y"].local_runs, Some(3));
+        assert_eq!(w["x.y"].local_band, Some(Band::Moderate));
+        assert_eq!(w["x.y"].share, None, "a local run wrote itself into the pooled share");
+        assert_eq!(w["x.y"].band, Band::Unknown);
     }
 }
