@@ -17,13 +17,10 @@
 
   let { surface, compact = false }: { surface: Surface; compact?: boolean } = $props();
 
-  const flatLabel = $derived(surface === "inactive" ? "A–Z" : "Load order");
-  const flatShort = $derived(surface === "inactive" ? "A–Z" : "Order");
-  const flatTitle = $derived(
-    surface === "inactive"
-      ? "One run, by name. An inactive mod has no place in the load order, so there is no order to show it in."
-      : "One run, in the order the game will load them, exactly as ModsConfig.xml has it."
-  );
+  const az = $derived(surface === "inactive");
+  const flatLabel = $derived(az ? t("toolbar.arr.az") : t("toolbar.arr.order"));
+  const flatShort = $derived(az ? t("toolbar.arr.az") : t("toolbar.arr.order.short"));
+  const flatTitle = $derived(az ? t("toolbar.arr.az.title") : t("toolbar.arr.order.title"));
   const now = $derived(layouts.of(surface));
   const pick = (l: Layout) => now !== l && layouts.set(surface, l);
 </script>

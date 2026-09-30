@@ -117,6 +117,9 @@ const mods: ModInfo[] = SEED.map(mod);
  *  the card must say how much of the number is measured and how much is the model wearing a
  *  correction factor. The figures are shaped like a real run -- a couple of frameworks
  *  dominating, a long tail of near-nothing -- so the shares look like shares. */
+/* The loadtest compares the card against this rather than against a number copied into the
+   test, so the two cannot drift apart. */
+if (typeof window !== "undefined") (window as unknown as { __CX_IMPACT_TOTAL_MS?: number }).__CX_IMPACT_TOTAL_MS = 462986;
 const MOCK_IMPACT = (() => {
   const out: { packageId: string; name: string; totalMs: number; offThreadMs: number }[] = [];
   for (const [i, m] of mods.entries()) {

@@ -67,19 +67,36 @@ const cards = (page) =>
   await page.waitForSelector('.stats .stat', { timeout: 15000 });
   await page.waitForTimeout(500);
 
-  // ---- partly measured: the common case once the mod is installed ---------------------------
+  /* ---- a measurement exists, and the list has moved on since ------------------------------
+   *
+   * The common case, and the one this card used to get wrong. It fell back to the calibrated
+   * model the moment one mod was added or removed, so somebody who had measured a real 7m 43s
+   * was shown a number nobody had ever observed -- thirty measurements and fourteen guesses
+   * blended together -- because the list was off by one.
+   *
+   * A measurement beats an estimate even when the list has moved on. Loading Progress recorded
+   * what the start-up took; the card shows that and the caption says which list it was. */
   let c = await cards(page);
   ok('there are five cards', c.length === 5, c.map((x) => x.title).join(' | '));
   const part = c.find((x) => x.title === 'Load time');
   ok('one of them is the load time', !!part, c.map((x) => x.title).join(' | '));
   ok('and it reads as a clock, not as raw seconds', /^\d+m \d+s$|^\d+s$/.test(part.value), part.value);
-  // The whole point: thirty measurements and fourteen guesses is an estimate.
-  ok('a partly measured list is called an estimate', /Estimated/i.test(part.cap), part.cap);
-  ok('and it says how much of it was measured', /\d+ of \d+ mods timed/.test(part.cap), part.cap);
-  // Whose measurement it is. The log path has always named its source; the two paths that use
-  // more of that mod's work than the log does must not quietly stop naming it.
+  ok('a measured start-up is shown as measured, not blended into an estimate', !/Estimated/i.test(part.cap), part.cap);
+  ok('and it is the total Loading Progress reported', part.value === (await page.evaluate(() => {
+    const ms = window.__CX_IMPACT_TOTAL_MS;
+    if (!ms) return null;
+    const s = ms / 1000;
+    return s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${Math.round(s)}s`;
+  })), part.value);
+  // Which list it was. Without this the figure reads as a claim about the list on screen.
+  ok('and says the list has changed since', /list has changed/i.test(part.cap), part.cap);
+  // Whose measurement it is. The log path has always named its source; the paths that use more
+  // of that mod's work than the log does must not quietly stop naming it.
   ok('and credits the mod that measured it', /Loading Progress/.test(part.cap), part.cap);
-  await page.locator('.strip').screenshot({ path: `${OUT}/stats-calibrated.png` });
+  // None of these numbers is anybody else's machine. Pooled medians belong on a mod's page,
+  // not in a card headed with this computer's start-up time.
+  ok('and never cites circinus.sh', !/circinus\.sh/i.test(part.cap), part.cap);
+  await page.locator('.strip').screenshot({ path: `${OUT}/stats-lastrun.png` });
 
   // ---- the log alone: a real total, and nobody pretending it was ours -------------------------
   await page.goto(`${BASE}/?noimpact`, { waitUntil: 'load' });
@@ -131,7 +148,10 @@ const cards = (page) =>
     ok(`${width}px: one row, always`, rows.size === 1, `${rows.size} rows at ${c[0].stripW}px of strip`);
     // What a card must never shed on the way down: whether its number is measured or modelled.
     const lt = c.find((x) => x.title === 'Load time');
-    ok(`${width}px: the load card still says which kind of number it is`, /Measured|Estimated/.test(lt.cap), `"${lt.cap}"`);
+    // Case-insensitive: the word can open the sentence ("Measured today...") or sit inside it
+    // ("Your last start-up, today, measured by..."). What must never happen is a caption that
+    // sheds the word altogether and leaves a bare number to be read as fact.
+    ok(`${width}px: the load card still says which kind of number it is`, /measured|estimated/i.test(lt.cap), `"${lt.cap}"`);
   }
   await page.setViewportSize({ width: 1100, height: 950 });
   await page.waitForTimeout(300);

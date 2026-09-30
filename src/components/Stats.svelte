@@ -57,16 +57,31 @@
   // the hedge hidden in a tooltip is a guess people will quote back as a fact.
   const run = $derived(store.loadRun);
   const impact = $derived(store.startupImpact);
-  /** Which of the three kinds of number this card is currently showing. */
-  const kind = $derived.by<"measured" | "calibrated" | "modelled">(() => {
-    if (impact && store.loadRunMatchesList) return "measured";
-    if (store.loadCalibration != null) return "calibrated";
+  /* Which of the four kinds of number this card is showing.
+   *
+   * **A measurement beats an estimate even when the list has moved on.** This card used to
+   * fall back to the calibrated model the moment one mod was added or removed since the last
+   * start-up -- so a player who had measured a real 7m 43s was shown a number nobody had ever
+   * observed, built out of thirty measurements and fourteen guesses, because the list was off
+   * by one. That is the wrong way round. Loading Progress recorded how long the game actually
+   * took to start; the honest thing is to show that figure and say which list it was.
+   *
+   * So `impact` wins whenever it exists, and the only question left is whether it describes
+   * the list on screen. The estimate is what is left for somebody who has never measured.
+   *
+   * None of these numbers comes from circinus.sh, and none should. Pooled medians are other
+   * people's machines: useful for ranking one mod against another on its own page, worthless
+   * as a claim about how long YOUR game takes to start, and putting them in a card headed with
+   * this machine's name would be passing somebody else's measurement off as yours. */
+  const kind = $derived.by<"measured" | "lastrun" | "log" | "modelled">(() => {
+    if (impact) return store.loadRunMatchesList ? "measured" : "lastrun";
+    if (run && store.loadRunMatchesList) return "log";
     return "modelled";
   });
   const loadSecs = $derived.by(() => {
-    // A measurement of this exact list is the answer and needs no arithmetic.
-    if (kind === "measured" && impact) return impact.totalMs / 1000;
-    if (run && store.loadRunMatchesList && !impact) return run.totalSecs;
+    // What Loading Progress recorded, whether or not the list has changed since.
+    if (impact) return impact.totalMs / 1000;
+    if (kind === "log" && run) return run.totalSecs;
     return store.loadEstimateSeconds;
   });
   /** Minutes and seconds past a minute: "7m 43s" reads; "462.99 s" does not. */
@@ -80,8 +95,9 @@
   const num = (x: number) => x.toLocaleString();
   const loadCap = $derived.by(() => {
     if (kind === "measured") return `Measured ${ago(store.startupImpactAt)} by Loading Progress, every mod in this list`;
-    if (kind === "calibrated") return `Estimated: ${num(store.measuredCount)} of ${num(store.active.length)} mods timed by Loading Progress, the rest from the model`;
-    if (run && store.loadRunMatchesList) return `Measured ${ago(store.loadRunAt)}, from ${run.source}`;
+    // Still a measurement, and the caption says what of: the last start-up, not this list.
+    if (kind === "lastrun") return `Your last start-up, ${ago(store.startupImpactAt)}, measured by Loading Progress. Your list has changed since`;
+    if (kind === "log" && run) return `Measured ${ago(store.loadRunAt)}, from ${run.source}`;
     if (run) return `Measured ${ago(store.loadRunAt)} with ${num(run.mods ?? 0)} mods, not the ${num(store.active.length)} active now`;
     return `Estimated: ${clock(store.vanillaSeconds)} for the game plus ${clock(store.loadTotalSeconds)} for your mods`;
   });
@@ -91,12 +107,13 @@
     if (kind === "measured" && impact) {
       return `${clock(impact.totalMs / 1000)} the last time the game started, ${ago(store.startupImpactAt)}.\n\nEvery mod in this list was timed individually by Loading Progress, by ilyvion. Circinus read the figures it wrote and did not time anything itself; the measuring is entirely that mod's work, and this card would have nothing to show without it.\n\n${split}${click}`;
     }
-    if (kind === "calibrated") {
-      const k = store.loadCalibration ?? 1;
-      return `Circinus estimates ${clock(store.loadEstimateSeconds)}.\n\n${num(store.measuredCount)} of your ${num(store.active.length)} active mods were timed on this machine by Loading Progress, by ilyvion, and contribute what they actually cost. The rest come from Circinus's model, scaled by ${k.toFixed(2)}x -- how far the model was out on the mods where both numbers are known.\n\n${split}${click}`;
+    if (kind === "lastrun" && impact) {
+      const k = store.loadCalibration;
+      const est = `For the list you have now, Circinus estimates ${clock(store.loadEstimateSeconds)}: ${num(store.measuredCount)} of your ${num(store.active.length)} active mods were timed in that run and contribute what they cost, and the rest come from Circinus's own model${k != null ? `, scaled by ${k.toFixed(2)}x -- how far the model was out on the mods where both numbers are known` : ""}.`;
+      return `${clock(impact.totalMs / 1000)} the last time the game started, ${ago(store.startupImpactAt)}, timed by Loading Progress, by ilyvion.\n\nThat is what the start-up took, not what this list would take: ${num(impact.mods.length)} mods were loaded then and ${num(store.active.length)} are active now. Launch again and the figure will describe the list you have.\n\n${est}${click}`;
     }
     const est = `Circinus estimates ${clock(store.loadEstimateSeconds)}: ${split} That second figure is a ranking model, not a stopwatch.`;
-    if (run && store.loadRunMatchesList) {
+    if (kind === "log" && run) {
       return `${clock(run.totalSecs)} the last time the game loaded, ${ago(store.loadRunAt)}.\n\nMeasured by ${run.source} and read out of the game's log; Circinus did not time it.\n\nFor a figure per mod rather than one for the whole start, install Loading Progress by ilyvion and switch on "Track startup loading impact" and then "Auto-save startup impact report" in its settings. Both are off out of the box.\n\n${est}${click}`;
     }
     if (run) {
