@@ -1560,6 +1560,87 @@ mod tests {
         (tmp, app)
     }
 
+    /// **An upgrade must not touch anybody's load order or their organization.**
+    ///
+    /// This exists because an update did. `Frameworks` and `Performance` take their members by
+    /// HALO phase, `Performance` carries `phase: optimization`, and a group with a phase moves
+    /// its members -- so one changed answer in the classifier becomes a different
+    /// ModsConfig.xml, and the player's own arrangement is gone with no way back.
+    ///
+    /// **The first version of this test was useless and it is worth saying why.** It scanned,
+    /// re-scanned, and compared the two. That catches nothing: both reads run the same code, so
+    /// a classifier that is newly wrong is wrong identically in both and the comparison is
+    /// happy. Sabotaging `is_official` to file Harmony as official left it green.
+    ///
+    /// A cross-version change cannot be caught by reading twice with one version. It needs an
+    /// expectation recorded *outside* the code, which a code change then has to walk past. So
+    /// the table below is written down, and a scanner or HALO change that moves any of these
+    /// fails here and has to be looked at on purpose. Updating the table is the review gate;
+    /// the point is that it cannot happen silently.
+    #[test]
+    fn what_goes_where_is_recorded_and_does_not_drift() {
+        let (_tmp, app) = app_on_fixture();
+        let placements = app.placements();
+        let by_uid: HashMap<&str, &Placement> = placements.iter().map(|p| (p.uid.as_str(), p)).collect();
+        let phase_of = |pkg: &str| -> String {
+            let m = app.mods.iter().find(|m| m.package_id == pkg).unwrap_or_else(|| panic!("{pkg} was not scanned"));
+            by_uid.get(m.uid.as_str()).map(|p| format!("{:?}", p.phase)).unwrap_or_else(|| "inactive".into())
+        };
+        let source_of = |pkg: &str| -> String {
+            format!("{:?}", app.mods.iter().find(|m| m.package_id == pkg).unwrap().source)
+        };
+
+        // What the fixture's mods are, and where they go. Change the classifier and this fails.
+        for (pkg, source, phase) in [
+            ("ludeon.rimworld", "Ludeon", "Core"),
+            ("ludeon.rimworld.royalty", "Ludeon", "inactive"),
+            // Mods/Harmony carries a PublishedFileId.txt and is still Local: the folder is not
+            // named after the id. See `a_dev_build_is_not_a_download` in scan.rs.
+            // Prepatch, not Framework: Harmony is in PREPATCH_IDS, which floats it above the
+            // game itself. Recording the real answer is the point -- I guessed Framework when
+            // writing this and the test is what corrected me.
+            ("brrainz.harmony", "Local", "Prepatch"),
+            ("nyx.retrowalls", "Local", "inactive"),
+        ] {
+            assert_eq!(source_of(pkg), source, "the source of {pkg} moved");
+            assert_eq!(phase_of(pkg), phase, "the phase of {pkg} moved");
+        }
+    }
+
+    /// The narrower property, which the comparison test *can* hold: reading is reading.
+    ///
+    /// A scan must not write ModsConfig.xml, and a save straight after a scan must produce the
+    /// same bytes as the save before it. That is weaker than the table above and still worth
+    /// having: it is the difference between "the classifier changed" and "something rewrote the
+    /// player's file behind them", and the second is the one with no way back.
+    #[test]
+    fn a_scan_never_writes_the_players_list() {
+        let (_tmp, mut app) = app_on_fixture();
+        let uid = |app: &App, id: &str| app.mods.iter().find(|m| m.package_id == id).unwrap().uid.clone();
+        let walls = uid(&app, "nyx.retrowalls");
+        app.activate(&[walls.clone()], None);
+        app.user.groups.push(Group { id: "mine".into(), name: "Mine".into(), color: "coral".into(), phase: None, section: false, auto: None });
+        app.user.mod_groups.insert(walls.clone(), "mine".into());
+        let path = app.save().unwrap();
+        let before = std::fs::read(&path).unwrap();
+        let before_active = app.active.clone();
+        let before_groups = app.user.mod_groups.clone();
+
+        // What an upgrade does: nothing cached may be trusted, so every folder is read again.
+        let shallow = app.scan_quick(true, &|_, _| {}).unwrap();
+        let ins = circinus_core::scan::inspect_mods(&shallow, &|_, _| {});
+        app.apply_inspections(ins).unwrap();
+
+        assert_eq!(std::fs::read(&path).unwrap(), before, "a scan rewrote ModsConfig.xml");
+        assert_eq!(app.active, before_active, "a scan reordered the list in memory");
+        assert_eq!(app.user.mod_groups, before_groups, "a scan changed what is in which group");
+
+        // And pressing Save afterwards is a no-op, byte for byte. A save that quietly reorders
+        // is the same bug arriving one step later, the first time the player presses the button.
+        app.save().unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), before, "saving after a re-read produced a different file");
+    }
+
     /// The update list used to be written only by `apply_update_check`, which only runs when
     /// somebody presses Check. So a mod Steam updated ten minutes later stayed listed as newer
     /// on the Workshop indefinitely, and What changed's "Re-download all" queued it: one report
