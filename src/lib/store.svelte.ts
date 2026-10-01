@@ -536,6 +536,9 @@ class Store {
     this.say(yes ? "Load runs will be shared with circinus.sh" : "Nothing will be shared");
   }
   startupImpactAt = $derived(this.snap?.startupImpactAt ?? 0);
+  /** Past start-up reports, newest first. The file the mod writes holds one session and is
+   *  overwritten every launch, so these copies are the only history that exists. */
+  startupHistory = $derived(this.snap?.startupHistory ?? []);
   /** Vanilla's own load. The measurement knows it exactly -- it is the part of the total that
    *  no mod accounted for -- so the round stand-in is only for when nothing has measured. */
   vanillaSeconds = $derived.by(() => {
@@ -1565,6 +1568,22 @@ class Store {
     if (!ids.length) return;
     return this.run("Looking up on Steam…", async () => {
       const r = await api.downloadsAdd(ids);
+      this.downloads = await api.downloadsState();
+      this.say(`${r.added} queued${r.skipped.length ? ` · ${r.skipped.length} skipped` : ""}`);
+      return r;
+    });
+  }
+  /** Re-download the copies these uids name.
+   *
+   *  What every Force update button calls. `queueIds` takes workshop ids, and a workshop id
+   *  does not identify a copy: "Keep my own copy" leaves the subscription in place, so a
+   *  localized mod is installed twice under one id and the two Force update buttons sent the
+   *  same number. The download then went wherever the id suggested -- Steam's folder -- and
+   *  the kept copy the user had actually pressed was never touched (#3). */
+  async queueMods(uids: string[]) {
+    if (!uids.length) return;
+    return this.run("Looking up on Steam…", async () => {
+      const r = await api.downloadsAddFor(uids);
       this.downloads = await api.downloadsState();
       this.say(`${r.added} queued${r.skipped.length ? ` · ${r.skipped.length} skipped` : ""}`);
       return r;

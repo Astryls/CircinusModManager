@@ -401,6 +401,8 @@ export interface Snapshot {
   /** Per-mod measured start-up, when the Loading Progress mod has written one. */
   startupImpact?: StartupImpact | null;
   startupImpactAt?: number;
+  /** Past start-up reports, newest first. */
+  startupHistory?: PastRun[];
 }
 
 export interface SavedList {
@@ -491,6 +493,15 @@ export interface StartupImpact {
   modsLoaded?: number;
   defsParsed?: number;
   patchOps?: number;
+}
+
+/** One kept start-up report, with the time Circinus read it. `StartupImpact` itself carries no
+ *  date, so the time comes from the file the copy was written to. */
+export interface PastRun {
+  at: number;
+  mods: number;
+  totalMs: number;
+  impact: StartupImpact;
 }
 
 export interface LoadRun {

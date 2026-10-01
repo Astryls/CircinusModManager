@@ -248,6 +248,7 @@ pub fn run() {
             commands::app_data_dir,
             commands::downloads_state,
             commands::downloads_add,
+            commands::downloads_add_for,
             commands::downloads_add_text,
             commands::downloads_remove,
             commands::downloads_retry_failed,

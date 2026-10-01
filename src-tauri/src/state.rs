@@ -529,6 +529,10 @@ pub struct Snapshot {
     /// Unix seconds of that measurement.
     #[serde(default)]
     pub startup_impact_at: i64,
+    /// Past start-up reports, newest first, kept because the file in the save folder holds one
+    /// session and is overwritten every launch. Each carries its own measurement whole.
+    #[serde(default)]
+    pub startup_history: Vec<circinus_core::startupimpact::PastRun>,
     /// What the curators of the followed packs have said, newest first, muted packs left out.
     #[serde(default)]
     pub announcements: Vec<Announcement>,
@@ -624,6 +628,14 @@ pub struct App {
 
 /// How many archived lists to keep.
 const LIST_HISTORY: usize = 40;
+
+/// How many past start-up reports to keep.
+///
+/// Five, because the question they answer is "did what I just changed make loading worse",
+/// and that is asked about the last few launches rather than about last month. A report also
+/// carries every measured mod, so it is not a small file, and forty of them would be a lot of
+/// disk for an answer nobody is looking for.
+pub const STARTUP_HISTORY: usize = 5;
 
 /// Unix seconds.
 pub fn now_secs() -> i64 {
@@ -1016,6 +1028,15 @@ impl App {
     /// one instance's mod list offered to another as its own history, and the offer comes with a
     /// button that writes it. Copies made before instances existed are moved into the default
     /// instance's folder the first time this is asked for, so nobody's history disappears.
+    /// Where past start-up reports are kept, per instance.
+    ///
+    /// Per instance for the same reason the list archive is: two instances are two different
+    /// mod lists, and a history that mixed them would compare measurements of different games
+    /// and call the difference a regression.
+    pub fn startup_history_dir(&self) -> PathBuf {
+        self.data_dir.join("startup").join(&self.instance.id)
+    }
+
     pub fn lists_dir(&self) -> PathBuf {
         let root = self.data_dir.join("lists");
         let mine = root.join("archive").join(&self.instance.id);
@@ -1206,6 +1227,7 @@ impl App {
             sharing: self.user.sharing.clone(),
             startup_impact: self.startup_impact.clone(),
             startup_impact_at: self.startup_impact_at,
+            startup_history: circinus_core::startupimpact::past_runs(&self.startup_history_dir()),
         }
     }
 
@@ -1861,10 +1883,17 @@ mod tests {
         // and a copy of the merge in the test file cannot choose wrong.
         let runs = weight::local_runs_dir(app.locations.config_dir.as_ref().unwrap());
         std::fs::create_dir_all(&runs).unwrap();
+        // The real run-document shape: an inventory under `mods` with no costs in it, and the
+        // costs under `modCosts` as milliseconds against the run's own profiler window. A
+        // thousand-millisecond window makes each `totalMs` a share directly.
         for (n, ce) in [("a", 2.6), ("b", 2.7), ("c", 3.1)] {
             write(
                 &runs.join(format!("{n}.json")),
-                &format!(r#"{{"mods":[{{"packageId":"ce.team","share":{ce}}},{{"packageId":"only.local","share":0.8}}]}}"#),
+                &format!(
+                    r#"{{"incomplete":false,"env":{{"profilingActive":true,"profilerWindowMs":1000.0}},
+                        "mods":[{{"packageId":"ce.team","name":"CE"}},{{"packageId":"only.pooled","name":"P"}}],
+                        "modCosts":[{{"packageId":"ce.team","totalMs":{ce},"sharedMs":0}},{{"packageId":"only.local","totalMs":0.8,"sharedMs":0}}]}}"#
+                ),
             );
         }
         app.settings.include_local_runs = true;
@@ -1873,7 +1902,10 @@ mod tests {
         let w = |app: &App, id: &str| app.weights.get(id).cloned().unwrap();
         let both = w(&app, "ce.team");
         assert_eq!(both.share, Some(0.10), "the pooled figure was overwritten by a local run");
-        assert_eq!(both.local_share, Some(2.7), "the local run did not land");
+        // 2.7ms of a 1000ms window. The conversion is part of what is being tested: the
+        // column holds a share of frame time, and a raw millisecond figure in it would not be
+        // comparable with the pooled number beside it.
+        assert_eq!(both.local_share, Some(0.27), "the local run did not land, or landed in the wrong unit");
         assert_eq!(both.local_runs, Some(3), "the median is over the wrong number of runs");
 
         let pooled_only = w(&app, "only.pooled");
@@ -1882,7 +1914,7 @@ mod tests {
 
         let local_only = w(&app, "only.local");
         assert_eq!(local_only.share, None, "Typical borrowed this machine's own figure");
-        assert_eq!(local_only.local_share, Some(0.8));
+        assert_eq!(local_only.local_share, Some(0.08));
 
         // And switching the setting off has to empty the column it filled, not leave the last
         // reading sitting there under a setting that no longer says to collect it.

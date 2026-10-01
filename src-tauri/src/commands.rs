@@ -963,9 +963,51 @@ pub fn downloads_state(dl: Dl<'_>) -> QueueState {
     dl.snapshot()
 }
 
+/// Queue bare ids: things that are not installed, so there is only one place they can go.
 #[tauri::command]
 pub async fn downloads_add(dl: Dl<'_>, ids: Vec<u64>) -> CmdResult<AddResult> {
-    Ok(dl.add(ids).await)
+    Ok(dl.add(ids, Default::default()).await)
+}
+
+/// Queue a re-download of mods the user picked, by uid.
+///
+/// By uid rather than by workshop id, and that is the whole point. "Keep my own copy" leaves
+/// the Steam subscription in place, so a localized mod is installed twice under one workshop
+/// id -- once as `Source::Workshop` in Steam's folder and once as `Source::SteamCmd` in Mods.
+/// Both pass `is_updatable`, both get a Force update button, and both used to send the same
+/// bare number. By the time the download finished nothing could tell which button had been
+/// pressed, so it guessed from the id, found the subscription, and replaced Steam's copy --
+/// whichever copy the user had actually asked to update (#3).
+///
+/// A uid names one copy. The source of that copy is where its download belongs, and the
+/// decision is made here, before anything is queued.
+#[tauri::command]
+pub async fn downloads_add_for(dl: Dl<'_>, state: State<'_, Shared>, uids: Vec<String>) -> CmdResult<AddResult> {
+    let picked = with_app(&state, move |app| {
+        let mut out: Vec<(u64, circinus_core::steam::steamcmd::Dest)> = Vec::new();
+        for uid in &uids {
+            let Some(m) = app.mods.iter().find(|m| &m.uid == uid) else { continue };
+            if !crate::state::App::is_updatable(m) {
+                continue;
+            }
+            let Some(id) = m.published_file_id else { continue };
+            let dest = match m.source {
+                circinus_core::model::Source::Workshop => circinus_core::steam::steamcmd::Dest::Workshop,
+                // A SteamCMD download and a kept copy are the same shape on disk and both live
+                // at `Mods/<id>`, which is what `collect` writes.
+                _ => circinus_core::steam::steamcmd::Dest::Mods,
+            };
+            out.push((id, dest));
+        }
+        Ok(out)
+    })
+    .await?;
+    if picked.is_empty() {
+        return Err("None of those mods can be re-downloaded".into());
+    }
+    let ids: Vec<u64> = picked.iter().map(|(id, _)| *id).collect();
+    let dests: HashMap<u64, circinus_core::steam::steamcmd::Dest> = picked.into_iter().collect();
+    Ok(dl.add(ids, dests).await)
 }
 
 /// Workshop URLs, ids or pasted text; single collection links are expanded.
@@ -986,7 +1028,7 @@ pub async fn downloads_add_text(dl: Dl<'_>, text: String) -> CmdResult<AddResult
         }
         ids = expanded;
     }
-    Ok(dl.add(ids).await)
+    Ok(dl.add(ids, Default::default()).await)
 }
 
 #[tauri::command]
@@ -1099,7 +1141,7 @@ pub async fn downloads_add_missing(dl: Dl<'_>, state: State<'_, Shared>) -> CmdR
     if ids.is_empty() {
         return Ok((AddResult { added: 0, skipped: vec![] }, unresolved));
     }
-    Ok((dl.add(ids).await, unresolved))
+    Ok((dl.add(ids, Default::default()).await, unresolved))
 }
 
 #[derive(Serialize, Clone)]

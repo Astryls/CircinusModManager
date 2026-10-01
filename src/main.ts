@@ -4,9 +4,14 @@ import Root from "./Root.svelte";
 import { api } from "./lib/api";
 import { layouts } from "./lib/layout.svelte";
 import { theme } from "./lib/theme.svelte";
+import { palette } from "./lib/palette.svelte";
 
 // Before the first mount, so the window never paints one paper and then swaps to the other.
+// The palette follows the paper, so it is wired in before the first `apply()` and started
+// after it: each paper keeps its own colours, and switching swaps the whole set.
+theme.onPaperChange = () => palette.load();
 theme.start();
+palette.start();
 layouts.start();
 
 // Anything that escapes goes into the same log as the rest of the app. A message that only ever

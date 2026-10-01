@@ -50,6 +50,8 @@ export const api = {
   // downloads
   downloadsState: () => invoke<QueueState>("downloads_state"),
   downloadsAdd: (ids: number[]) => invoke<AddResult>("downloads_add", { ids }),
+  /** Re-download mods the user picked, by uid: a uid names one copy, a workshop id does not. */
+  downloadsAddFor: (uids: string[]) => invoke<AddResult>("downloads_add_for", { uids }),
   downloadsAddText: (text: string) => invoke<AddResult>("downloads_add_text", { text }),
   downloadsRemove: (ids: number[]) => invoke<QueueState>("downloads_remove", { ids }),
   downloadsRetryFailed: () => invoke<number>("downloads_retry_failed"),

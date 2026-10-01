@@ -297,6 +297,15 @@
     return { label: newest, state: "ahead", title: `Built for ${newest}, ahead of the ${gameVersion} installed here.${all}` };
   }
 
+  /** A share of frame time, at the one decimal the column has room for.
+   *
+   *  Anything that would round to "0.0 %" reads as "this mod is free", which is a claim the
+   *  figure is too coarse to make -- and on a real install most measured mods land there, so
+   *  the column filled with zeros and looked broken even once the figures behind it were
+   *  right. "<0.1 %" says the same thing without asserting a zero, and the exact figure is in
+   *  the tooltip for anyone who wants it. */
+  const pct = (share: number) => (share < 0.05 ? "<0.1 %" : `${share.toFixed(1)} %`);
+
   /** Why a Start-up cell is empty. Two sentences, because "no data" is not actionable and the
    *  mod's tracking settings are off out of the box -- absent is the normal case, not a fault. */
   const MEASURE_MISSING =
@@ -306,14 +315,14 @@
   function yoursTitle(w: { localShare: number | null; localBand: string | null; localRuns: number | null; share: number | null }): string {
     const mine = w.localShare ?? 0;
     const runs = w.localRuns ?? 0;
-    const head = `${mine.toFixed(2)} % of frame time on this machine, over ${runs} of your own run${runs === 1 ? "" : "s"}.`;
+    const head = `${mine.toFixed(3)} % of frame time on this machine, over ${runs} of your own run${runs === 1 ? "" : "s"}.`;
     if (w.share == null) return `${head}\nNobody has pooled a figure for this mod, so there is nothing to compare it with.`;
     // The comparison is the reason both columns exist, so it is stated rather than left to be
     // worked out from two numbers in different columns.
     const ratio = w.share > 0 ? mine / w.share : null;
-    if (ratio == null || (ratio > 0.75 && ratio < 1.33)) return `${head}\nAbout what it costs everybody else (${w.share.toFixed(2)} %).`;
+    if (ratio == null || (ratio > 0.75 && ratio < 1.33)) return `${head}\nAbout what it costs everybody else (${w.share.toFixed(3)} %).`;
     const word = ratio >= 1 ? `${ratio.toFixed(1)}× more` : `${(1 / ratio).toFixed(1)}× less`;
-    return `${head}\n${word} than it costs everybody else (${w.share.toFixed(2)} %). That gap is about this install, not about the mod.`;
+    return `${head}\n${word} than it costs everybody else (${w.share.toFixed(3)} %). That gap is about this install, not about the mod.`;
   }
 
   // ---- keeping the place ----
@@ -775,9 +784,9 @@
           {#if nameW != null}<span class="fill"></span>{/if}
           {#if has.has("startup")}<span class="tm num">{#if tm != null}<span title="Added about {secs(tm)} to the last start-up, measured by the Loading Progress mod. Of {store.measuredTotalSeconds >= 60 ? `${(store.measuredTotalSeconds / 60).toFixed(1)} min` : `${store.measuredTotalSeconds.toFixed(0)} s`} it measured across this list.">{secs(tm)}</span>{:else}<span class="unread" title={MEASURE_MISSING}>&mdash;</span>{/if}</span>{/if}
           {#if has.has("typical")}
-            <span class="wt">{#if w && w.share != null}<span class="band {w.band}" title="Typically {w.share.toFixed(2)} % of frame time, {BAND_LABEL[w.band].toLowerCase()}. Pooled by circinus.sh over {w.measured ?? '?'} measured run{w.measured === 1 ? '' : 's'} on other people's machines.">{w.share.toFixed(1)} %</span>{:else}<span class="dash" title="Nobody has pooled a measurement of this mod yet. Not the same as costing nothing.">&mdash;</span>{/if}</span>
+            <span class="wt">{#if w && w.share != null}<span class="band {w.band}" title="Typically {w.share.toFixed(3)} % of frame time, {BAND_LABEL[w.band].toLowerCase()}. Pooled by circinus.sh over {w.measured ?? '?'} measured run{w.measured === 1 ? '' : 's'} on other people's machines.">{pct(w.share)}</span>{:else}<span class="dash" title="Nobody has pooled a measurement of this mod yet. Not the same as costing nothing.">&mdash;</span>{/if}</span>
           {/if}
-          {#if has.has("yours")}<span class="load">{#if w?.localShare != null}<span class="band {w.localBand ?? 'unknown'}" title={yoursTitle(w)}>{w.localShare.toFixed(1)} %</span>{:else}<span class="dash" title={PROFILER_MISSING}>&mdash;</span>{/if}</span>{/if}
+          {#if has.has("yours")}<span class="load">{#if w?.localShare != null}<span class="band {w.localBand ?? 'unknown'}" title={yoursTitle(w)}>{pct(w.localShare)}</span>{:else}<span class="dash" title={PROFILER_MISSING}>&mdash;</span>{/if}</span>{/if}
           {#if has.has("loadmedian")}<span class="lmed num">{#if w?.loadMsMedian != null}<span title="Typically adds about {w.loadMsMedian >= 1000 ? `${(w.loadMsMedian / 1000).toFixed(1)} s` : `${Math.round(w.loadMsMedian)} ms`} to a start-up, over {w.loadRuns ?? 0} shared start-up{w.loadRuns === 1 ? '' : 's'} from {w.loadInstalls ?? 0} install{w.loadInstalls === 1 ? '' : 's'}. Measured by Loading Progress, pooled by circinus.sh. Start-up only: never added to Typical or Yours.">{w.loadMsMedian >= 1000 ? `${(w.loadMsMedian / 1000).toFixed(1)} s` : `${Math.round(w.loadMsMedian)} ms`}</span>{:else}<span class="unread" title="Nobody has shared a start-up with this mod loaded yet. Not the same as costing nothing.">&mdash;</span>{/if}</span>{/if}
           {#if has.has("versions")}{@const vr = versionOf(m)}<span class="vers">{#if vr}<span class={vr.state} title={vr.title}>{vr.label}</span>{/if}</span>{/if}
           {#if has.has("phase")}<span class="phz">{#if pl}{@const ph = store.phaseInfo(pl.phase)}<em class="tag" title="{ph.name} · {pl.reason}">{ph.name}</em>{/if}</span>{/if}

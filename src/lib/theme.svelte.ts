@@ -81,11 +81,20 @@ class Theme {
     return this.darkVariant === "oled" ? "oled" : null;
   }
 
+  /** Called whenever the paper changes, so the custom palette can follow it.
+   *
+   *  A function rather than an import, because `palette` imports `theme` and the other way
+   *  round would be a cycle. `start()` in `main` wires the two together. */
+  onPaperChange: (() => void) | null = null;
+
   private apply() {
     const el = document.documentElement;
     const a = this.attr;
     if (a) el.setAttribute("data-theme", a);
     else el.removeAttribute("data-theme");
+    // Each paper keeps its own custom colours: one chosen against #131210 is usually wrong
+    // against #e4e1d9, so the sets are swapped rather than carried across.
+    this.onPaperChange?.();
   }
 
   private remember(key: string, value: string) {

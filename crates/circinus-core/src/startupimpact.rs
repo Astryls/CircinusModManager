@@ -255,3 +255,75 @@ mod tests {
         assert_eq!(s.mods.len(), 2);
     }
 }
+
+// ---- a history of past reports -----------------------------------------------------------
+//
+// The file in the save folder holds one session and is overwritten every launch (point 3
+// above), so without this the only measurement that has ever existed is the most recent one.
+// That is a real loss: a report is the only honest answer the load-time card has, and the
+// question people actually ask of it -- did that change make loading worse -- needs two.
+//
+// The shape is copied from `modsconfig::archive`, which solves the same problem for saved
+// lists: one file per record, the timestamp in the file name (nothing inside a report says
+// when it was taken -- see `StartupImpact`, which has no date field at all), pruned at write
+// time, and a duplicate of the newest never written.
+
+/// One kept report, with the time it was read.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PastRun {
+    /// Unix seconds, from the file name: when Circinus read the report, which is the closest
+    /// thing to when the game started that anything records.
+    pub at: i64,
+    /// How many mods the report named. Enough to tell at a glance that a figure describes a
+    /// different list, without carrying every package id into the snapshot.
+    pub mods: usize,
+    pub total_ms: f64,
+    /// The whole report. The history page draws per-mod comparisons from it.
+    pub impact: StartupImpact,
+}
+
+fn stamp_of(path: &std::path::Path) -> Option<i64> {
+    path.file_stem()?.to_str()?.split('-').next()?.parse().ok()
+}
+
+/// Keep `impact` in `dir` as `<unix>-startup.json`, pruning to `keep` files.
+///
+/// Returns `None` when the newest kept report is already this one, which is the ordinary case:
+/// `refresh_last_run` runs at launch and on every window focus, and the file it reads only
+/// changes when the game is started again.
+pub fn keep(dir: &std::path::Path, impact: &StartupImpact, at: i64, keep: usize) -> std::io::Result<Option<std::path::PathBuf>> {
+    std::fs::create_dir_all(dir)?;
+    let existing = past_runs(dir);
+    if let Some(newest) = existing.first() {
+        if &newest.impact == impact {
+            return Ok(None);
+        }
+    }
+    let path = dir.join(format!("{at}-startup.json"));
+    let json = serde_json::to_string(impact).map_err(std::io::Error::other)?;
+    std::fs::write(&path, json)?;
+    // `existing` does not include the file just written, so one fewer is kept from it.
+    for old in existing.iter().skip(keep.saturating_sub(1)) {
+        let _ = std::fs::remove_file(dir.join(format!("{}-startup.json", old.at)));
+    }
+    Ok(Some(path))
+}
+
+/// Kept reports, newest first.
+pub fn past_runs(dir: &std::path::Path) -> Vec<PastRun> {
+    let Ok(rd) = std::fs::read_dir(dir) else { return Vec::new() };
+    let mut out: Vec<PastRun> = rd
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().map(|x| x == "json").unwrap_or(false))
+        .filter_map(|p| {
+            let at = stamp_of(&p)?;
+            let text = std::fs::read_to_string(&p).ok()?;
+            let impact: StartupImpact = serde_json::from_str(&text).ok()?;
+            Some(PastRun { at, mods: impact.mods.len(), total_ms: impact.total_ms, impact })
+        })
+        .collect();
+    out.sort_by_key(|r| std::cmp::Reverse(r.at));
+    out
+}

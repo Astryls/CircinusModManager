@@ -2,7 +2,7 @@
 //! honours the throttle, moves finished mods into the Mods folder and publishes progress.
 
 use crate::commands::Shared;
-use circinus_core::steam::steamcmd::{ItemStatus, QueueState, SteamCmd, BATCH_PAUSE, STALL_TIMEOUT};
+use circinus_core::steam::steamcmd::{Dest, ItemStatus, QueueState, SteamCmd, BATCH_PAUSE, STALL_TIMEOUT};
 use circinus_core::steam::webapi;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -118,7 +118,12 @@ impl Downloads {
 
     /// Queue ids. Looks the ids up on Steam to name them and to skip things that are not
     /// RimWorld mods; if Steam does not answer, they are queued by number.
-    pub async fn add(&self, ids: Vec<u64>) -> AddResult {
+    ///
+    /// `dests` says, per id, which copy of the mod this download is replacing. A caller that
+    /// is fetching something not installed can leave it out: a new download has only one place
+    /// to go. A caller acting on a mod the user picked must not, because two copies of one mod
+    /// share an id and nothing downstream can tell them apart afterwards.
+    pub async fn add(&self, ids: Vec<u64>, dests: HashMap<u64, Dest>) -> AddResult {
         let mut names = self.known_names(&ids);
         let mut skipped = Vec::new();
         let mut accepted: Vec<u64> = Vec::new();
@@ -142,7 +147,7 @@ impl Downloads {
         }
         let added = {
             let mut s = self.state.lock().unwrap();
-            s.add(&accepted, &names, now())
+            s.add(&accepted, &names, &dests, now())
         };
         self.persist();
         self.emit();
@@ -367,7 +372,8 @@ impl Downloads {
                     };
                     for id in done {
                         /*
-                         * A MOD IS REPLACED WHERE IT ALREADY LIVES.
+                         * A MOD IS REPLACED WHERE IT ALREADY LIVES, AND THE CHOICE WAS MADE
+                         * WHEN THE ITEM WAS QUEUED.
                          *
                          * Everything used to go to `Mods/<id>`, Force update of a subscribed
                          * mod included. With the same packageId in Mods and in Steam's folder,
@@ -376,11 +382,25 @@ impl Downloads {
                          * Steam keeps updating a folder nothing reads, and the mod is stuck at
                          * whatever this download fetched until somebody deletes it by hand.
                          *
-                         * So a subscribed mod goes back into Steam's folder, and everything
-                         * else -- a mod Circinus downloaded, a "Keep my own copy" -- carries on
-                         * going into Mods exactly as before.
+                         * Fixing that by reading the installed list *here* traded one bug for
+                         * another (#3). "Keep my own copy" leaves the subscription in place on
+                         * purpose, so a localized mod is installed twice under one id; this
+                         * loop saw the subscription and sent the download to Steam, whichever
+                         * of the two Force update buttons had been pressed. The kept copy was
+                         * never touched, stayed behind, and was offered the same useless
+                         * update again on every rescan.
+                         *
+                         * The id cannot answer the question, because the question is about a
+                         * copy and two copies share an id. `item.dest` is the answer, recorded
+                         * where it was known: at the button. `Unsaid` is an item queued by an
+                         * older build, and only that case still guesses from the id.
                          */
-                        let to_steam = subscribed.contains(&id);
+                        let dest = { self.state.lock().unwrap().items.iter().find(|i| i.id == id).map(|i| i.dest).unwrap_or_default() };
+                        let to_steam = match dest {
+                            Dest::Workshop => true,
+                            Dest::Mods => false,
+                            Dest::Unsaid => subscribed.contains(&id),
+                        };
                         let placed = match (to_steam, &workshop_dir, &mods_dir) {
                             (true, Some(ws), _) => cmd.replace_workshop_copy(id, ws).map(|p| p.display().to_string()),
                             // Subscribed, but Circinus cannot see Steam's folder. Falling back

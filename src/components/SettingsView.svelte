@@ -4,6 +4,7 @@
   import { api, pickFile, pickFolder, inTauri, openUrl } from "$lib/api";
   import { I } from "$lib/icons";
   import { theme } from "$lib/theme.svelte";
+  import { palette, GROUPS, contrast } from "$lib/palette.svelte";
   import { SORTS, sortLabel, VIEWS, type SortKey, type View } from "$lib/store.svelte";
 
   /** The optional list columns, in the order they appear in the list. Typical and Yours are
@@ -41,6 +42,41 @@
   const q = $derived(store.downloads);
   const st = $derived(store.steamcmd);
   store.refreshDownloads();
+  /** Said out loud when a colour is refused, because a picker that silently snaps back looks
+   *  broken rather than careful. */
+  let badTry = $state<string | null>(null);
+
+  /** `<input type="color">` only speaks `#rrggbb`. A token is usually already one; anything
+   *  else is resolved through the browser so the picker opens on the colour actually showing
+   *  rather than on black. */
+  function toHex(v: string): string {
+    const t = v.trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(t)) return t;
+    if (/^#[0-9a-fA-F]{3}$/.test(t)) return "#" + [...t.slice(1)].map((c) => c + c).join("");
+    try {
+      const probe = document.createElement("span");
+      probe.style.color = t;
+      document.body.appendChild(probe);
+      const m = getComputedStyle(probe).color.match(/\d+/g);
+      probe.remove();
+      if (m && m.length >= 3) return "#" + m.slice(0, 3).map((x) => Number(x).toString(16).padStart(2, "0")).join("");
+    } catch {
+      /* fall through */
+    }
+    return "#808080";
+  }
+
+  function pick(key: string, value: string) {
+    if (palette.set(key, value)) {
+      badTry = null;
+      return;
+    }
+    // The only reason `set` refuses a colour the picker produced is the legibility floor.
+    const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+    const c = contrast(value, bg);
+    badTry = `That colour was not applied: it would leave the window too hard to read${c != null ? ` (about ${c.toFixed(1)}:1 against the background, and 3:1 is the floor)` : ""}. Everything else is unchanged.`;
+  }
+
   let diagCopied = $state(false);
   let diagFailed = $state<string | null>(null);
   async function copyDiagnostics() {
@@ -309,6 +345,62 @@
       <p class="hint">This applies to the dark paper only, and takes effect the moment you switch back to it. The theme is remembered on this machine and never travels with a mod list.</p>
     </section>
 
+    <!-- Every colour, for anyone who wants different ones.
+         The card is built around getting back out of it: see the Reset button's own comment,
+         and `lib/palette.svelte.ts` for why an override is a removable inline property rather
+         than a written-down default. -->
+    <section class="card">
+      <h3>Colours <span class="aside">{palette.changed ? `${palette.changed} changed` : "as shipped"}</span></h3>
+      <p class="hint">
+        Each paper keeps its own set, so a colour chosen here applies to the {theme.paper === "light" ? "light paper" : theme.darkVariant === "oled" ? "OLED black" : "dark paper"} and switching papers
+        swaps the whole set. Everything is remembered on this machine only and never travels with a mod list.
+      </p>
+      {#if palette.refused}
+        <p class="hint warnline">
+          The colours saved for this paper left the text unreadable against its background, so they were not applied and the shipped ones are showing. Nothing was lost: change one and it is saved again.
+        </p>
+      {/if}
+      {#if badTry}
+        <p class="hint warnline">{badTry}</p>
+      {/if}
+
+      {#each GROUPS as g (g.title)}
+        <div class="pal">
+          <div class="palhead"><b>{g.title}</b><span>{g.note}</span></div>
+          <div class="swatches">
+            {#each g.slots as slot (slot.key)}
+              {@const set = palette.current[slot.key]}
+              <label class="sw" title={slot.hint}>
+                <input
+                  type="color"
+                  value={toHex(set ?? palette.shipped(slot.key))}
+                  oninput={(e) => pick(slot.key, e.currentTarget.value)}
+                  aria-label={slot.label}
+                />
+                <span class="nm">{slot.label}</span>
+                {#if set}<button class="undo" title="Put {slot.label} back to the shipped colour" onclick={() => palette.clear(slot.key)}>&times;</button>{/if}
+              </label>
+            {/each}
+          </div>
+        </div>
+      {/each}
+
+      <!-- RESET.
+           **This button paints itself with literal colours, and that is on purpose.** The
+           house rule is that a literal hex in a component is a bug, because a colour that only
+           works on one paper is exactly what the token system exists to prevent. This is the
+           one place the rule has to be broken: the button's job is to be found and pressed
+           when the tokens have been made unusable, and a button drawn in `--surface` and
+           `--text` is invisible precisely when it is needed. The pair below is fixed, carries
+           its own border, and reads on any ground a player can produce.
+           Do not "fix" this by giving it tokens. -->
+      <div class="resetrow">
+        <button class="hardreset" onclick={() => palette.reset()}>Reset these colours</button>
+        <button class="hardreset ghost" onclick={() => palette.resetAll()}>Reset every paper</button>
+        <span class="hint">Puts the shipped colours back. It writes nothing and reads nothing you have set, so it works even if the window has become unreadable.</span>
+      </div>
+    </section>
+
     <!-- The list itself: what it shows, and where it starts. Kept apart from Sorting below,
          which is about how HALO arranges the order rather than about this window. -->
     <section class="card">
@@ -427,6 +519,37 @@
   .unread .ur { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: 10px; color: var(--text-2); overflow-wrap: anywhere; }
   .unread .ur .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hint { color: var(--text-3); font-size: 12.5px; line-height: 1.45; margin: 6px 0 0; }
+  /* ---- the colour picker --------------------------------------------------------------- */
+  .warnline { color: var(--amber); box-shadow: inset 2px 0 0 var(--amber); padding-left: 9px; }
+  .pal { margin: 14px 0 0; }
+  .palhead { display: flex; flex-direction: column; gap: 2px; margin: 0 0 8px; }
+  .palhead b { font: 700 10.5px var(--font); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); }
+  .palhead span { font-size: 12px; color: var(--text-3); line-height: 1.4; }
+  .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+  .sw { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 84px; cursor: pointer; }
+  /* A real border rather than an inset shadow. The native colour well paints over the whole
+     control, so an inset shadow is hidden under it -- which made the "Card" swatch, whose
+     colour is the card it sits on, draw as nothing at all. */
+  .sw input[type="color"] { width: 100%; height: 30px; padding: 0; border: 1px solid var(--surface-4); border-radius: 0; background: none; cursor: pointer; }
+  .sw input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+  .sw input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 0; }
+  .sw .nm { font-size: 11px; color: var(--text-3); text-align: center; line-height: 1.2; }
+  /* A changed slot gets a way back of its own, so putting one colour right does not mean
+     resetting the lot. */
+  .sw .undo { position: absolute; top: -5px; right: -5px; width: 16px; height: 16px; padding: 0; border: 0; border-radius: 0;
+    background: var(--amber); color: var(--amber-ink); font: 700 11px var(--font); line-height: 1; cursor: pointer; }
+  .resetrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 18px 0 0; padding: 12px 0 0; border-top: 1px solid var(--surface-3); }
+  .resetrow .hint { margin: 0; flex: 1 1 220px; }
+  /* LITERAL COLOURS, DELIBERATELY. See the comment on the button in the markup: this is the
+     control for undoing a palette, so it cannot be drawn in the palette. Fixed brick on fixed
+     white, with its own border, legible on any ground somebody can produce -- including one
+     where --surface and --text have been set to the same colour.
+     Do not replace these with tokens. */
+  .hardreset { background: #8c1d16; color: #fff7f5; border: 1px solid #f3d9d4; border-radius: 0;
+    font: 600 12.5px var(--font); padding: 7px 14px; cursor: pointer; }
+  .hardreset:hover { background: #a62a21; }
+  .hardreset.ghost { background: #fff7f5; color: #8c1d16; border-color: #8c1d16; }
+  .hardreset.ghost:hover { background: #f3d9d4; }
   .fld { margin-top: 14px; }
   .fld > label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
   /* Wide enough for the longest sort name and no wider: a select stretched across the card

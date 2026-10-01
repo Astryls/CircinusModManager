@@ -176,11 +176,22 @@ fn share_of(obj: &Value) -> Option<f64> {
     share_deep(obj, 0)
 }
 
+/// Is this key a duration rather than a share, whatever else its name contains?
+///
+/// `sharedMs` contains "share" and is milliseconds. That one field, matched by the substring
+/// test below, is what filled a whole column with 0.0 % on a real install -- a figure in the
+/// wrong unit, taken from a field nobody meant, and plausible enough on screen that it read as
+/// a measurement. A name ending in `Ms`, `_ms` or `Millis` is a duration and is never a share,
+/// so it is refused here rather than at each call site.
+fn is_duration_key(key: &str) -> bool {
+    key.ends_with("ms") || key.ends_with("_ms") || key.ends_with("millis") || key.ends_with("milliseconds") || key.ends_with("seconds") || key.ends_with("secs")
+}
+
 fn share_deep(v: &Value, depth: usize) -> Option<f64> {
     let obj = v.as_object()?;
     for (k, val) in obj {
         let key = k.to_ascii_lowercase();
-        let share_like = key.contains("share") || key.contains("pct") || key == "percent";
+        let share_like = !is_duration_key(&key) && (key.contains("share") || key.contains("pct") || key == "percent");
         if share_like {
             if let Some(x) = num(Some(val)) {
                 return Some(if key.contains("fraction") { x * 100.0 } else { x });
@@ -338,12 +349,36 @@ pub fn local_runs_dir(config_dir: &Path) -> PathBuf {
     config_dir.parent().map(|p| p.join("Circinus").join("Runs")).unwrap_or_else(|| config_dir.join("Circinus").join("Runs"))
 }
 
-/// Median share per packageId across local runs. Each run file is scanned for a per-mod cost
-/// table (objects carrying a packageId and a ms or share figure) and normalized by the run's
-/// `profilerWindowMs` when only milliseconds are given.
+/// Median share of frame time per packageId, across the runs the Circinus profiler mod has
+/// written on this machine.
+///
+/// **This reads one documented array and nothing else**, because the version it replaces read
+/// whatever it could find and that is how it came to report 0.0 % for every mod on a real
+/// install. It walked the whole document for any object with a `packageId`, which matches the
+/// `mods[]` *inventory* -- a thousand entries of name, source and load order, with no cost in
+/// them at all -- and then asked a fuzzy helper for a share. That helper matches any key
+/// containing "share", so on a `modCosts` row it found **`sharedMs`**, a figure in
+/// milliseconds that is 0 for most mods, and read it as a percentage. Meanwhile `totalMs`, the
+/// actual cost, was not in the list of keys it would accept.
+///
+/// So the column filled with zeros that were a unit error on a field nobody meant, and the
+/// flexibility is what hid it: a reader that always finds *something* never fails loudly
+/// enough to be noticed. The run document describes its own schema in `_readme`, and that is
+/// what this now follows:
+///
+///   - `modCosts[].totalMs` is the per-mod figure. "Time spent INSIDE that mod's own code",
+///     not time the mod caused -- which is why it is labelled Yours rather than Blame.
+///   - Milliseconds are specific to the machine and must never be ranked across machines, so
+///     the figure kept is `totalMs / env.profilerWindowMs * 100`: the same share-of-frame unit
+///     the site pools, which is what makes Typical and Yours comparable at all.
+///   - `env.profilingActive == false` means cost data was not collected. The readme is explicit
+///     that this is "'no data', never 'zero cost'" -- so those runs are skipped entirely rather
+///     than contributing zeros, which is the same mistake in a different place.
+///   - `incomplete == true` means the run ended in a crash and its tail is missing. Kept on
+///     disk, excluded from the median: a truncated window makes every share in it too large.
 pub fn read_local_runs(dir: &Path) -> Result<HashMap<String, Weight>> {
     let mut samples: HashMap<String, Vec<f64>> = HashMap::new();
-    let mut seen: HashMap<String, i64> = HashMap::new();
+    let mut runs: HashMap<String, i64> = HashMap::new();
     let Ok(rd) = std::fs::read_dir(dir) else { return Ok(HashMap::new()) };
     for entry in rd.filter_map(|e| e.ok()) {
         let p = entry.path();
@@ -352,27 +387,25 @@ pub fn read_local_runs(dir: &Path) -> Result<HashMap<String, Weight>> {
         }
         let Ok(text) = std::fs::read_to_string(&p) else { continue };
         let Ok(v) = serde_json::from_str::<Value>(&text) else { continue };
-        let window_ms = v.pointer("/env/profilerWindowMs").and_then(|x| x.as_f64()).or_else(|| v.get("profilerWindowMs").and_then(|x| x.as_f64()));
-        let mut stack: Vec<&Value> = vec![&v];
-        while let Some(cur) = stack.pop() {
-            match cur {
-                Value::Array(a) => stack.extend(a.iter()),
-                Value::Object(o) => {
-                    if let Some(id) = o.get("packageId").and_then(|x| x.as_str()) {
-                        let id = id.to_ascii_lowercase();
-                        let share = share_of(cur).or_else(|| {
-                            let ms = num(first(cur, &["ms", "medianMs", "msPerFrame", "cost_ms", "costMs"]))?;
-                            let w = window_ms?;
-                            if w > 0.0 { Some(ms / w * 100.0) } else { None }
-                        });
-                        if let Some(s) = share {
-                            samples.entry(id.clone()).or_default().push(s);
-                        }
-                        *seen.entry(id).or_default() += 1;
-                    }
-                    stack.extend(o.values().filter(|x| x.is_array() || x.is_object()));
-                }
-                _ => {}
+        if v.get("incomplete").and_then(|x| x.as_bool()).unwrap_or(false) {
+            continue;
+        }
+        if !v.pointer("/env/profilingActive").and_then(|x| x.as_bool()).unwrap_or(false) {
+            continue;
+        }
+        // No window, no share. Falling back to raw milliseconds here would put a figure in the
+        // column that cannot be compared with the pooled one beside it, which is worse than
+        // leaving the cell empty.
+        let Some(window_ms) = v.pointer("/env/profilerWindowMs").and_then(|x| x.as_f64()).filter(|w| *w > 0.0) else { continue };
+        let Some(costs) = v.get("modCosts").and_then(|x| x.as_array()) else { continue };
+        for row in costs {
+            let Some(id) = row.get("packageId").and_then(|x| x.as_str()) else { continue };
+            let id = id.to_ascii_lowercase();
+            let id = id.strip_suffix("_steam").unwrap_or(&id).to_string();
+            *runs.entry(id.clone()).or_default() += 1;
+            // `num` refuses a negative, which the document uses for "not known".
+            if let Some(ms) = num(row.get("totalMs")) {
+                samples.entry(id).or_default().push(ms / window_ms * 100.0);
             }
         }
     }
@@ -386,7 +419,7 @@ pub fn read_local_runs(dir: &Path) -> Result<HashMap<String, Weight>> {
         // A local profiler run also times frames rather than start-up, so the load fields stay
         // empty here too.
         let mut w = Weight::blank(id.clone(), "local");
-        w.seen = seen.get(&id).copied();
+        w.seen = runs.get(&id).copied();
         w.local_share = Some(median);
         w.local_band = Some(Band::for_share(median));
         w.local_runs = Some(n);
@@ -464,22 +497,81 @@ mod tests {
         assert_eq!(w[2].band, Band::Insufficient);
     }
 
+    /// A run document shaped like the real ones, including the three things the old reader
+    /// got wrong on a real install.
+    fn run_doc(costs: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
+            "incomplete": false,
+            "env": { "profilingActive": true, "profilerWindowMs": 1000.0, "modCount": 2 },
+            // The inventory. A thousand of these in a real document, every one carrying a
+            // packageId and no cost at all -- the old reader walked them looking for a figure.
+            "mods": [
+                { "packageId": "x.y", "name": "Ex Why", "source": "workshop", "loadOrder": 0, "fileId": "1" },
+                { "packageId": "a.b", "name": "Ay Bee", "source": "local", "loadOrder": 1 }
+            ],
+            "modCosts": costs
+        })
+    }
+
     #[test]
     fn local_runs_median() {
         let dir = tempfile::tempdir().unwrap();
-        for (i, ms) in [2.0, 3.0, 10.0].iter().enumerate() {
-            let run = serde_json::json!({"env": {"profilerWindowMs": 100.0}, "modCosts": [{"packageId": "x.y", "ms": ms}]});
+        for (i, ms) in [20.0, 30.0, 100.0].iter().enumerate() {
+            // `sharedMs` is here because it is in the real document and because it is what
+            // broke this: it contains the word "share", it is milliseconds, and it is 0 for
+            // most mods. The old reader matched it and reported 0.0 % for every row.
+            let run = run_doc(serde_json::json!([{ "packageId": "x.y", "totalMs": ms, "sharedMs": 0, "replacementMs": ms, "patchCount": 1 }]));
             std::fs::write(dir.path().join(format!("run{i}.json")), run.to_string()).unwrap();
         }
         std::fs::write(dir.path().join("index.json"), "{}").unwrap();
         let w = read_local_runs(dir.path()).unwrap();
+        // 30ms of a 1000ms window is 3 %. A zero here is the bug coming back.
+        assert_eq!(w["x.y"].local_share, Some(3.0), "the median is not totalMs over the profiler window");
+        assert_eq!(w["x.y"].local_runs, Some(3));
+        assert_eq!(w["x.y"].local_band, Some(Band::Moderate));
         // The local fields, and only those. `share` is what everybody else measured and this
         // function has no business filling it -- the merge relies on that being true, because
         // the pooled figure and this one have to be able to sit in one row at once.
-        assert_eq!(w["x.y"].local_share, Some(3.0));
-        assert_eq!(w["x.y"].local_runs, Some(3));
-        assert_eq!(w["x.y"].local_band, Some(Band::Moderate));
         assert_eq!(w["x.y"].share, None, "a local run wrote itself into the pooled share");
         assert_eq!(w["x.y"].band, Band::Unknown);
+        // The inventory names a second mod that no `modCosts` row mentions. It must not appear
+        // at all -- not as a row, and above all not as a row reading 0.0 %.
+        assert!(!w.contains_key("a.b"), "a mod from the inventory got a figure it never had");
+    }
+
+    /// The run document's own notes say `profilingActive == false` means cost data was not
+    /// collected, and that this is "'no data', never 'zero cost'". A run that ended in a crash
+    /// has a truncated window, which makes every share taken against it too large.
+    #[test]
+    fn a_run_that_measured_nothing_contributes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let good = run_doc(serde_json::json!([{ "packageId": "x.y", "totalMs": 50.0 }]));
+        std::fs::write(dir.path().join("good.json"), good.to_string()).unwrap();
+
+        let mut off = run_doc(serde_json::json!([{ "packageId": "x.y", "totalMs": 9000.0 }]));
+        off["env"]["profilingActive"] = serde_json::json!(false);
+        std::fs::write(dir.path().join("off.json"), off.to_string()).unwrap();
+
+        let mut crashed = run_doc(serde_json::json!([{ "packageId": "x.y", "totalMs": 9000.0 }]));
+        crashed["incomplete"] = serde_json::json!(true);
+        std::fs::write(dir.path().join("crashed.json"), crashed.to_string()).unwrap();
+
+        let mut nowindow = run_doc(serde_json::json!([{ "packageId": "x.y", "totalMs": 9000.0 }]));
+        nowindow["env"]["profilerWindowMs"] = serde_json::json!(0.0);
+        std::fs::write(dir.path().join("nowindow.json"), nowindow.to_string()).unwrap();
+
+        let w = read_local_runs(dir.path()).unwrap();
+        assert_eq!(w["x.y"].local_runs, Some(1), "a run with no cost data was counted");
+        assert_eq!(w["x.y"].local_share, Some(5.0), "a skipped run moved the median");
+    }
+
+    /// The field that caused it, tested where the API path would meet it too.
+    #[test]
+    fn a_milliseconds_field_is_never_read_as_a_share() {
+        let obj = serde_json::json!({ "packageId": "x.y", "sharedMs": 0, "totalMs": 45.0 });
+        assert_eq!(share_of(&obj), None, "a key ending in Ms was read as a percentage");
+        // And a real share-like key still works, so the narrowing did not blind the parser.
+        let real = serde_json::json!({ "packageId": "x.y", "sharePct": 2.5 });
+        assert_eq!(share_of(&real), Some(2.5));
     }
 }

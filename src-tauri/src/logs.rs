@@ -158,6 +158,14 @@ pub fn refresh_last_run(shared: &crate::commands::Shared) -> bool {
     if let Some((m, at)) = measured {
         if a.startup_impact.as_ref() != Some(&m) || a.startup_impact_at != at {
             queue_from(&a, &m, at);
+            // Keep a copy before the next launch overwrites the file in the save folder. The
+            // mod writes one session and overwrites it every time, so this is the only place a
+            // past measurement can come from -- and "is this list slower than the last one"
+            // needs two of them.
+            let dir = a.startup_history_dir();
+            if let Err(e) = circinus_core::startupimpact::keep(&dir, &m, at, crate::state::STARTUP_HISTORY) {
+                tracing::warn!("could not keep a copy of the start-up report: {e}");
+            }
             a.startup_impact = Some(m);
             a.startup_impact_at = at;
             changed = true;

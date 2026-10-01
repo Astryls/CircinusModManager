@@ -73,17 +73,12 @@
    * people's machines: useful for ranking one mod against another on its own page, worthless
    * as a claim about how long YOUR game takes to start, and putting them in a card headed with
    * this machine's name would be passing somebody else's measurement off as yours. */
-  const kind = $derived.by<"measured" | "lastrun" | "log" | "modelled">(() => {
-    if (impact) return store.loadRunMatchesList ? "measured" : "lastrun";
-    if (run && store.loadRunMatchesList) return "log";
-    return "modelled";
+  const kind = $derived.by<"measured" | "lastrun" | "none">(() => {
+    if (!impact) return "none";
+    return store.loadRunMatchesList ? "measured" : "lastrun";
   });
-  const loadSecs = $derived.by(() => {
-    // What Loading Progress recorded, whether or not the list has changed since.
-    if (impact) return impact.totalMs / 1000;
-    if (kind === "log" && run) return run.totalSecs;
-    return store.loadEstimateSeconds;
-  });
+  /** Seconds, or null when nothing has measured one. Null is a real state here, not a zero. */
+  const loadSecs = $derived(impact ? impact.totalMs / 1000 : null);
   /** Minutes and seconds past a minute: "7m 43s" reads; "462.99 s" does not. */
   const clock = (secs: number) => (secs >= 60 ? `${Math.floor(secs / 60)}m ${Math.round(secs % 60)}s` : `${Math.round(secs)}s`);
   const ago = (at: number) => {
@@ -93,38 +88,29 @@
   };
   /** `n` is already the uid-to-name helper in this file, so the number formatter is `num`. */
   const num = (x: number) => x.toLocaleString();
+  /** The previous kept report, for "and the one before that". */
+  const prev = $derived(store.startupHistory[1] ?? null);
   const loadCap = $derived.by(() => {
     if (kind === "measured") return `Measured ${ago(store.startupImpactAt)} by Loading Progress, every mod in this list`;
     // Still a measurement, and the caption says what of: the last start-up, not this list.
     if (kind === "lastrun") return `Your last start-up, ${ago(store.startupImpactAt)}, measured by Loading Progress. Your list has changed since`;
-    if (kind === "log" && run) return `Measured ${ago(store.loadRunAt)}, from ${run.source}`;
-    if (run) return `Measured ${ago(store.loadRunAt)} with ${num(run.mods ?? 0)} mods, not the ${num(store.active.length)} active now`;
-    return `Estimated: ${clock(store.vanillaSeconds)} for the game plus ${clock(store.loadTotalSeconds)} for your mods`;
+    return "Not measured. Loading Progress has not written a report";
   });
   const loadTip = $derived.by(() => {
     const click = "\n\nClick to show the mods slowest to load.";
-    const split = `${clock(store.vanillaSeconds)} for RimWorld itself and ${clock(store.loadTotalSeconds)} for the ${num(store.active.length)} active mods.`;
+    const since = prev ? `\n\nThe report before it, ${ago(prev.at)}, was ${clock(prev.totalMs / 1000)} over ${num(prev.mods)} mods. Circinus keeps the last ${num(store.startupHistory.length)}.` : "";
     if (kind === "measured" && impact) {
-      return `${clock(impact.totalMs / 1000)} the last time the game started, ${ago(store.startupImpactAt)}.\n\nEvery mod in this list was timed individually by Loading Progress, by ilyvion. Circinus read the figures it wrote and did not time anything itself; the measuring is entirely that mod's work, and this card would have nothing to show without it.\n\n${split}${click}`;
+      return `${clock(impact.totalMs / 1000)} the last time the game started, ${ago(store.startupImpactAt)}.\n\nEvery mod in this list was timed individually by Loading Progress, by ilyvion. Circinus read the figures it wrote and did not time anything itself; the measuring is entirely that mod's work, and this card would have nothing to show without it.${since}${click}`;
     }
     if (kind === "lastrun" && impact) {
-      const k = store.loadCalibration;
-      const est = `For the list you have now, Circinus estimates ${clock(store.loadEstimateSeconds)}: ${num(store.measuredCount)} of your ${num(store.active.length)} active mods were timed in that run and contribute what they cost, and the rest come from Circinus's own model${k != null ? `, scaled by ${k.toFixed(2)}x -- how far the model was out on the mods where both numbers are known` : ""}.`;
-      return `${clock(impact.totalMs / 1000)} the last time the game started, ${ago(store.startupImpactAt)}, timed by Loading Progress, by ilyvion.\n\nThat is what the start-up took, not what this list would take: ${num(impact.mods.length)} mods were loaded then and ${num(store.active.length)} are active now. Launch again and the figure will describe the list you have.\n\n${est}${click}`;
+      return `${clock(impact.totalMs / 1000)} the last time the game started, ${ago(store.startupImpactAt)}, timed by Loading Progress, by ilyvion.\n\nThat is what the start-up took, not what this list would take: ${num(impact.mods.length)} mods were loaded then and ${num(store.active.length)} are active now. Launch again and the figure will describe the list you have.${since}${click}`;
     }
-    const est = `Circinus estimates ${clock(store.loadEstimateSeconds)}: ${split} That second figure is a ranking model, not a stopwatch.`;
-    if (kind === "log" && run) {
-      return `${clock(run.totalSecs)} the last time the game loaded, ${ago(store.loadRunAt)}.\n\nMeasured by ${run.source} and read out of the game's log; Circinus did not time it.\n\nFor a figure per mod rather than one for the whole start, install Loading Progress by ilyvion and switch on "Track startup loading impact" and then "Auto-save startup impact report" in its settings. Both are off out of the box.\n\n${est}${click}`;
-    }
-    if (run) {
-      return `${clock(run.totalSecs)} the last time the game loaded, ${ago(store.loadRunAt)}.\n\nThat run had ${num(run.mods ?? 0)} mods and you have ${num(store.active.length)} active now, so it describes a different list.\n\n${est}${click}`;
-    }
-    return `No load has been measured yet.\n\n${est}\n\nRimWorld's own log carries no timings. A figure appears here when a mod that reports one is installed -- Prepatcher, or a def-cache mod. For a figure per mod, install Loading Progress by ilyvion and switch on both "Track startup loading impact" and "Auto-save startup impact report" in its settings; they are off out of the box.${click}`;
+    return `Nothing has measured your start-up.\n\nThis card shows one thing: what the Loading Progress mod, by ilyvion, recorded. Circinus does not time loading and will not put a guess here -- a modelled figure in this spot is the sort of number people quote back as a fact.\n\nTo fill it in: install Loading Progress, then switch on both "Track startup loading impact" and "Auto-save startup impact report" in its settings. Both are off out of the box. Start the game once and the figure appears.`;
   });
   // Nothing about seconds is a percentage, so the meter needs a scale invented for it. Ten
   // minutes is the top: past that the bar is full and the number is the thing being read anyway.
-  const loadPct = $derived(Math.min(100, (loadSecs / 600) * 100));
-  const loadColor = $derived(loadSecs < 120 ? "green" : loadSecs < 360 ? "amber" : "red");
+  const loadPct = $derived(loadSecs == null ? 0 : Math.min(100, (loadSecs / 600) * 100));
+  const loadColor = $derived(loadSecs == null ? "slate" : loadSecs < 120 ? "green" : loadSecs < 360 ? "amber" : "red");
 
   function narrow(what: ShowOnly) {
     store.view = "order";
@@ -167,7 +153,7 @@
     <div class="cap">{#if s.collisions}<span class="flag">{@html I.note}</span>{/if}<span class="t">{s.collisions ? `${s.collidingMods} mods replace the same files. The later mod wins.${store.snap?.issuesTruncated ? ` Only the first ${s.collisions.toLocaleString()} are listed.` : ""}` : "No texture is replaced by two mods"}</span></div>
   </button>
   <button class="card stat" class:on={store.showOnly === "slow"} title={loadTip} onclick={() => narrow("slow")}>
-    <div class="l"><span>Load time</span><span class="v num" class:att={loadSecs >= 120} class:neg={loadSecs >= 360}>{clock(loadSecs)}</span></div>
+    <div class="l"><span>Load time</span><span class="v num" class:att={loadSecs != null && loadSecs >= 120} class:neg={loadSecs != null && loadSecs >= 360} class:none={loadSecs == null}>{loadSecs == null ? "\u2014" : clock(loadSecs)}</span></div>
     <div class="meter" style="--c: var(--{loadColor}); --v:{loadPct}%"><i></i></div>
     <div class="cap">{#if kind !== "measured"}<span class="flag">{@html I.note}</span>{/if}<span class="t">{loadCap}</span></div>
   </button>
@@ -208,6 +194,9 @@
   .stat .l { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; }
   .stat .l span:first-child { font-weight: 600; font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
   .stat .v { font-weight: 800; font-size: 17px; letter-spacing: -0.02em; white-space: nowrap; margin-left: auto; }
+  /* Nothing measured. The dash takes the weight of the figure it stands in for, so the card
+     keeps its shape, but in the ink of an absence rather than of a reading. */
+  .stat .v.none { color: var(--text-4); }
 
   .stat .meter { margin: 8px 0 7px; }
   .stat .cap { font-size: 12px; color: var(--text-3); display: flex; align-items: flex-start; gap: 6px; min-height: 34px; line-height: 1.4; }

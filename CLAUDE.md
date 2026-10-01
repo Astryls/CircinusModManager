@@ -130,6 +130,19 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   card falls back to it *with a caption that says so*. It is simply never again printed in a
   column, because a model and a reading set in the same digits cannot be told apart by a
   reader, and the hedge that was supposed to do it lived in a tooltip nobody opens.
+  **`read_local_runs` reads one documented array and nothing else**, and the reason is a
+  lesson about flexible parsers. It used to walk the whole run document for any object with a
+  `packageId` and ask a fuzzy helper for a share. On a real install that matched the `mods[]`
+  *inventory* -- a thousand entries of name, source and load order, no costs in them -- and on
+  a `modCosts` row the helper matched **`sharedMs`**, a milliseconds field that is 0 for most
+  mods, and read it as a percent. Meanwhile `totalMs`, the actual cost, was not in the list of
+  keys it would accept. So Yours filled with 0.0 %, and the flexibility is exactly what hid it:
+  a reader that always finds *something* never fails loudly enough to be noticed. It now takes
+  `modCosts[].totalMs / env.profilerWindowMs * 100`, skips runs where `env.profilingActive` is
+  false (the document's own notes say that is "'no data', never 'zero cost'") and runs that
+  ended in a crash, and `share_deep` refuses any key ending in `Ms`/`_ms`/`seconds` so the
+  same trap cannot catch the API parser. A share that would round to 0.0 % prints `<0.1 %`,
+  because most measured mods land there and a column of zeros reads as "these are all free".
   Typical and Yours are the same quantity in two places, which is the only reason to put two
   frame columns side by side: the gap between them is about this install. That comparison was
   impossible until `merge_local_weights` stopped *choosing* — it used to insert a local row
@@ -469,6 +482,20 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   text smear when an OLED panel scrolls, and `#ece7de` is already 17.05:1 there, more than the
   normal dark set has. The group hues are untouched and every one of them *gains* contrast on the
   darker ground, so the three rules they were solved for still hold.
+- **The palette is editable, and the way out of it cannot fail.** `lib/palette.svelte.ts`
+  writes an override as an inline custom property on `<html>` and nothing else, so clearing
+  one is `removeProperty` -- the token goes back to the stylesheet that defined it. There is no
+  stored "default" to be missing or corrupted, which is what makes Reset unable to fail; it
+  reads nothing the user set. Sets are per paper, since a colour chosen against `#131210` is
+  wrong against `#e4e1d9`, and the `-soft` tints follow their accent rather than being
+  exposed. **Legibility is checked before anything is applied, on load as well as on edit**: a
+  stored palette that leaves `--text` under 3:1 on `--bg` or `--surface` is dropped and the
+  shipped paper comes back, because otherwise a bad save returns on every launch and the
+  Settings page holding the Reset button is itself unreadable.
+  The Reset button is **drawn in literal hex, deliberately**, and is the one exception to the
+  rule below it. Its job is to be found when the tokens have been made unusable, and a button
+  in `--surface` on `--text` is invisible exactly then. `palette.cjs` asserts it borrows no
+  palette colour, so nobody tidies it into tokens.
 - **Every corner is 0, written literally, and there are no radius tokens.** The four that used to
   exist were all 0 and the rounding had drifted back in as literals anyway: eight different px
   values across twenty-five files, so a button was square in one panel and rounded in the next.
@@ -500,7 +527,21 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   None of this is colourblind-safe and no seven-hue set is — under deuteranopia the worst pair
   collapses to about 4 ΔE. It is acceptable only because the group name is always printed beside
   its dot. **A dot without its name is the bug**, not the palette.
-- **The load-time card has three kinds of number, and must always say which.** A per-mod
+- **The load-time card holds one kind of number: what Loading Progress measured.** No log
+  total, no model, no pooled median, and when there is no measurement it shows an em dash and
+  says so. It used to fall back to `VANILLA_SECS` plus the folder model summed over the list,
+  captioned "Estimated:" -- which on a real 1,078-mod install read **6m 39s**, a figure nobody
+  had ever observed. A caption under a number set in 17px bold does not stop anyone quoting
+  it, and this is the card people quote. The tooltip now names the mod and both of the
+  settings that are off out of the box, because "nothing measured this" is only useful next to
+  what to do about it.
+  The file the mod writes holds one session and is overwritten every launch, so
+  `startupimpact::keep` copies each new report into `<data>/startup/<instance>/<unix>-startup.json`
+  and prunes to `STARTUP_HISTORY` (5). Same shape as `modsconfig::archive`, for the same
+  reasons: the timestamp is in the file name because `StartupImpact` carries no date at all, a
+  duplicate of the newest is never written, and it is per instance because two instances are
+  two lists and comparing across them would call the difference a regression.
+- **How the three kinds of number used to work, and where they live now.** A per-mod
   measurement from `ilyvion.LoadingProgress` (`StartupImpactData.xml`, beside Player.log in the
   save-data folder); the game's own log, which gives a total and no breakdown; and
   `loadcost::score`, the model. They are worth different amounts and the caption is where that
@@ -652,6 +693,27 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   is somebody's working copy. `State::is_updatable` is the one place that decides what may be
   checked or force-updated, and it is Workshop and SteamCmd only; `workshop_ids` used to say
   that in its comment while returning every mod with an id.
+- **Where a download goes is decided when it is queued** (reported as #3). The destination
+  used to be worked out at the end, from the id: if any installed Workshop mod had that id, it
+  went to Steam's folder. That is wrong the moment a mod exists twice, which is what *Keep my
+  own copy* creates on purpose -- a copy in `Mods/<id>` and a live subscription sharing one
+  id. Both pass `is_updatable`, both get a Force update button, both sent the same bare
+  number, and by the time the download finished nothing could tell them apart: every press
+  replaced Steam's copy, the kept copy stayed behind, and the rescan put it straight back on
+  the update list. `QueueItem::dest` carries the answer from the button, where it was never in
+  doubt -- every call site has the `ModInfo` in hand -- and `downloads_add_for` takes **uids**,
+  because a uid names a copy and a workshop id does not. `Dest::Unsaid` is what an item queued
+  by an older build deserialises to (`#[serde(default)]`, load-bearing: the queue is JSON in
+  the cache read back through `.ok().flatten()`, so a missing field would silently empty
+  somebody's queue), and only that case still guesses from the id.
+  `a_failed_replacement_puts_steams_copy_back` now tests what its name says. It did not: with
+  no download to move in, `replace_workshop_copy` returned at its first guard and never
+  reached the park-aside or the restore, so the one path that protects a subscribed mod from a
+  half-done update had no cover. Reaching it needs both of `move_dir`'s attempts to fail --
+  the download goes on `/dev/shm` so `rename` is `EXDEV`, and holds a dangling symlink so the
+  copy fallback fails too. Not a permission trick, because tests run as root often enough that
+  one would pass without executing anything; and not a FIFO, which was the first idea and
+  hangs, because `std::fs::copy` blocks opening it.
 - **A moved item must leave the workshop ACF, and `forget(&ids)` was not enough** (reported as
   #1). SteamCMD builds a download out of chunks it believes are on disk, so an item still listed
   as installed whose folder has moved makes a *later* download that shares a file with it fail

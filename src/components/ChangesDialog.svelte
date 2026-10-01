@@ -119,7 +119,7 @@
                 </span>
                 <span class="acts">
                   {#if c.publishedFileId}<button class="ib" title="Workshop changelog" onclick={() => changelog(c)}>{@html I.link}</button>{/if}
-                  {#if c.kind !== "removed" && c.publishedFileId && (c.source === "workshop" || c.source === "steamcmd")}<button class="ib" title="Re-download with SteamCMD" onclick={() => store.queueIds([c.publishedFileId!])}>{@html I.download}</button>{/if}
+                  {#if c.kind !== "removed" && c.publishedFileId && (c.source === "workshop" || c.source === "steamcmd")}<button class="ib" title="Re-download with SteamCMD" onclick={() => store.queueMods([c.uid])}>{@html I.download}</button>{/if}
                   {#if c.kind !== "removed"}<button class="btn sm" onclick={() => show(c)}>Show</button>{/if}
                 </span>
               </div>
@@ -135,7 +135,7 @@
 
     <div class="ft">
       <span class="sp"></span>
-      {#if redownloadable.length > 1}<button class="btn" title="Only the {redownloadable.length} the last Workshop check found out of date. Steam may have installed the others already." onclick={() => store.queueIds(redownloadable.map((c) => c.publishedFileId!))}>{@html I.download}Update all {redownloadable.length}</button>{/if}
+      {#if redownloadable.length > 1}<button class="btn" title="Only the {redownloadable.length} the last Workshop check found out of date. Steam may have installed the others already." onclick={() => store.queueMods(redownloadable.map((c) => c.uid))}>{@html I.download}Update all {redownloadable.length}</button>{/if}
       <button class="btn primary" onclick={() => store.acknowledgeChanges()}>{@html I.check}Got it, clear the list</button>
     </div>
   </div>

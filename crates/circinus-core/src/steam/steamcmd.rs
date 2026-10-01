@@ -643,10 +643,45 @@ pub enum ItemStatus {
     Cancelled,
 }
 
+/// Which copy of a mod a download is meant to replace.
+///
+/// **Decided when the item is queued, not when it finishes.** The destination used to be worked
+/// out at the end, from the id alone: if any installed Workshop mod had that id, the download
+/// went to Steam's folder. That is wrong the moment a mod exists twice, which is exactly what
+/// "Keep my own copy" creates -- a copy in `Mods/<id>` *and* a live subscription with the same
+/// id. Force update on the kept copy then replaced Steam's copy instead, the kept copy stayed
+/// at its old version, the rescan found it still behind, and it sat on the update list for
+/// ever being "updated" into the wrong folder. The two Force update buttons were
+/// indistinguishable by the time the decision was made.
+///
+/// The caller always knows which copy the user pressed: every entry point has the `ModInfo`
+/// in hand. This is that knowledge, carried along instead of thrown away and guessed at.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Dest {
+    /// Steam's own workshop folder: replace the subscribed copy where Steam keeps it.
+    Workshop,
+    /// The game's Mods folder, at `Mods/<id>`. New downloads and kept copies both land here.
+    Mods,
+    /// Not stated. What an item queued by an older build looks like, and the only case that
+    /// still falls back to reading the installed list at completion time -- which is why it
+    /// is the default: an upgrade must change nothing about a queue already on disk.
+    #[default]
+    Unsaid,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QueueItem {
     pub id: u64,
+    /// Where this download is to be put. See `Dest`.
+    ///
+    /// `#[serde(default)]` is load-bearing: the queue is persisted as JSON in the cache and is
+    /// read back with `.ok().flatten()`, so a field an old row lacks would fail the whole parse
+    /// and silently empty somebody's queue on upgrade. The default is `Unsaid`, which behaves
+    /// exactly as this build's predecessor did.
+    #[serde(default)]
+    pub dest: Dest,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     pub status: ItemStatus,
@@ -683,9 +718,10 @@ pub struct QueueState {
 impl QueueState {
     /// Add ids; an id already queued or downloading is left alone, a finished or failed one is
     /// re-queued.
-    pub fn add(&mut self, ids: &[u64], names: &HashMap<u64, String>, now: i64) -> usize {
+    pub fn add(&mut self, ids: &[u64], names: &HashMap<u64, String>, dests: &HashMap<u64, Dest>, now: i64) -> usize {
         let mut added = 0;
         for id in ids {
+            let dest = dests.get(id).copied().unwrap_or_default();
             match self.items.iter_mut().find(|i| i.id == *id) {
                 Some(existing) => {
                     if matches!(existing.status, ItemStatus::Done | ItemStatus::Failed | ItemStatus::Cancelled) {
@@ -695,12 +731,19 @@ impl QueueState {
                         existing.finished_at = None;
                         added += 1;
                     }
+                    // The destination is overwritten, not kept. A second Force update is a new
+                    // decision about where this mod goes, and both copies of a localized mod
+                    // share an id -- so a stale destination here would send the second press
+                    // wherever the first one went.
+                    if dest != Dest::Unsaid {
+                        existing.dest = dest;
+                    }
                     if existing.name.is_none() {
                         existing.name = names.get(id).cloned();
                     }
                 }
                 None => {
-                    self.items.push(QueueItem { id: *id, name: names.get(id).cloned(), status: ItemStatus::Queued, attempts: 0, error: None, bytes: None, path: None, added_at: now, finished_at: None });
+                    self.items.push(QueueItem { id: *id, dest, name: names.get(id).cloned(), status: ItemStatus::Queued, attempts: 0, error: None, bytes: None, path: None, added_at: now, finished_at: None });
                     added += 1;
                 }
             }
@@ -912,19 +955,124 @@ mod tests {
         assert!(old.join("old.txt").is_file(), "and Steam's copy is exactly as it was");
     }
 
-    /// A failure must cost the player nothing. The old copy is moved aside rather than deleted,
-    /// so a mod they are still subscribed to cannot be uninstalled by a half-done update.
+    /// A missing download is refused before anything is touched.
+    ///
+    /// This used to be called `a_failed_replacement_puts_steams_copy_back` and did not test
+    /// that: with no download to move in, `replace_workshop_copy` returns at its first guard
+    /// and never reaches the park-aside or the restore. It was a duplicate of this assertion
+    /// wearing the name of the one below, so the restore path had no cover at all.
     #[test]
-    fn a_failed_replacement_puts_steams_copy_back() {
+    fn a_missing_download_is_refused_before_anything_moves() {
         let (tmp, cmd) = lab("prefix");
         let ws = tmp.path().join("library/steamapps/workshop/content/294100");
         let old = ws.join("2009463077");
         std::fs::create_dir_all(&old).unwrap();
         std::fs::write(old.join("old.txt"), "the version Steam installed").unwrap();
-        // No download to move in: `replace_workshop_copy` refuses before touching anything.
         let err = cmd.replace_workshop_copy(2009463077, &ws).unwrap_err();
         assert!(err.to_string().contains("missing"), "{err}");
         assert!(old.join("old.txt").is_file(), "Steam's copy is untouched");
+    }
+
+    /// A failure must cost the player nothing. The old copy is moved aside rather than deleted,
+    /// so a mod they are still subscribed to cannot be uninstalled by a half-done update.
+    ///
+    /// Reaching the restore means getting past the pre-flight guard and then failing the move,
+    /// and `move_dir` tries twice: `rename`, then a copy. Both have to fail, and neither can be
+    /// made to fail with permissions, because tests run as root often enough that a
+    /// permission trick is a test that quietly passes without executing anything.
+    ///
+    /// So: the download is put on a different filesystem from Steam's folder, which makes
+    /// `rename` fail with `EXDEV` whoever is running; and it holds a symlink pointing at
+    /// nothing, which `std::fs::copy` fails on because it follows the link. The failure is
+    /// real, it is the production code path, and it does not depend on who runs the test.
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_replacement_puts_steams_copy_back() {
+        // `/dev/shm` is tmpfs and the temp dir is not, so a rename between them is EXDEV.
+        // Without a second filesystem there is no way to fail a rename, so the test says so
+        // out loud rather than passing on an assertion it never reached.
+        let shm = std::path::Path::new("/dev/shm");
+        if !shm.is_dir() {
+            eprintln!("skipped: no second filesystem to force a cross-device rename");
+            return;
+        }
+        let other = shm.join(format!("circinus-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&other);
+        let cmd = SteamCmd::new(other.join("prefix"));
+        std::fs::create_dir_all(cmd.downloads_dir()).unwrap();
+        std::fs::create_dir_all(cmd.acf_path().parent().unwrap()).unwrap();
+
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = tmp.path().join("library/steamapps/workshop/content/294100");
+        let old = ws.join("2009463077");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("old.txt"), "the version Steam installed").unwrap();
+
+        // A download that exists, so the pre-flight guard passes, and that cannot be copied.
+        let src = cmd.downloads_dir().join("2009463077");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("new.txt"), "the version SteamCMD fetched").unwrap();
+        // A symlink pointing at nothing. `copy_dir` sees a non-directory and calls
+        // `std::fs::copy`, which follows the link and fails because there is nothing there.
+        //
+        // A FIFO was the first idea and is worse than wrong: `std::fs::copy` *opens* the
+        // source, and opening a FIFO for reading blocks until somebody writes to it, so the
+        // test hung instead of failing. A dangling link fails immediately and needs no
+        // dependency the crate does not already have.
+        std::os::unix::fs::symlink("nowhere-at-all", src.join("dangling")).unwrap();
+
+        let out = cmd.replace_workshop_copy(2009463077, &ws);
+        let _ = std::fs::remove_dir_all(&other);
+
+        assert!(out.is_err(), "the move should have failed: a cross-device rename of a folder holding a FIFO");
+        assert!(old.join("old.txt").is_file(), "Steam's copy was not put back after a failed update");
+        assert_eq!(std::fs::read_to_string(old.join("old.txt")).unwrap(), "the version Steam installed", "Steam's copy came back changed");
+        // And nothing was left parked where a later scan would find it as a second mod.
+        assert!(!cmd.root.join("replaced").join("2009463077.{}").exists());
+    }
+
+    /// **Where a download goes is decided when it is queued, not when it finishes** (#3).
+    ///
+    /// "Keep my own copy" leaves the Steam subscription in place, so a localized mod is
+    /// installed twice under one workshop id. Deciding the destination at the end, from the
+    /// id, cannot tell those two apart: it saw the subscription and sent every Force update to
+    /// Steam's folder, so the kept copy the user pressed was never touched and stayed on the
+    /// update list for ever.
+    ///
+    /// The three cases are written out rather than asserted as "a dest is stored", because the
+    /// third one -- an item queued by a build that had no such field -- is the one that has to
+    /// keep behaving exactly as before, and it is the one a careless default would break.
+    #[test]
+    fn a_queued_item_remembers_which_copy_it_is_for() {
+        let now = 1_700_000_000;
+        let names = HashMap::new();
+        let mut q = QueueState::default();
+
+        let mut dests = HashMap::new();
+        dests.insert(2009463077u64, Dest::Mods);
+        dests.insert(818773962u64, Dest::Workshop);
+        q.add(&[2009463077, 818773962, 294100], &names, &dests, now);
+
+        let of = |q: &QueueState, id: u64| q.items.iter().find(|i| i.id == id).unwrap().dest;
+        assert_eq!(of(&q, 2009463077), Dest::Mods, "the kept copy's update was not marked for Mods");
+        assert_eq!(of(&q, 818773962), Dest::Workshop);
+        // Queued without one: nothing is claimed, and the old id-based guess still applies.
+        assert_eq!(of(&q, 294100), Dest::Unsaid);
+
+        // Re-queueing the other copy of the same mod is a new decision, and must overwrite.
+        // Both copies share this id, so a destination kept from the first press would send the
+        // second one to the wrong folder -- which is the bug, one step later.
+        q.items[0].status = ItemStatus::Done;
+        let mut again = HashMap::new();
+        again.insert(2009463077u64, Dest::Workshop);
+        q.add(&[2009463077], &names, &again, now + 1);
+        assert_eq!(of(&q, 2009463077), Dest::Workshop, "a second Force update kept the first one's destination");
+
+        // And an item written by an older build, which has no `dest` key at all, must load
+        // rather than fail: the queue is persisted as JSON and a parse failure empties it.
+        let old_row = r#"{"id":1,"status":"queued","attempts":0,"addedAt":1}"#;
+        let item: QueueItem = serde_json::from_str(old_row).expect("an item from an older build no longer loads");
+        assert_eq!(item.dest, Dest::Unsaid);
     }
 
     /// A folder parked inside content/ would be scanned as a mod, and RimWorld would see the
@@ -992,8 +1140,8 @@ mod tests {
         let mut q = QueueState::default();
         let mut names = HashMap::new();
         names.insert(1u64, "One".to_string());
-        assert_eq!(q.add(&[1, 2, 3], &names, 10), 3);
-        assert_eq!(q.add(&[1], &names, 11), 0);
+        assert_eq!(q.add(&[1, 2, 3], &names, &HashMap::new(), 10), 3);
+        assert_eq!(q.add(&[1], &names, &HashMap::new(), 11), 0);
         assert_eq!(q.next_batch(), vec![(1, false), (2, false), (3, false)]);
         let mut results = HashMap::new();
         results.insert(1, ItemResult::Ok { path: PathBuf::from("/x/1"), bytes: 10 });

@@ -184,7 +184,7 @@
       >{@html I.save}Keep my own copy{localizable.length > 1 ? ` (${localizable.length})` : ""}</button>
     {/if}
     {#if redownloadable.length}
-      <button class="it" role="menuitem" title="Fetches a fresh copy from the Workshop with SteamCMD, into {forceDest}." onclick={() => run(() => store.queueIds(redownloadable.map((x) => x.publishedFileId!)))}>{@html I.download}Force update{redownloadable.length > 1 ? ` (${redownloadable.length})` : ""}</button>
+      <button class="it" role="menuitem" title="Fetches a fresh copy from the Workshop with SteamCMD, into {forceDest}." onclick={() => run(() => store.queueMods(redownloadable.map((x) => x.uid)))}>{@html I.download}Force update{redownloadable.length > 1 ? ` (${redownloadable.length})` : ""}</button>
     {/if}
     {#if workshopOnly && subscribed.length}
       {#if confirmUnsub}

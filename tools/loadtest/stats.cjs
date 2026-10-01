@@ -98,26 +98,37 @@ const cards = (page) =>
   ok('and never cites circinus.sh', !/circinus\.sh/i.test(part.cap), part.cap);
   await page.locator('.strip').screenshot({ path: `${OUT}/stats-lastrun.png` });
 
-  // ---- the log alone: a real total, and nobody pretending it was ours -------------------------
+  // ---- nothing measured: the card says so and shows no number --------------------------------
+  //
+  // This card used to print an estimate here -- `VANILLA_SECS` plus the folder model, summed
+  // over the list and set in 17px bold with "Estimated:" under it. On a real 1,078-mod install
+  // that read "6m 39s", a figure nobody had ever observed, and the caption under a number that
+  // large does not stop anybody quoting it. The card now holds one kind of number, from one
+  // source, and when that source has said nothing the card says nothing.
+  await page.goto(`${BASE}/?noload&noimpact`, { waitUntil: 'load' });
+  await page.waitForSelector('.stats .stat', { timeout: 15000 });
+  await page.waitForTimeout(500);
+  const none = (await cards(page)).find((x) => x.title === 'Load time');
+  ok('with nothing measured the card shows a dash', none?.value === '\u2014', JSON.stringify(none?.value));
+  ok('and no digit anywhere in it', !/\d/.test(`${none?.value} ${none?.cap}`), `${none?.value} / ${none?.cap}`);
+  ok('and never says "estimated"', !/estimat/i.test(none?.cap ?? ''), none?.cap);
+  ok('it says plainly that nothing measured it', /Not measured/i.test(none?.cap ?? ''), none?.cap);
+  // The point of saying so is that there is something to do about it.
+  const noneTip = await page.evaluate(() => [...document.querySelectorAll('.stats .stat')].find((c) => /Load time/.test(c.textContent))?.getAttribute('title') ?? '');
+  ok('and the tooltip names the mod and both of its settings', /Loading Progress/.test(noneTip) && /Track startup loading impact/.test(noneTip) && /Auto-save startup impact report/.test(noneTip), noneTip.slice(0, 90));
+  ok('and promises no guess', !/estimat/i.test(noneTip) || /will not put a guess/.test(noneTip), noneTip.slice(0, 90));
+  await page.locator('.strip').screenshot({ path: `${OUT}/stats-nothing.png` });
+
+  // ---- the log alone is no longer enough -----------------------------------------------------
+  // A Player.log total is a real measurement of a real start-up, but it is not per mod and it
+  // is not what this card is for. It stays on the Load times page; here it would be a second
+  // kind of number in a card whose whole rule is that it holds one.
   await page.goto(`${BASE}/?noimpact`, { waitUntil: 'load' });
   await page.waitForSelector('.stats .stat', { timeout: 15000 });
   await page.waitForTimeout(500);
   const logged = (await cards(page)).find((x) => x.title === 'Load time');
-  ok('with only the log there is still a figure', !!logged && !!logged.value, logged?.value ?? 'none');
-  ok('the log case says it was measured', /Measured/i.test(logged.cap), logged.cap);
-  ok('and names who measured it', /DefLoadCache/.test(logged.cap), logged.cap);
+  ok('a log figure alone leaves the card empty', logged?.value === '\u2014', JSON.stringify(logged?.value));
   await page.locator('.strip').screenshot({ path: `${OUT}/stats-measured.png` });
-
-  // ---- nothing measured at all ---------------------------------------------------------------
-  await page.goto(`${BASE}/?noload&noimpact`, { waitUntil: 'load' });
-  await page.waitForSelector('.stats .stat', { timeout: 15000 });
-  await page.waitForTimeout(500);
-  const est = (await cards(page)).find((x) => x.title === 'Load time');
-  ok('with no measurement there is still a figure', !!est && !!est.value, est?.value ?? 'none');
-  ok('and the caption calls it an estimate', /Estimated/i.test(est.cap), est.cap);
-  ok('which is a different number from the measured one', est.value !== logged.value, `${est.value} vs ${logged.value}`);
-  // Mods alone would read absurdly low, so the game's own load is in it.
-  ok('and it includes the game itself, not only the mods', /for the game/.test(est.cap), est.cap);
   await page.locator('.strip').screenshot({ path: `${OUT}/stats-estimated.png` });
 
   // ---- geometry, swept ---------------------------------------------------------------------------

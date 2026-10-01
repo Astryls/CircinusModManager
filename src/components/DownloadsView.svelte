@@ -94,7 +94,7 @@
       {/if}
       <button class="btn sm" onclick={() => store.checkUpdates()}>{@html I.refresh}Check Workshop for updates</button>
       {#if updates.length}
-        <button class="btn sm" title="A mod you are subscribed to is replaced in Steam's own folder; one Circinus downloaded is replaced in Mods. The list is pruned on every rescan, so a mod Steam has already updated is not in it." onclick={() => store.queueIds(updates.map((u) => u.publishedFileId))}>Update {updates.length} mod{updates.length === 1 ? "" : "s"}</button>
+        <button class="btn sm" title="A mod you are subscribed to is replaced in Steam's own folder; one Circinus downloaded is replaced in Mods. The list is pruned on every rescan, so a mod Steam has already updated is not in it." onclick={() => store.queueMods(updates.map((u) => u.uid))}>Update {updates.length} mod{updates.length === 1 ? "" : "s"}</button>
       {/if}
     </div>
   </section>
@@ -106,7 +106,7 @@
         {#each updates.slice(0, 100) as u (u.uid)}
           <div class="it upd">
             <span class="nm"><b>{u.name}</b><span>on disk {when(u.localModified)} · Workshop {when(u.remoteUpdated)}{u.source === "workshop" ? " · Steam updates this one itself; Circinus would replace Steam's copy in place" : " · Circinus downloaded this one, and would replace it in Mods"}</span></span>
-            <button class="btn sm" onclick={() => store.queueIds([u.publishedFileId])}>Force update</button>
+            <button class="btn sm" onclick={() => store.queueMods([u.uid])}>Force update</button>
           </div>
         {/each}
       </div>

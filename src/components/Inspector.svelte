@@ -153,7 +153,7 @@
         {#if update}<div class="chg"><span class="flag note">{@html I.up}</span><span>Workshop version from {new Date(update.remoteUpdated * 1000).toLocaleDateString()}; yours is from {new Date(update.localModified * 1000).toLocaleDateString()}.{update.source === "workshop" ? " Steam updates it when the game next starts." : ""}</span></div>{/if}
         <div class="acts two">
           {#if m.publishedFileId}<button class="btn" onclick={() => openUrl(`https://steamcommunity.com/sharedfiles/filedetails/changelog/${m.publishedFileId}`)}>Changelog</button>{/if}
-          {#if canRedownload}<button class="btn" title={m.source === "workshop" ? "Replaces Steam's own copy where it already lives" : "Replaces the copy in your Mods folder"} onclick={() => store.queueIds([m.publishedFileId!])}>{@html I.download}Force update</button>{/if}
+          {#if canRedownload}<button class="btn" title={m.source === "workshop" ? "Replaces Steam's own copy where it already lives" : "Replaces this copy, in your Mods folder"} onclick={() => store.queueMods([m.uid])}>{@html I.download}Force update</button>{/if}
         </div>
       </section>
     {/if}
@@ -298,7 +298,7 @@
       <div class="acts">
         <button class="btn" title={m.linkTarget ? "Opens the folder the link points at, where the files are" : "Opens the mod's own folder in your file manager"} onclick={() => store.openFolder(m.linkTarget ?? m.path)}>{@html I.folder}Open folder</button>
         <button class="btn" disabled={!workshopUrl()} onclick={() => openUrl(workshopUrl()!)}>Workshop page</button>
-        {#if canRedownload && !change && !update}<button class="btn" title={m.source === "workshop" ? "Fetch a fresh copy from the Workshop with SteamCMD, replacing Steam's own copy where it already lives" : "Fetch a fresh copy from the Workshop with SteamCMD, replacing the copy in your Mods folder"} onclick={() => store.queueIds([m.publishedFileId!])}>{@html I.download}Force update</button>{/if}
+        {#if canRedownload && !change && !update}<button class="btn" title={m.source === "workshop" ? "Fetch a fresh copy from the Workshop with SteamCMD, replacing Steam's own copy where it already lives" : "Fetch a fresh copy from the Workshop with SteamCMD, replacing the copy in your Mods folder"} onclick={() => store.queueMods([m.uid])}>{@html I.download}Force update</button>{/if}
         {#if m.contents.textures > 0 && !ddsExcluded && m.source !== "ludeon"}<button class="btn" title="Convert this mod's PNG textures to DDS" disabled={store.tex?.running} onclick={() => store.optimizeTextures([m.uid])}>{@html I.image}Make DDS</button>{/if}
         {#if dds}<button class="btn" title="Delete the DDS files Circinus made for this mod" disabled={store.tex?.running} onclick={() => store.revertTextures([m.uid])}>Remove DDS</button>{/if}
         {#if canUnsubscribe}

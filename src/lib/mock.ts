@@ -473,6 +473,14 @@ function snapshot(): Snapshot {
           patchOps: 14022
         },
     startupImpactAt: Math.floor(Date.now() / 1000) - 3600,
+    // Two kept reports, so "the one before that" is exercised. The older one is slower and
+    // over fewer mods, which is the comparison the history exists to make possible.
+    startupHistory: new URLSearchParams(location.search).has("noimpact")
+      ? []
+      : [
+          { at: Math.floor(Date.now() / 1000) - 3600, mods: MOCK_IMPACT.length, totalMs: 462986, impact: { totalMs: 462986, mods: MOCK_IMPACT, modsLoaded: 44 } },
+          { at: Math.floor(Date.now() / 1000) - 190000, mods: MOCK_IMPACT.length - 4, totalMs: 511204, impact: { totalMs: 511204, mods: MOCK_IMPACT.slice(4), modsLoaded: 40 } }
+        ],
     sharing,
     // Only what is switched on, the way the backend now reports it: a source that is off is not
     // read and does not claim to be loaded. The mock said both were loaded whatever the switches
@@ -1434,6 +1442,7 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
       return (bare ? { ...q, items: [], running: false, currentBatch: [], currentItem: null, steamcmdInstalled: false, log: [] } : q) as T;
     }
     case "downloads_add":
+    case "downloads_add_for":
     case "downloads_add_text":
       return { added: 2, skipped: [[1, "not a RimWorld workshop item"]] } as T;
     case "downloads_add_missing":
