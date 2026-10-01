@@ -220,7 +220,7 @@ affiliated with it.
 
 ## Getting help
 
-The sidebar ends with **Help on Discord**, and Settings has a *Help and about* card with the same link beside circinus.sh: <https://discord.gg/JvsdeBw897>. A mod sorted somewhere odd is worth reporting there with the mod's name and where you expected it instead.
+The sidebar ends with **Help on Discord**, and Settings has a *Help and about* card with the same link beside circinus.sh: <https://discord.gg/Yc7fq5CYmU>. A mod sorted somewhere odd is worth reporting there with the mod's name and where you expected it instead.
 
 ## The list's columns
 

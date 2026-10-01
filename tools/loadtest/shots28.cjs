@@ -113,7 +113,7 @@ async function sweep(p, label) {
 
   // ---- where a player is told to go for help ----
   await open(p, base);
-  const link = 'https://discord.gg/JvsdeBw897';
+  const link = 'https://discord.gg/Yc7fq5CYmU';
   const rail = await p.$('.rail .help');
   ok('the sidebar carries a way to ask for help', !!rail && /discord/i.test((await rail.textContent()) ?? ''), (await rail?.textContent())?.trim());
   await p.evaluate(() => [...document.querySelectorAll('.rail .nav button')].find((e) => /Settings/.test(e.textContent))?.click());

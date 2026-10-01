@@ -814,8 +814,15 @@ export const PHASES: { id: Phase; name: string; color: string; note: string }[] 
   { id: "optimization", name: "Performance", color: "coral", note: "Load last to see everything" }
 ];
 
-/** Where players ask for help and report a mod sorted somewhere odd. */
-export const DISCORD = "https://discord.gg/JvsdeBw897";
+/** Where players ask for help and report a mod sorted somewhere odd.
+ *
+ *  **The only copy of this URL in the window.** An invite code changes -- this is the second
+ *  one -- and the last change had to find four places because the crash screen had pasted the
+ *  link rather than imported it. The crash screen is the one that matters most and the one
+ *  least likely to be checked, since nobody looks at it until something has already gone
+ *  wrong. README.md carries its own copy because markdown cannot import; everything that can
+ *  import, does. */
+export const DISCORD = "https://discord.gg/Yc7fq5CYmU";
 
 export const SOURCE_LABEL: Record<Source, string> = { ludeon: "Ludeon", workshop: "Steam", local: "Local", steamcmd: "SteamCMD", git: "Git" };
 export const SOURCE_GLYPH: Record<Source, string> = { ludeon: "L", workshop: "S", local: "F", steamcmd: "C", git: "G" };

@@ -9,6 +9,10 @@
   // is the worst possible error message: it tells the user nothing and leaves us nothing to read.
   import App from "./App.svelte";
   import { api } from "./lib/api";
+  // The link, not a copy of it. This screen pasted the URL and was still pointing at a dead
+  // invite after the others were updated -- on the one page somebody only ever reads because
+  // something has already gone wrong.
+  import { DISCORD } from "./lib/types";
 
   let copied = $state(false);
   let copyFailed = $state<string | null>(null);
@@ -52,7 +56,7 @@
         </div>
         {#if copyFailed}<p class="note">Could not reach the clipboard: {copyFailed}</p>{/if}
         <p class="note">
-          Copy the diagnostics and paste them into <a href="https://discord.gg/JvsdeBw897" target="_blank" rel="noreferrer">the Discord</a>. They carry the version, your
+          Copy the diagnostics and paste them into <a href={DISCORD} target="_blank" rel="noreferrer">the Discord</a>. They carry the version, your
           folders and the end of the log, with your user folder written as ~ so your name does not go with them.
         </p>
       </div>
