@@ -315,9 +315,37 @@
         How long each mod took while the game loaded, measured by the
         <button class="lnk" onclick={() => openUrl("https://steamcommunity.com/sharedfiles/filedetails/?id=3535481557")}>Loading Progress</button>
         mod by ilyvion. Circinus times nothing itself: it reads the report that mod writes.
-        <b>Both of that mod's tracking settings are off out of the box</b> — turn on Track startup
-        loading impact, then Auto-save startup impact report, and start the game once.
+        <b>Both of that mod's tracking settings are off out of the box</b>, which is why most
+        installs have no figures. They are two checkboxes in that mod's own settings window, and
+        Circinus can tick them for you here.
       </p>
+      {#if !store.loadTracking.installed}
+        <p class="hint">
+          Loading Progress is not installed, so there is nothing to switch on yet. It is a
+          separate mod and does all of the measuring; subscribe to it, activate it, and this
+          becomes a switch.
+        </p>
+      {:else}
+        <!-- A switch rather than a button, because it is two settings in somebody else's mod
+             and the only honest control for that is one that shows their current state and can
+             put them back. Writing is refused while RimWorld is running: the game holds its
+             settings in memory and writes the whole file back on exit, so an edit made
+             underneath it disappears without a word, which is worse than a refusal. -->
+        <label class="switch"><input type="checkbox" checked={store.loadTrackingOn} disabled={!!store.busy} onchange={(e) => store.setLoadTracking(e.currentTarget.checked)} />Measure start-up times (writes Loading Progress&rsquo;s two tracking settings)</label>
+        <p class="hint">
+          {#if !store.loadTracking.active}
+            Loading Progress is installed but not in your active list, so nothing runs it.
+          {:else if store.loadTrackingOn}
+            Tracking is on. Close RimWorld before changing this &mdash; the game writes its own
+            settings back when it exits.
+          {:else}
+            Off. Circinus writes <span class="mono">trackStartupLoadingImpact</span> and
+            <span class="mono">autoSaveStartupImpactReport</span> into that mod&rsquo;s settings
+            file, keeps a copy of what was there, and touches nothing else in it. RimWorld has to
+            be closed.
+          {/if}
+        </p>
+      {/if}
       <div class="row">
         <button class="btn" onclick={() => store.rereadLoadRun()} disabled={!!store.busy}>{@html I.refresh}Re-read now</button>
         <span class="hint">

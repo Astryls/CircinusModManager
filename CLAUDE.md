@@ -588,6 +588,31 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   it, and this is the card people quote. The tooltip now names the mod and both of the
   settings that are off out of the box, because "nothing measured this" is only useful next to
   what to do about it.
+  **Circinus ticks the two boxes itself** (`circinus-core/src/loadingprogress.rs`). Telling
+  somebody to go and find two checkboxes three clicks deep in another mod's settings window --
+  where the second only appears once the first is on, and the whole errand has to be done
+  *before* a launch -- is the sort of instruction that gets read and not followed, which is why
+  almost nobody had figures. RimWorld keeps each mod's settings in `Mod_<folder>_<handle>.xml`
+  in the Config folder, so the fix is a two-element edit to a small file. Four things make it
+  safe, and all four are load bearing: it is **refused while the game is running**
+  (`commands::game_is_running`), because RimWorld holds settings in memory and writes the whole
+  file back on exit, so an edit made underneath it vanishes without a word; **nothing else in
+  the file is touched** -- the splice is textual rather than a parse-and-serialise round trip,
+  so `loadingTimes` (a thousand `<li>` samples) and `lastLoadingModHash` survive byte for byte;
+  **the file is found by the settings class it declares**, not by the handle name Circinus would
+  guess, so a rename in a future version of the mod cannot make it write to the wrong place; and
+  **a copy of what was there is kept** beside it, because this is somebody else's file.
+  The field names are the mod's `_trackStartupLoadingImpact` and `_autoSaveStartupImpactReport`
+  with the leading underscore dropped, which is ilyvion's own Scribe convention -- `_loadingTimes`
+  lands on disk as `<loadingTimes>`, and that is how the two were derived rather than guessed.
+  Scribe omits a value equal to its default, so **off is an absent element**, which is why a
+  fresh install's file mentions neither and why the reader treats missing as false. Off is
+  written as an explicit `false` rather than by deleting the element: both read the same to the
+  mod, but only one of them is a record that somebody decided.
+  `Snapshot.loading_progress` carries the four facts the UI needs -- installed, active, and the
+  two flags -- because "no figure" has four different cures and used to have one sentence. Not
+  installed, installed but inactive, active but not tracking, and tracking with no launch since
+  are four different machines, and only the last needs nothing done.
   The file the mod writes holds one session and is overwritten every launch, so
   `startupimpact::keep` copies each new report into `<data>/startup/<instance>/<unix>-startup.json`
   and prunes to `STARTUP_HISTORY` (5). Same shape as `modsconfig::archive`, for the same
@@ -616,10 +641,18 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   takes paths out under the lock before touching a file. It runs at startup **and on window
   focus** — the game writes that figure while Circinus is not in front, so reading it only at
   launch meant playing, coming back, and being shown the run before the one you just did. There
-  is a **Re-read** button as well (Load times, and Settings) for the path automatic reading
-  cannot cover: the mod's two tracking settings are off out of the box, so somebody who has just
-  switched them on has a file the window has no reason to think has changed, and "alt-tab twice"
-  is not an answer.
+  is a **Re-read** button as well (Load times, Settings, and a refresh mark on the card itself)
+  for the path automatic reading cannot cover: the mod's two tracking settings are off out of
+  the box, so somebody who has just switched them on has a file the window has no reason to
+  think has changed, and "alt-tab twice" is not an answer.
+  **The mark on the card costs no height, and that took two attempts.** It is a second button in
+  a wrapper cell rather than inside the card, since an interactive element nested in another is
+  invalid and a mark firing the card's own click would narrow the list every time it was pressed.
+  Its reserved space comes out of the **value row**, not the caption: the caption on that card is
+  six or seven wrapped lines, so 22px off its width is an extra line at most widths and 17px of
+  strip height for ever. `localize.cjs` is what measured that -- it counts the rows the list can
+  draw, and the caption version cost it one. The value row is a short label and a short figure
+  with slack between them, so the same 22px changes nothing until the card is very narrow.
 - **The Load times page divides the machine out, and that is the whole feature.** It puts what
   Loading Progress measured here beside the median of what it measured on everyone else's
   machine, pooled by circinus.sh (`Weight::load_ms_median`, off the same `/api/v1/mods` fetch

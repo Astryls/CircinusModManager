@@ -233,6 +233,7 @@ pub fn run() {
             commands::save_mods_config,
             commands::pending_save,
             commands::refresh_last_run,
+            commands::loading_progress_enable,
             commands::set_sharing,
             commands::rotate_install_id,
             commands::import_list,

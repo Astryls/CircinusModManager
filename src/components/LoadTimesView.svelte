@@ -71,6 +71,15 @@
 
     {#if !impact}
       <p class="lead">{t("load.none")}</p>
+      {#if !store.loadTracking.installed}
+        <p class="fine">{t("load.track.missing")}</p>
+      {:else if !store.loadTrackingOn}
+        <p class="fine">{t("load.track.hint")}</p>
+      {:else if !store.loadTracking.active}
+        <p class="fine">{t("load.track.inactive")}</p>
+      {:else}
+        <p class="fine">{t("load.track.waiting")}</p>
+      {/if}
     {:else}
       <div class="tot">
         <div class="fig"><b>{clock(impact.totalMs)}</b><span>{t("load.total")}</span></div>
@@ -83,6 +92,9 @@
     {/if}
 
     <div class="acts">
+      {#if store.loadTracking.installed}
+        <button class="btn" class:primary={!store.loadTrackingOn} onclick={() => store.setLoadTracking(!store.loadTrackingOn)} disabled={!!store.busy}>{@html I.timer}{store.loadTrackingOn ? t("load.track.on") : t("load.track.off")}</button>
+      {/if}
       <button class="btn" onclick={() => store.rereadLoadRun()} disabled={!!store.busy}>{@html I.refresh}{t("load.reread")}</button>
       <button class="btn" onclick={() => store.refreshWeights()} disabled={!!store.busy}>{@html I.cloud}{t("load.refetch")}</button>
     </div>

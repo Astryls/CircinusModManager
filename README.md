@@ -206,6 +206,11 @@ If you want the breakdown, install it and switch on **Track startup loading impa
 **Auto-save startup impact report** in its settings. Both are off out of the box, which is a
 sensible default for a mod that would otherwise profile every launch.
 
+Circinus can tick both for you: **Settings - Start-up times - Measure start-up times**, or the
+button on the Load times page. It writes those two values into that mod's own settings file,
+keeps a copy of what was there and changes nothing else in it. RimWorld has to be closed, since
+the game writes its settings back when it exits. Start the game once and the figures appear.
+
 Thank you to ilyvion for building it and for making the data readable.
 
 ## Other thanks

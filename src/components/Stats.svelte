@@ -91,11 +91,20 @@
   const num = (x: number) => x.toLocaleString();
   /** The previous kept report, for "and the one before that". */
   const prev = $derived(store.startupHistory[1] ?? null);
+  /* Why there is no figure, which has four different cures and used to have one sentence.
+   * "Loading Progress has not written a report" is true of a machine where the mod is not
+   * installed, one where it is installed and inactive, one where it is active and not
+   * tracking, and one where everything is on and the game has simply not been started since
+   * -- and only the last of those needs no action at all. */
+  const lp = $derived(store.loadTracking);
   const loadCap = $derived.by(() => {
     if (kind === "measured") return `Measured ${ago(store.startupImpactAt)} by Loading Progress, every mod in this list`;
     // Still a measurement, and the caption says what of: the last start-up, not this list.
     if (kind === "lastrun") return `Your last start-up, ${ago(store.startupImpactAt)}, measured by Loading Progress. Your list has changed since`;
-    return "Not measured. Loading Progress has not written a report";
+    if (!lp.installed) return "Not measured. Loading Progress, by ilyvion, is the mod that measures this";
+    if (!store.loadTrackingOn) return "Not measured. Loading Progress is installed but not tracking \u2014 switch it on in Settings";
+    if (!lp.active) return "Tracking is on, but Loading Progress is not in your active list";
+    return "Tracking is on. Start the game once and the figure appears";
   });
   const loadTip = $derived.by(() => {
     const click = "\n\nClick to show the mods slowest to load.";
@@ -106,8 +115,18 @@
     if (kind === "lastrun" && impact) {
       return `${clock(impact.totalMs / 1000)} the last time the game started, ${ago(store.startupImpactAt)}, timed by Loading Progress, by ilyvion.\n\nThat is what the start-up took, not what this list would take: ${num(impact.mods.length)} mods were loaded then and ${num(store.active.length)} are active now. Launch again and the figure will describe the list you have.${since}${click}`;
     }
-    return `Nothing has measured your start-up.\n\nThis card shows one thing: what the Loading Progress mod, by ilyvion, recorded. Circinus does not time loading and will not put a guess here -- a modelled figure in this spot is the sort of number people quote back as a fact.\n\nTo fill it in: install Loading Progress, then switch on both "Track startup loading impact" and "Auto-save startup impact report" in its settings. Both are off out of the box. Start the game once and the figure appears.`;
+    const head = "Nothing has measured your start-up.\n\nThis card shows one thing: what the Loading Progress mod, by ilyvion, recorded. Circinus does not time loading and will not put a guess here -- a modelled figure in this spot is the sort of number people quote back as a fact.";
+    if (!lp.installed) return `${head}\n\nInstall Loading Progress, then switch on "Track startup loading impact" and "Auto-save startup impact report" -- Circinus can do both from Settings -- and start the game once.\n\nClick to open Settings.`;
+    if (!store.loadTrackingOn) return `${head}\n\nLoading Progress is installed and is not tracking: "Track startup loading impact" and "Auto-save startup impact report" are both off, which is how it ships. Circinus can switch both on for you from Settings, while the game is closed.\n\nClick to open Settings.`;
+    if (!lp.active) return `${head}\n\nTracking is on, but Loading Progress is not in your active list, so nothing runs it. Activate it and start the game once.\n\nClick to open Settings.`;
+    return `${head}\n\nTracking is on and the next start-up will be measured. Start the game once; if you already have, press the refresh mark to read the report again.\n\nClick to open Settings.`;
   });
+  /* The refresh mark. Reading is automatic at launch and whenever the window comes back to the
+   * front, which covers playing and alt-tabbing back. What it cannot cover is the launch you
+   * did *before* switching tracking on: the file is new, and the window has no reason to think
+   * anything changed. There is a Re-read button on the Load times page and in Settings already;
+   * this is the same call on the card people are actually looking at when they wonder. */
+  const rereadTip = "Read the start-up report again.\n\nCircinus already does this at launch and when you come back to the window. Press it after a launch you did before switching tracking on, or if the figure looks older than your last game.\n\nThe figure itself only changes when RimWorld starts: that is when Loading Progress writes it.";
   // Nothing about seconds is a percentage, so the meter needs a scale invented for it. Ten
   // minutes is the top: past that the bar is full and the number is the thing being read anyway.
   const loadPct = $derived(loadSecs == null ? 0 : Math.min(100, (loadSecs / 600) * 100));
@@ -124,6 +143,13 @@
   function onErrors() {
     if (s.errors) { narrow("error"); store.reviewNext(); }
     else store.view = "analyzer";
+  }
+  /* With a measurement, the card narrows the list to the slowest mods, which is what it is for.
+   * With none, narrowing to "slow" shows nothing and explains nothing, so the card goes where
+   * the cure is -- the same bargain the Performance card already makes when it has no figures. */
+  function onLoad() {
+    if (loadSecs == null) store.view = "settings";
+    else narrow("slow");
   }
   function onTextures() {
     if (s.collisions) narrow("collision");
@@ -153,11 +179,17 @@
     <div class="meter" style="--v:{Math.min(100, s.collisions * 4)}%"><i></i></div>
     <div class="cap">{#if s.collisions}<span class="flag">{@html I.note}</span>{/if}<span class="t">{s.collisions ? `${s.collidingMods} mods replace the same files. The later mod wins.${store.snap?.issuesTruncated ? ` Only the first ${s.collisions.toLocaleString()} are listed.` : ""}` : "No texture is replaced by two mods"}</span></div>
   </button>
-  <button class="card stat" class:on={store.showOnly === "slow"} title={loadTip} onclick={() => narrow("slow")}>
-    <div class="l"><span>Load time</span><span class="v num" class:att={loadSecs != null && loadSecs >= 120} class:neg={loadSecs != null && loadSecs >= 360} class:none={loadSecs == null}>{loadSecs == null ? "\u2014" : clock(loadSecs)}</span></div>
-    <div class="meter" style="--c: var(--{loadColor}); --v:{loadPct}%"><i></i></div>
-    <div class="cap">{#if kind !== "measured"}<span class="flag">{@html I.note}</span>{/if}<span class="t">{loadCap}</span></div>
-  </button>
+  <!-- The one card with a control of its own, so it is a cell holding two buttons rather than
+       one button: an interactive element inside another is invalid, and a refresh mark that is
+       part of the card's own click would narrow the list every time somebody pressed it. -->
+  <div class="cell">
+    <button class="card stat" class:on={store.showOnly === "slow"} title={loadTip} onclick={onLoad}>
+      <div class="l pad"><span>Load time</span><span class="v num" class:att={loadSecs != null && loadSecs >= 120} class:neg={loadSecs != null && loadSecs >= 360} class:none={loadSecs == null}>{loadSecs == null ? "\u2014" : clock(loadSecs)}</span></div>
+      <div class="meter" style="--c: var(--{loadColor}); --v:{loadPct}%"><i></i></div>
+      <div class="cap">{#if kind !== "measured"}<span class="flag">{@html I.note}</span>{/if}<span class="t">{loadCap}</span></div>
+    </button>
+    <button class="rf" title={rereadTip} aria-label="Read the start-up report again" disabled={!!store.busy} onclick={() => store.rereadLoadRun()}>{@html I.refresh}</button>
+  </div>
   {#if store.showWeight}
     <button class="card stat" class:on={store.showOnly === "heavy"} title={perfTip} onclick={onPerf}>
       <div class="l"><span>Performance</span><span class="v num" class:att={s.share >= 10} class:neg={s.share >= 25}>{s.withShare ? `${s.share.toFixed(1)} %` : s.measured ? `${s.measured} rated` : "no figures"}</span></div>
@@ -209,6 +241,23 @@
      row, which is the part that costs the list underneath. `anywhere` because a mod name or a
      path has no spaces to break at and would otherwise push the card wider than its column. */
   .stat .cap .t { min-width: 0; overflow-wrap: anywhere; }
+  /* Room for the refresh mark in the corner, taken out of the value row rather than out of the
+     caption. Both would have worked and only one of them is free: the caption is six or seven
+     wrapped lines on this card, so 22px off its width is an extra line at most widths and 17px
+     of strip height for ever -- which is the cost this whole file exists to refuse. The value
+     row is one short label and one short figure with slack between them, so the same 22px
+     changes nothing until the card is very narrow. `localize.cjs` is what measured that: it
+     counts the rows the list can draw, and the caption version cost it one. */
+  .stat .l.pad { padding-right: 22px; }
+
+  /* The load card's own cell: the card fills it, the refresh mark floats in its corner. The
+     wrapper is the grid item, so `.stat`'s container query still measures the card itself. */
+  .cell { position: relative; min-width: 0; display: grid; }
+  .cell > .card { height: 100%; }
+  .rf { position: absolute; right: 7px; top: 9px; width: 22px; height: 22px; display: grid; place-items: center; background: transparent; color: var(--text-4); box-shadow: none; }
+  .rf:hover { color: var(--text); background: var(--surface-3); }
+  .rf:disabled { opacity: 0.4; cursor: default; }
+  .rf :global(svg) { width: 14px; height: 14px; }
 
   /* Narrowing, in the order a card can least afford to lose things. The label wraps above its
      value on its own (the row is `flex-wrap: wrap`), which is why nothing here has to touch it.

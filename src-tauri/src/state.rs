@@ -456,6 +456,24 @@ fn adopt_auto_groups(user: &mut UserData) {
     }
 }
 
+/// What `ilyvion.LoadingProgress` is doing, which decides whether a start-up can be measured.
+///
+/// Four facts and a path, because the UI has four different things to say: the mod is not
+/// installed, it is installed but not in the list, it is in the list but not tracking, or it is
+/// tracking and the figure will arrive after the next launch. "No figure" without which of
+/// those is the reason is the state the card used to be in.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadingProgress {
+    pub installed: bool,
+    pub active: bool,
+    pub track: bool,
+    pub autosave: bool,
+    /// Where its settings are, for the sentence that says what Circinus wrote.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub settings_path: Option<String>,
+}
+
 /// Everything the UI needs to render, in one message.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -533,6 +551,9 @@ pub struct Snapshot {
     /// session and is overwritten every launch. Each carries its own measurement whole.
     #[serde(default)]
     pub startup_history: Vec<circinus_core::startupimpact::PastRun>,
+    /// Whether anything is measuring start-up at all, and why not when nothing is.
+    #[serde(default)]
+    pub loading_progress: LoadingProgress,
     /// What the curators of the followed packs have said, newest first, muted packs left out.
     #[serde(default)]
     pub announcements: Vec<Announcement>,
@@ -1037,6 +1058,32 @@ impl App {
         self.data_dir.join("startup").join(&self.instance.id)
     }
 
+    /// Whether anything is measuring start-up, and whether Circinus could switch it on.
+    ///
+    /// Cheap enough to recompute with every snapshot: a scan of the mod list already in memory,
+    /// and one read of a file that is a few hundred bytes on a fresh install. It is recomputed
+    /// rather than cached because the player may well go and tick the boxes in the game's own
+    /// settings window, and a cached "off" would then be a lie that outlived the thing it
+    /// described.
+    pub fn loading_progress(&self) -> LoadingProgress {
+        use circinus_core::loadingprogress as lp;
+        let found = self.mods.iter().find(|m| order::id_base(&m.package_id.to_ascii_lowercase()) == lp::PACKAGE_ID);
+        let Some(m) = found else { return LoadingProgress::default() };
+        let folder = m.path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
+        let Some(cfg) = &self.locations.config_dir else {
+            return LoadingProgress { installed: true, active: self.active.contains(&m.uid), ..LoadingProgress::default() };
+        };
+        let path = lp::settings_path(cfg, &folder);
+        let t = lp::read(&path);
+        LoadingProgress {
+            installed: true,
+            active: self.active.contains(&m.uid),
+            track: t.track,
+            autosave: t.autosave,
+            settings_path: Some(path.display().to_string()),
+        }
+    }
+
     pub fn lists_dir(&self) -> PathBuf {
         let root = self.data_dir.join("lists");
         let mine = root.join("archive").join(&self.instance.id);
@@ -1228,6 +1275,7 @@ impl App {
             startup_impact: self.startup_impact.clone(),
             startup_impact_at: self.startup_impact_at,
             startup_history: circinus_core::startupimpact::past_runs(&self.startup_history_dir()),
+            loading_progress: self.loading_progress(),
         }
     }
 

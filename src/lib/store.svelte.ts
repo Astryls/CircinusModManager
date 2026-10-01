@@ -4,7 +4,7 @@
 import { api, appVersion, listen, openFolder } from "./api";
 import { t } from "./i18n.svelte";
 import { layouts, type Surface } from "./layout.svelte";
-import type { AuditReport, BuiltinRule, CollectionPreview, DefMatch, DefQuery, DefsState, DefTree, Group, HaloRules, ImportPreview, Instance, Issue, ItemState, LaunchSettings, Locations, LogAnalysis, LogFile, ModChange, ModInfo, ModPatchDetail, ModTextures, PatchJob, PatchReport, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamClientStatus, SteamCmdStatus, SubscribeOutcome, SubscriptionProgress, TexState, TrackedCollection, UpdateCheck, UpdateProgress, UserData, Weight, ListChange } from "./types";
+import type { AuditReport, BuiltinRule, CollectionPreview, DefMatch, DefQuery, DefsState, DefTree, Group, HaloRules, ImportPreview, Instance, Issue, ItemState, LaunchSettings, Locations, LoadingProgressState, LogAnalysis, LogFile, ModChange, ModInfo, ModPatchDetail, ModTextures, PatchJob, PatchReport, Phase, Placement, QueueState, RentryPreview, Rule, Settings, Snapshot, SortResult, Source, SteamClientStatus, SteamCmdStatus, SubscribeOutcome, SubscriptionProgress, TexState, TrackedCollection, UpdateCheck, UpdateProgress, UserData, Weight, ListChange } from "./types";
 import { CONSENT_VERSION, EMPTY_HALO, GROUP_COLORS, loadBand, PHASES, primaryUid, severityOf, VANILLA_SECS, type LoadBand, type Severity } from "./types";
 
 /** One group's rows inside a band. `group` absent means the mods that are in no group. */
@@ -509,10 +509,32 @@ class Store {
       await this.refresh();
       const si = this.startupImpact;
       if (!si) {
-        this.say("No start-up measurement found. Loading Progress writes one only with both of its tracking settings on.");
+        this.say(this.loadTracking.installed && !this.loadTracking.track ? "No measurement yet: Loading Progress is installed but not tracking. Switch tracking on and start the game once." : "No start-up measurement found. Loading Progress writes one only with both of its tracking settings on.");
         return;
       }
       this.say(`Read ${si.mods.length} mods from Loading Progress, ${(si.totalMs / 1000).toFixed(1)}s in total`);
+    });
+  }
+
+  /** What the mod that does the measuring is currently doing. Never null, so a card can ask it
+   *  four questions without guarding each one; an older backend that does not send it reads as
+   *  "nothing installed", which is the state that offers the install link. */
+  loadTracking = $derived<LoadingProgressState>(this.snap?.loadingProgress ?? { installed: false, active: false, track: false, autosave: false });
+  /** Both boxes ticked: the only state in which a launch writes a report. */
+  loadTrackingOn = $derived(this.loadTracking.track && this.loadTracking.autosave);
+
+  /** Tick Loading Progress's two tracking settings, in its own settings file.
+   *
+   *  The alternative — and what every surface used to do — is a paragraph telling somebody to
+   *  go and find two checkboxes three clicks deep in another mod's settings window, where the
+   *  second only appears once the first is on. Circinus knows the file and the two field names,
+   *  so it writes them. Rust refuses while the game is running, because RimWorld writes its own
+   *  settings back on exit and would silently undo it. */
+  setLoadTracking(on: boolean) {
+    return this.run(on ? "Switching on start-up tracking…" : "Switching off start-up tracking…", async () => {
+      const said = await api.loadingProgressEnable(on);
+      await this.refresh();
+      this.say(said);
     });
   }
 

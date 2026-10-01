@@ -403,6 +403,23 @@ export interface Snapshot {
   startupImpactAt?: number;
   /** Past start-up reports, newest first. */
   startupHistory?: PastRun[];
+  /** Whether anything is measuring start-up at all, and why not when nothing is. */
+  loadingProgress?: LoadingProgressState;
+}
+
+/** What `ilyvion.LoadingProgress` is doing, which decides whether a start-up can be measured.
+ *
+ *  Four facts rather than one boolean, because "no figure" has four different cures: install
+ *  the mod, activate it, switch its two tracking settings on, or just launch the game once. A
+ *  card that cannot say which of those is missing sends people looking. */
+export interface LoadingProgressState {
+  installed: boolean;
+  /** Installed *and* in the active list. An inactive mod measures nothing. */
+  active: boolean;
+  track: boolean;
+  autosave: boolean;
+  /** Where its settings file is, for the sentence that says what Circinus wrote. */
+  settingsPath?: string;
 }
 
 export interface SavedList {

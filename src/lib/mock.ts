@@ -154,6 +154,13 @@ let sharing = new URLSearchParams(location.search).has("consent")
   ? { installId: "", shareLoadRuns: false, consentVersion: 0, answeredAt: 0 }
   : { installId: "4f2a91c0be7d3518a6042cc9", shareLoadRuns: false, consentVersion: 1, answeredAt: Math.floor(Date.now() / 1000) - 172800 };
 
+/** Whether Loading Progress is tracking. Off under `?noimpact`, which is the state the card's
+ *  "Switch tracking on" control exists for, and switched on by that control. */
+let lpTracking = !new URLSearchParams(location.search).has("noimpact");
+/** `?nolp` is the other half of the empty state: the mod is not installed at all, which the
+ *  card has to tell apart from installed-and-idle because the cure is different. */
+const lpInstalled = !new URLSearchParams(location.search).has("nolp");
+
 const SAVED_ACTIVE: string[] = active.map((uid) => (byUid.get(uid)?.packageId ?? uid).toLowerCase());
 /** Mods that arrived while Circinus was watching: ?new=3 (the default) for a handful, ?new=0 for
  *  none. Spread over the last few days so the New tab has something to sort by, and always a
@@ -482,6 +489,12 @@ function snapshot(): Snapshot {
           { at: Math.floor(Date.now() / 1000) - 190000, mods: MOCK_IMPACT.length - 4, totalMs: 511204, impact: { totalMs: 511204, mods: MOCK_IMPACT.slice(4), modsLoaded: 40 } }
         ],
     sharing,
+    // What the mod that does the measuring is doing. `?noimpact` is the state the new control
+    // exists for: the mod is installed and active and simply is not tracking, which is every
+    // fresh install of it and is not something the card could previously tell apart from "not
+    // installed". `lpTracking` is mutable so pressing the button changes what the next snapshot
+    // says, which is the whole of what the button is claimed to do.
+    loadingProgress: { installed: lpInstalled, active: lpInstalled, track: lpInstalled && lpTracking, autosave: lpInstalled && lpTracking, settingsPath: "C:/Users/you/AppData/LocalLow/Ludeon Studios/RimWorld by Ludeon Studios/Config/Mod_3535481557_LoadingProgressMod.xml" },
     // Only what is switched on, the way the backend now reports it: a source that is off is not
     // read and does not claim to be loaded. The mock said both were loaded whatever the switches
     // did, which is exactly the bug it should have been showing.
@@ -1422,6 +1435,9 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
     }
     case "refresh_last_run":
       return false as T;
+    case "loading_progress_enable":
+      lpTracking = args.on === true;
+      return (lpTracking ? "Tracking is on. Start RimWorld once and the start-up figures appear." : "Start-up tracking is off. The figures already read stay on screen.") as T;
     case "refresh_local_weights":
       return 0 as T;
     case "get_files":

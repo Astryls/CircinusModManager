@@ -32,6 +32,7 @@ export const api = {
   validate: () => invoke<Issue[]>("validate"),
   save: () => invoke<string>("save_mods_config"),
   refreshLastRun: () => invoke<boolean>("refresh_last_run"),
+  loadingProgressEnable: (on: boolean) => invoke<string>("loading_progress_enable", { on }),
   pendingSave: () => invoke<ListChange>("pending_save"),
   setSharing: (yes: boolean) => invoke<void>("set_sharing", { yes }),
   rotateInstallId: () => invoke<string>("rotate_install_id"),

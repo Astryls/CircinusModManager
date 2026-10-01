@@ -17,6 +17,7 @@ pub mod game;
 pub mod harmony;
 pub mod import;
 pub mod loadcost;
+pub mod loadingprogress;
 pub mod model;
 pub mod modsconfig;
 pub mod order;

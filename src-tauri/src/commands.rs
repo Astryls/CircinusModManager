@@ -954,6 +954,61 @@ fn spawn_game(exe: &std::path::Path, args: &[String], cwd: Option<&std::path::Pa
     cmd.spawn().map(|_| ())
 }
 
+/// Is RimWorld running right now?
+///
+/// Asked for exactly one reason: the game reads every mod's settings at startup and writes the
+/// whole file back when the player closes the settings window, so an edit made underneath a
+/// running game is reverted without a word. Refusing is the honest answer; writing and hoping
+/// is how somebody ends up pressing a button twice and believing Circinus is broken.
+///
+/// Matched on the name rather than on a path, because the player may have started the game from
+/// Steam, from a shortcut or from another launcher, and `RimWorldWin64`, `RimWorldLinux` and
+/// `RimWorldMac` are the three the game ships as. A false positive costs a refusal with a
+/// sentence explaining it; a false negative costs a silently discarded edit.
+fn game_is_running() -> bool {
+    use sysinfo::{ProcessRefreshKind, RefreshKind, System};
+    let sys = System::new_with_specifics(RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()));
+    sys.processes().values().any(|p| p.name().to_string_lossy().to_ascii_lowercase().starts_with("rimworld"))
+}
+
+/// Tick, or untick, Loading Progress's two tracking boxes.
+///
+/// This is the answer to the paragraph every surface used to carry: "both of that mod's
+/// settings are off out of the box, go and turn them on". They live three clicks deep in
+/// another mod's settings window, the second only appears once the first is on, and the whole
+/// errand has to be done *before* a launch. Circinus knows where the file is and what the two
+/// elements are called, so it does it.
+///
+/// What it will not do is guess. Not installed, or no Config folder, and it says which.
+#[tauri::command]
+pub async fn loading_progress_enable(app_handle: AppHandle, state: State<'_, Shared>, on: bool) -> CmdResult<String> {
+    if game_is_running() {
+        return Err("RimWorld is running. It writes its own settings back when it closes, so close the game first and change this then.".into());
+    }
+    let lp = with_app(&state, |app| Ok(app.loading_progress())).await?;
+    if !lp.installed {
+        return Err("Loading Progress is not installed. It is the mod that does the measuring; Circinus only reads what it writes.".into());
+    }
+    let Some(path) = lp.settings_path.clone() else {
+        return Err("Circinus cannot find RimWorld's Config folder, so it does not know where this mod keeps its settings. Set the folders in Settings.".into());
+    };
+    let path = PathBuf::from(path);
+    let done = tauri::async_runtime::spawn_blocking(move || circinus_core::loadingprogress::set_tracking(&path, on))
+        .await
+        .map_err(err)?
+        .map_err(|e| format!("Could not write Loading Progress's settings: {e}"))?;
+    if done.complete() != on {
+        return Err("Wrote the settings file but it did not read back the way it was written. Change the two settings in the mod's own window instead.".into());
+    }
+    use tauri::Emitter;
+    let _ = app_handle.emit("state-changed", ());
+    Ok(match (on, lp.active) {
+        (false, _) => "Start-up tracking is off. The figures already read stay on screen.".into(),
+        (true, true) => "Tracking is on. Start RimWorld once and the start-up figures appear.".into(),
+        (true, false) => "Tracking is on, but Loading Progress is not in your active list — activate it, then start the game once.".into(),
+    })
+}
+
 // ---------------------------------------------------------------- downloads
 
 type Dl<'a> = State<'a, Arc<Downloads>>;
