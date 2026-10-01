@@ -1031,6 +1031,15 @@ pub async fn downloads_add_text(dl: Dl<'_>, text: String) -> CmdResult<AddResult
     Ok(dl.add(ids, Default::default()).await)
 }
 
+/// Give up on the item in flight and carry on with the rest of the queue.
+#[tauri::command]
+pub fn downloads_skip(dl: Dl<'_>) -> CmdResult<QueueState> {
+    if !dl.skip_current() {
+        return Err("Nothing is downloading right now".into());
+    }
+    Ok(dl.snapshot())
+}
+
 #[tauri::command]
 pub fn downloads_remove(dl: Dl<'_>, ids: Vec<u64>) -> QueueState {
     dl.remove(&ids);

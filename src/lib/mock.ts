@@ -1450,6 +1450,8 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
       return { added: 2, skipped: [[1, "not a RimWorld workshop item"]] } as T;
     case "downloads_add_missing":
       return [{ added: 1, skipped: [] }, ["some.missing.mod"]] as T;
+    case "downloads_skip":
+      return queue as T;
     case "downloads_retry_failed":
       return 1 as T;
     case "steamcmd_install":

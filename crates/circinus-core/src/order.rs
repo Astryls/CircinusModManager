@@ -50,7 +50,25 @@ const FRAMEWORK_IDS: &[&str] = &[
 /// The most Def files a mod may ship and still count as a library on the strength of its
 /// dependents. HugsLib and Humanoid Alien Races ship a handful; a content mod ships hundreds.
 const LIBRARY_MAX_DEFS: u32 = 40;
-const OPTIMIZATION_IDS: &[&str] = &["krkr.rocketman", "bs.performance", "taranchuk.performanceoptimizer", "dubwise.dubsperformanceanalyzer", "telardo.graphicssettings", "notfood.performancefish", "user19990313.runtimegc", "mlie.runtimegc"];
+/// Mods whose whole job is to make the rest of the list faster, so they load last.
+///
+/// Matched through `id_base`, not literally: a Workshop build published under its own
+/// packageId -- `Dubwise.DubsPerformanceAnalyzer.steam` -- is the same mod as the entry here
+/// and used to miss it, which put it in Content on every list that had the Workshop copy (#4).
+///
+/// `vr.missilegirl` is a fork of RocketMan and says in its own description that it should be
+/// the last mod in the list; it was landing at #212 of 230, eighteen mods above the end.
+const OPTIMIZATION_IDS: &[&str] = &[
+    "krkr.rocketman",
+    "vr.missilegirl",
+    "bs.performance",
+    "taranchuk.performanceoptimizer",
+    "dubwise.dubsperformanceanalyzer",
+    "telardo.graphicssettings",
+    "notfood.performancefish",
+    "user19990313.runtimegc",
+    "mlie.runtimegc",
+];
 
 /// Per-user adjustments HALO honours.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -180,7 +198,12 @@ pub struct Context<'a> {
 /// (`brrainz.harmony_steam` and `brrainz.harmony` are the same mod, and RimWorld's own
 /// dependency check ignores the postfix).
 pub fn id_base(id: &str) -> &str {
-    for suffix in ["_steam", "_copy", "_local"] {
+    // `.steam` is here because an author can publish the Workshop build under a packageId of
+    // its own: Dubs Performance Analyzer ships `Dubwise.DubsPerformanceAnalyzer` locally and
+    // `Dubwise.DubsPerformanceAnalyzer.steam` on the Workshop. That is not RimWorld's own
+    // `_steam` postfix, it is a different id for the same mod, and every list keyed on the
+    // plain one missed the copy most people actually have (#4).
+    for suffix in ["_steam", "_copy", "_local", ".steam"] {
         if let Some(base) = id.strip_suffix(suffix) {
             if !base.is_empty() {
                 return base;
@@ -227,7 +250,9 @@ pub fn classify(m: &ModInfo, ctx: &Context, dependents: usize, texture_collides:
     if let Some(np) = h.name_phases.iter().find(|np| !np.needle.trim().is_empty() && lower.contains(&np.needle.trim().to_ascii_lowercase())) {
         return place(uid, np.phase, format!("Your HALO rule: name contains \"{}\"", np.needle.trim()));
     }
-    if h.on("prepatch-ids") && PREPATCH_IDS.contains(&id) {
+    // Through `id_base` for the same reason as the optimiser list below: a Workshop build
+    // published under its own packageId is the same mod as the entry.
+    if h.on("prepatch-ids") && PREPATCH_IDS.contains(&id_base(id)) {
         return place(uid, h.target("prepatch-ids", Phase::Prepatch), "Changes the game before other mods load");
     }
     if h.on("top") && top {
@@ -236,14 +261,20 @@ pub fn classify(m: &ModInfo, ctx: &Context, dependents: usize, texture_collides:
     if h.on("rule-top") && ctx.rules.iter().any(|r| r.kind == RuleKind::LoadTop && r.subject == id) {
         return place(uid, h.target("rule-top", Phase::Framework), "A rule says: load near the top");
     }
-    let optimizer = OPTIMIZATION_IDS.contains(&id) || (c.assemblies > 0 && c.defs == 0 && name_matches(&m.name, &["performance", "optimiz", "optimis", "rocketman", "fps boost"]));
+    // Through `id_base`, so a Workshop build published under its own id matches the entry for
+    // the mod it is. The name check behind it stays as it was: it only fires on a code-only
+    // mod, because "performance" in a name is otherwise as likely to be a content mod about
+    // theatre as an optimiser. That is why the id list exists at all -- both of the mods in
+    // #4 ship a handful of Defs (a key binding and a main-tab button, nothing else) and so
+    // can never be caught by the name.
+    let optimizer = OPTIMIZATION_IDS.contains(&id_base(id)) || (c.assemblies > 0 && c.defs == 0 && name_matches(&m.name, &["performance", "optimiz", "optimis", "rocketman", "fps boost"]));
     if h.on("optimizer") && optimizer {
         return place(uid, h.target("optimizer", Phase::Optimization), "Speeds up other mods, so it has to load after them");
     }
     if h.on("rule-bottom") && ctx.rules.iter().any(|r| r.kind == RuleKind::LoadBottom && r.subject == id) {
         return place(uid, h.target("rule-bottom", Phase::Late), "A rule says: load near the bottom");
     }
-    if h.on("framework-ids") && FRAMEWORK_IDS.contains(&id) {
+    if h.on("framework-ids") && FRAMEWORK_IDS.contains(&id_base(id)) {
         return place(uid, h.target("framework-ids", Phase::Framework), "A library many mods use");
     }
     // Being depended on is not enough: content mods collect dependents too (VFE Empire has its
@@ -1386,6 +1417,53 @@ mod tests {
         let r2 = sort(&current, &ctx2);
         let at2 = |u: &str| r2.order.iter().position(|x| x == u).unwrap();
         assert!(at2("prep") < at2("fish"), "Fishery says it loads after Prepatcher — {:?}", r2.order);
+    }
+
+    /// **A performance mod that ships a key binding is still a performance mod** (#4).
+    ///
+    /// Two ways the optimiser rule missed one, both found on a real 230-mod list. Missile
+    /// Girl is a fork of RocketMan whose own description says it should load last, and it was
+    /// landing at #212 of 230 with eighteen mods after it; the Workshop build of Dubs
+    /// Performance Analyzer is published under `Dubwise.DubsPerformanceAnalyzer.steam`, so
+    /// the list entry for `dubwise.dubsperformanceanalyzer` did not match the copy most
+    /// people have.
+    ///
+    /// The name check cannot save either of them, and the test says so by giving both a Def:
+    /// "performance" in a name only counts for a mod with no Defs at all, because otherwise
+    /// it catches content mods, and both of these ship a key binding and a main-tab button.
+    /// That is the whole reason the id list exists, so a test that left the Defs out would
+    /// pass through the wrong branch and prove nothing.
+    #[test]
+    fn a_performance_mod_that_ships_a_keybinding_is_still_a_performance_mod() {
+        let db = Databases::default();
+        let check = |id: &str, name: &str| {
+            let mut mods = fixture();
+            let mut perf = m("perf", id, name, Source::Workshop);
+            perf.contents.assemblies = 1;
+            // A key binding and a main-tab button: enough to disqualify the name check.
+            perf.contents.defs = 2;
+            mods.push(perf);
+            let rules = compile_rules(&mods, &db);
+            let files = HashMap::new();
+            let ov = UserOverrides::default();
+            let refs: Vec<&ModInfo> = mods.iter().collect();
+            let ctx = Context { mods: &mods, files: &files, rules: &rules, db: &db, major_minor: "1.6", overrides: &ov };
+            let out = sort(&mods.iter().map(|x| x.uid.clone()).collect::<Vec<_>>(), &ctx);
+            let _ = refs;
+            out.placements.iter().find(|p| p.uid == "perf").map(|p| p.phase)
+        };
+        assert_eq!(check("vr.missilegirl", "Missile Girl - Performance Mod"), Some(Phase::Optimization), "a fork of RocketMan was filed somewhere else");
+        assert_eq!(
+            check("dubwise.dubsperformanceanalyzer.steam", "Dubs Performance Analyzer"),
+            Some(Phase::Optimization),
+            "the Workshop build, published under its own id, missed the entry for the mod it is"
+        );
+        // The local build still matches, so the `.steam` tolerance did not replace the plain
+        // case with a special case.
+        assert_eq!(check("dubwise.dubsperformanceanalyzer", "Dubs Performance Analyzer"), Some(Phase::Optimization));
+        // And the rule did not become "anything with performance in its name": a content mod
+        // that ships Defs and no code is still content.
+        assert_eq!(check("someone.theatreofperformance", "Theatre of Performance"), Some(Phase::Content), "the name check widened and swallowed a content mod");
     }
 
     #[test]

@@ -52,6 +52,8 @@ export const api = {
   downloadsAdd: (ids: number[]) => invoke<AddResult>("downloads_add", { ids }),
   /** Re-download mods the user picked, by uid: a uid names one copy, a workshop id does not. */
   downloadsAddFor: (uids: string[]) => invoke<AddResult>("downloads_add_for", { uids }),
+  /** Give up on the download in flight and carry on with the rest. */
+  downloadsSkip: () => invoke<QueueState>("downloads_skip"),
   /** Windows: install or remove the subclass behind Snap Layouts, with the custom frame. */
   setWindowFrame: (custom: boolean) => invoke<void>("set_window_frame", { custom }),
   /** Windows: where the maximise button is, in physical pixels, for the native hit test. */

@@ -5,7 +5,20 @@
   import { severityOf } from "$lib/types";
   import { I } from "$lib/icons";
 
-  type Notice = { id: string; kind: "error" | "warning" | "note" | "info"; title: string; detail: string; pos?: string; action: string; run: () => void; dismissable: boolean; closeTitle?: string; close?: () => void; alt?: { action: string; title: string; run: () => void } };
+  /** `token` is what the banner is *about*. A dismissal is stored against it, so the banner
+   *  stays down until the subject changes rather than until the next launch -- see
+   *  `store.dismissBanner`. A banner with no token cannot be put down for good; today they
+   *  all have one. */
+  type Notice = { id: string; token: string; kind: "error" | "warning" | "note" | "info"; title: string; detail: string; pos?: string; action: string; run: () => void; dismissable: boolean; closeTitle?: string; close?: () => void; alt?: { action: string; title: string; run: () => void } };
+
+  /** A short, order-independent stamp for a set of ids. Order-independent because the banner
+   *  is about *which* mods, not about the order a scan happened to list them in -- sorting
+   *  first is what stops the same set reading as a different one next launch. */
+  const stamp = (parts: string[]) => {
+    let h = 0;
+    for (const c of [...parts].sort().join("\u0000")) h = (Math.imul(h, 31) + c.charCodeAt(0)) | 0;
+    return (h >>> 0).toString(36);
+  };
 
   // The mod Review is standing on, if it is standing on one.
   const reviewing = $derived(store.reviewPos.at >= 0 ? (store.selected[0] ?? null) : null);
@@ -30,6 +43,8 @@
       const when = from ? new Date(from.savedAt * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
       out.push({
         id: "reset",
+        // The copy on offer. A different reset is a different emergency.
+        token: from ? `${from.path}:${from.savedAt}` : `none:${reset.previousCount}`,
         kind: "error",
         title: `RimWorld reset your mod list to the game and DLC only, because it failed to load last time`,
         detail: from ? `Your list of ${from.count} mods from ${when} is saved (${from.label}) and can go straight back` : `${reset.previousCount} mods were in the list before. No saved copy is available, so import one from a file.`,
@@ -45,6 +60,8 @@
       const activeN = store.changes.filter((x) => x.active).length;
       out.push({
         id: "changes",
+        // Which mods changed. A later, different change is a new thing to be told about.
+        token: stamp(store.changes.map((x) => `${x.packageId ?? x.uid}:${x.kind}`)),
         kind: "warning",
         title: `${c.total} mod${c.total === 1 ? "" : "s"} changed since you last opened Circinus`,
         detail: `${store.changeSummary}${activeN ? ` · ${activeN} in your active list` : ""}${l ? ` · the active list was also edited outside Circinus (${listBits})` : ""}${since ? ` · since ${since}` : ""}`,
@@ -53,7 +70,7 @@
         dismissable: true
       });
     } else if (l) {
-      out.push({ id: "changes", kind: "warning", title: "Your active list was changed outside Circinus", detail: `${listBits} in ModsConfig.xml, by RimWorld or another manager`, action: "Show", run: () => (store.showChanges = true), dismissable: true });
+      out.push({ id: "changes", token: stamp([...(l?.added ?? []), ...(l?.removed ?? []), l?.reordered ? "order" : ""]), kind: "warning", title: "Your active list was changed outside Circinus", detail: `${listBits} in ModsConfig.xml, by RimWorld or another manager`, action: "Show", run: () => (store.showChanges = true), dismissable: true });
     }
     // What a curator said. Below the mods-changed notice on purpose: what changed on this
     // machine is a fact about the install, and someone's note about it is commentary on that.
@@ -62,6 +79,8 @@
       const names = [...new Set(unread.map((a) => a.author || store.packName(a.pack)))];
       out.push({
         id: "packs",
+        // The unread posts themselves: a curator saying something new is a new banner.
+        token: stamp(unread.map((a) => a.id ?? `${a.pack}:${a.author}`)),
         kind: "note",
         title: t("packs.banner.title", { n: unread.length }),
         detail: names.length === 1 ? t("packs.banner.detail", { name: names[0] }) : t("packs.banner.detail.many", { names: names.slice(0, 3).join(", ") }),
@@ -74,6 +93,9 @@
       const ready = store.steamcmdReady;
       out.push({
         id: "missing",
+        // Which mods are missing, not how many. Closing this once should not hide it when a
+        // different mod goes missing later.
+        token: stamp(missing),
         kind: "warning",
         title: `${missing.length} mod${missing.length === 1 ? " in your list isn't" : "s in your list aren't"} installed`,
         // The two routes differ in one thing each, so say that one thing.
@@ -97,7 +119,11 @@
       const pos = at >= 0 && total > 1 ? `${at + 1} of ${total}` : "";
       const behind = at >= 0 && head.kind !== "error" && errorsLeft ? `${errorsLeft} error${errorsLeft === 1 ? "" : "s"} still to come` : "";
       const detail = [head.detail, behind].filter(Boolean).join(" · ");
-      const notice: Notice = { id: `issues:${head.title}`, kind: head.kind, title: head.title, detail, pos, action, run: () => store.reviewNext(), dismissable: head.kind !== "error" || at >= 0 };
+      // Every issue in the list, so the banner comes back when the problems are not the ones
+      // that were read and dismissed. Keyed on the whole set rather than on the headline,
+      // because the headline is only the worst of them and fixing it would silently promote
+      // the next one under a key already dismissed.
+      const notice: Notice = { id: "issues", token: stamp(store.issues.map((i) => `${i.kind}:${severityOf(i)}:${JSON.stringify(i)}`)), kind: head.kind, title: head.title, detail, pos, action, run: () => store.reviewNext(), dismissable: head.kind !== "error" || at >= 0 };
       // Closing a banner about the mod under review leaves the review, rather than hiding that
       // one mod for the session: come back round to it and the banner would vanish with the only
       // button that walks the list.
@@ -109,7 +135,7 @@
       if (head.kind === "error") out.splice(reset ? 1 : 0, 0, notice);
       else out.push(notice);
     }
-    return out.filter((n) => !store.dismissed.includes(n.id));
+    return out.filter((n) => !store.dismissed.includes(n.id) && !store.bannerDown(n.id, n.token));
   });
 
   // ---- a newer Circinus ----
@@ -117,7 +143,9 @@
   // bar, and a failed install has to say why and offer another go.
   const update = $derived(store.update);
   const prog = $derived(store.updateProgress);
-  const showUpdate = $derived(!!update && (!!prog || !store.dismissed.includes("update")));
+  // Keyed on the version: "Not now" about 1.7.2 is an answer about 1.7.2, and 1.7.3 is a new
+  // question. It used to come back on every launch, which is what makes people stop reading it.
+  const showUpdate = $derived(!!update && (!!prog || (!store.dismissed.includes("update") && !store.bannerDown("update", update?.version ?? ""))));
   const mb = (n: number) => `${(n / 1e6).toFixed(n < 1e7 ? 1 : 0)} MB`;
   const pct = $derived(prog?.total ? Math.min(100, Math.round((prog.downloaded / prog.total) * 100)) : null);
   const upText = $derived.by(() => {
@@ -146,7 +174,7 @@
       <span class="bar" class:indeterminate={pct == null || prog.phase !== "downloading"} title={pct != null ? `${pct}%` : ""}><i style="width: {prog.phase === "downloading" ? (pct ?? 0) : 100}%"></i></span>
       {#if pct != null && prog.phase === "downloading"}<span class="pct num">{pct}%</span>{/if}
     {:else}
-      <button class="alt" title="Hide until next launch. Settings has Check now." onclick={() => { store.updateProgress = null; store.dismiss("update"); }}>Not now</button>
+      <button class="alt" title="Hide until there is a newer version. Settings has Check now." onclick={() => { store.updateProgress = null; store.dismiss("update"); store.dismissBanner("update", update?.version ?? ""); }}>Not now</button>
       <button onclick={() => store.installUpdate()}>{prog?.phase === "failed" ? "Try again" : "Install and restart"}</button>
     {/if}
   </div>
@@ -159,7 +187,7 @@
     {#if n.pos}<span class="step num">{n.pos}</span>{/if}
     {#if n.alt}<button class="alt" title={n.alt.title} onclick={n.alt.run}>{n.alt.action}</button>{/if}
     <button onclick={n.run}>{n.action}</button>
-    {#if n.dismissable}<button class="x" aria-label={n.closeTitle ?? "Dismiss"} title={n.closeTitle ?? "Hide until next launch"} onclick={() => (n.close ? n.close() : store.dismiss(n.id))}>{@html I.close}</button>{/if}
+    {#if n.dismissable}<button class="x" aria-label={n.closeTitle ?? "Dismiss"} title={n.closeTitle ?? "Hide until this changes"} onclick={() => (n.close ? n.close() : (store.dismiss(n.id), store.dismissBanner(n.id, n.token)))}>{@html I.close}</button>{/if}
   </div>
 {/each}
 

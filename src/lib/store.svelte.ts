@@ -1607,6 +1607,13 @@ class Store {
   async clearFinished() {
     this.downloads = await api.downloadsClearFinished();
   }
+  /** Give up on the download in flight. The rest of the queue carries on. */
+  async skipDownload() {
+    return this.run("Skipping…", async () => {
+      this.downloads = await api.downloadsSkip();
+      this.say("Skipped. Carrying on with the rest");
+    });
+  }
   async pauseDownloads(paused: boolean) {
     this.downloads = await api.downloadsPause(paused);
   }
@@ -1978,6 +1985,25 @@ class Store {
       if (this.snap?.dirty) await this.refresh();
       this.say(msg);
     });
+  }
+  /** Put a banner down until the thing it is about changes.
+   *
+   *  It used to be until the next launch, and said so on the button -- which was a defensible
+   *  rule and the wrong one. A player who has read "17 mods in your list aren't installed",
+   *  decided about it and closed it does not want to be told again every time Circinus opens;
+   *  being told again is how a banner becomes something people close without reading.
+   *
+   *  So a banner dismissal now goes in the same persisted set as a row notice and follows the
+   *  same rule: the key carries a token describing the subject, and the banner comes back when
+   *  that token changes. The missing-mods banner returns when a different mod goes missing,
+   *  the update banner when there is a newer version, the issues banner when the issues are
+   *  not the ones that were dismissed. Settings' "bring them all back" already clears these,
+   *  because it clears the whole set. */
+  dismissBanner(id: string, token: string) {
+    return this.dismissNotice(`banner|${id}|${token}`);
+  }
+  bannerDown(id: string, token: string): boolean {
+    return this.dismissedNotices.has(`banner|${id}|${token}`);
   }
   dismiss(id: string) {
     if (!this.dismissed.includes(id)) this.dismissed = [...this.dismissed, id];

@@ -167,6 +167,21 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   can disagree, that no two of the three sort by the same value — because a geometry check
   passed on every one of the old columns. Two sabotages were run against it: restoring the
   model to Start-up, and letting Yours fall back to `share`. Both fail it by name.
+- **A dismissal lasts until its subject changes, and a banner is no different.** Row notices
+  always worked that way (`<packageId>|<kind>|<token>`, persisted in `UserData`). Banners did
+  not: `store.dismissed` was session-only and the buttons said "Hide until next launch",
+  which is defensible and wrong -- somebody who has read "17 mods in your list aren't
+  installed", decided about it and closed it does not want telling again every launch, and
+  being told again is how a banner becomes a thing people close without reading. Each banner
+  now carries a `token` describing what it is about (which mods are missing, which changed,
+  which version is offered, the whole issue set) and its dismissal goes in the same persisted
+  set under `banner|<id>|<token>`. Settings' "bring them all back" already clears it.
+  The `changed` row notice was keyed on `change.when`, which is `ModInfo.modified` -- and
+  that figure *grows during start-up*, from the quick pass's folder mtime to the deep walk's
+  newest-file mtime. A dismissal taken in that window was stored under the first value and
+  came undone when the second landed, the mark reappearing for no reason the player could
+  see. It is keyed on the change's reasons now, which are settled by then and are the thing
+  worth keying on anyway.
 - **One notice column, and severity decides what it shows.** There used to be six columns of
   icons (Changed, Update, Errors, Warning, Notes, Pinned) costing 232px of every row for ever,
   and the reader still had to scan all six to answer one question. Now there is one mark, it
@@ -708,6 +723,38 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   rather than becoming a second square sheet because warning and error have to differ in shape
   and not only in hue — the colour rule says meaning must survive without colour, and two
   identical sheets in two reds do not.
+- **An add-on overriding its parent's art is not a collision.** Reported as: Busywork shown
+  as "replacing" Useful Marks, which it requires to work. `textures::collisions` compares
+  nothing but file paths -- "marks/wait" in that message is the texture, not a feature -- and
+  Busywork sorts later *because* it declares a dependency on Useful Marks, so the one fact
+  that makes it an add-on was also the fact that made it the winner. The rule now drops a
+  collision when **every** loser in it is a mod the winner declares a dependency on, in
+  About.xml or in Fluffy's manifest. Narrow on purpose: an add-on that also steps on some
+  third mod's texture still gets its note, because that one is a real surprise.
+- **The optimiser list is matched through `id_base`** (#4). An author can publish the
+  Workshop build under a packageId of its own -- `Dubwise.DubsPerformanceAnalyzer.steam` --
+  which is not RimWorld's `_steam` postfix but a different id for the same mod, and the entry
+  for the plain id missed the copy most people have. `.steam` joins `_steam`/`_copy`/`_local`
+  in `id_base`, and the prepatch and framework lists match the same way. `vr.missilegirl` is
+  in the list too: a fork of RocketMan that says in its own description it should load last
+  and was landing at #212 of 230. Neither can ever be caught by the name check, because that
+  one only fires on a mod with no Defs at all and both ship a key binding and a main-tab
+  button -- which is the whole reason the id list exists.
+- **Nowhere to put a download is a reason not to start it.** A whole collection downloaded,
+  thirteen minutes of it, and then failed per item with "no local Mods folder is configured".
+  The check was correct and in the worst possible place: after the bytes were on disk. The
+  queue now pauses before a batch when `local_mods_dir` is missing and says so once.
+  `local_mods_dir` is derived from the game folder whenever it is not set by hand, so it is
+  absent only when Circinus cannot find RimWorld at all.
+- **Skip gives up on the item in flight; Pause does not.** Pause stops the *next* batch and
+  leaves the run going, which is no help when the run is one huge item that has stalled.
+  SteamCMD cannot abandon one item of a script, so Skip marks that item Cancelled, sets a
+  flag the batch runner polls, and the run is killed; anything still Downloading goes back in
+  the queue and the next batch no longer contains the skipped id. The flag is the caller's
+  rather than `SteamCmd`'s because `SteamCmd` is constructed fresh per call and would lose
+  it. The queue also shows settled-of-total now, counted over everything added rather than
+  over the batch in flight: batches are an implementation detail of persuading Steam to
+  co-operate and change size on their own.
 - **A mod is replaced where it already lives** (reported as #2). Every SteamCMD download used
   to land in `Mods/<id>`, Force update of a subscribed mod included. With the same packageId in
   Mods and in Steam's folder RimWorld suffixes the *Workshop* copy `_steam`, so ModsConfig.xml's

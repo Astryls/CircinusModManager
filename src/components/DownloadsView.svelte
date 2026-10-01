@@ -22,6 +22,23 @@
   const levelText = $derived(!q ? "" : q.throttle.level === 0 ? "Calm" : q.throttle.level === 1 ? "Cautious" : q.throttle.level === 2 ? "Backing off" : "Steam is pushing back");
   const when = (t: number) => new Date(t * 1000).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 
+  /** How far through the whole queue this is: finished of asked for.
+   *
+   *  Reported as missing. The page said what each item was doing and never what *number* of
+   *  how many it was on, so a queue of eighty items looked identical at item three and item
+   *  seventy-five -- which is the one thing somebody watching a long download wants to know.
+   *  Counted over everything added rather than over the batch in flight, because batches are
+   *  an implementation detail of how Steam is persuaded to co-operate and change size on
+   *  their own. Cancelled items count as settled: they are not coming back. */
+  const progress = $derived.by(() => {
+    const all = q?.items ?? [];
+    if (!all.length) return null;
+    const settled = all.filter((i) => i.status === "done" || i.status === "failed" || i.status === "cancelled").length;
+    return { settled, total: all.length, pct: Math.round((settled / all.length) * 100) };
+  });
+  /** Is there a run in flight that Skip could stop? */
+  const inFlight = $derived(!!q && (q.currentItem != null || q.currentBatch.length > 0));
+
   async function add() {
     if (!text.trim()) return;
     const r = await store.queueText(text);
@@ -73,8 +90,18 @@
         {:else}
           <div class="last">Batches start at 25 items, shrink when Steam refuses, grow again after two clean batches. Stalls are killed after 150 s; each item gets 4 tries, with validate after the first failure.</div>
         {/if}
+        {#if progress}
+          <div class="prog">
+            <span class="bar"><i style="width: {progress.pct}%"></i></span>
+            <span class="of num">{progress.settled} of {progress.total}</span>
+          </div>
+        {/if}
         <div class="ctl">
           {#if q.paused}<button class="btn sm primary" onclick={() => store.pauseDownloads(false)}>{@html I.play}Resume</button>{:else}<button class="btn sm" onclick={() => store.pauseDownloads(true)}>Pause</button>{/if}
+          <!-- Pause stops the *next* batch and leaves the run in flight going, which is no
+               help at all when it is one huge item that has stalled. Skip gives up on that
+               item and carries on with the rest. -->
+          <button class="btn sm" disabled={!inFlight} title={inFlight ? "Give up on the download in flight and carry on with the rest" : "Nothing is downloading right now"} onclick={() => store.skipDownload()}>Skip this one</button>
           <button class="btn sm" disabled={!counts.failed} onclick={() => store.retryFailed()}>Retry failed</button>
           <button class="btn sm" disabled={!counts.done} onclick={() => store.clearFinished()}>Clear done</button>
         </div>
@@ -161,6 +188,12 @@
   .meter-row { display: grid; grid-template-columns: 80px 1fr auto; gap: 10px; align-items: center; font-size: 13px; }
   .meter-row .v { font-weight: 800; font-size: 16px; } .meter-row .v small { color: var(--text-3); font-weight: 600; font-size: 11px; }
   .cool { margin-top: 10px; background: var(--amber-soft); color: var(--amber); border-radius: 0; padding: 8px 12px; font-size: 13px; display: flex; gap: 8px; align-items: center; }
+  /* Where the queue is, as one line. Ink and a rule rather than a colour: it is a position,
+     not a verdict. */
+  .prog { display: flex; align-items: center; gap: 9px; margin: 8px 0 0; }
+  .prog .bar { flex: 1; height: 4px; background: var(--track); min-width: 0; }
+  .prog .bar i { display: block; height: 100%; background: var(--bar); }
+  .prog .of { font-size: 11.5px; color: var(--text-2); flex: none; }
   .last { margin-top: 10px; font-size: 12.5px; color: var(--text-3); line-height: 1.45; }
   .ctl { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
   .addrow { display: flex; gap: 8px; }

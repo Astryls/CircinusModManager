@@ -83,7 +83,8 @@ impl SteamCmd {
             return Err(Error::Other("SteamCMD archive did not contain the expected executable".into()));
         }
         log("First run: SteamCMD updates itself (this can take a minute)".into());
-        let out = self.run_raw(&["+quit".to_string()], Duration::from_secs(600), &mut |l| log(l.to_string())).await?;
+        let never = std::sync::atomic::AtomicBool::new(false);
+        let out = self.run_raw(&["+quit".to_string()], Duration::from_secs(600), &never, &mut |l| log(l.to_string())).await?;
         if out.stalled {
             return Err(Error::Other("SteamCMD did not finish its first-run update".into()));
         }
@@ -95,8 +96,9 @@ impl SteamCmd {
         let started = Instant::now();
         let mut logged_in = false;
         let mut lines = 0usize;
+        let never = std::sync::atomic::AtomicBool::new(false);
         let raw = self
-            .run_raw(&["+login".to_string(), "anonymous".to_string(), "+quit".to_string()], Duration::from_secs(180), &mut |line| {
+            .run_raw(&["+login".to_string(), "anonymous".to_string(), "+quit".to_string()], Duration::from_secs(180), &never, &mut |line| {
                 lines += 1;
                 let lower = line.to_ascii_lowercase();
                 if lower.contains("logged in ok") || lower.contains("waiting for user info...ok") || lower.contains("waiting for client config...ok") {
@@ -124,14 +126,18 @@ impl SteamCmd {
     }
 
     /// Run one batch and report per-item results.
-    pub async fn run_batch(&self, items: &[(u64, bool)], stall: Duration, on_line: &mut (dyn FnMut(&str) + Send)) -> Result<BatchOutcome> {
+    /// `abort` is the queue's skip flag. SteamCMD has no way to abandon one item of a script,
+    /// so skipping means stopping the whole run and letting the queue start the next batch
+    /// without the item that was skipped. That is why the flag belongs to the caller rather
+    /// than to this struct: `SteamCmd` is constructed fresh per call and would lose it.
+    pub async fn run_batch(&self, items: &[(u64, bool)], stall: Duration, abort: &std::sync::atomic::AtomicBool, on_line: &mut (dyn FnMut(&str) + Send)) -> Result<BatchOutcome> {
         let script = self.write_script(items)?;
         let started = Instant::now();
         let mut results: HashMap<u64, ItemResult> = HashMap::new();
         let mut auth_failed = false;
         let mut current: Option<u64> = None;
         let raw = self
-            .run_raw(&["+runscript".to_string(), script.display().to_string()], stall, &mut |line| {
+            .run_raw(&["+runscript".to_string(), script.display().to_string()], stall, abort, &mut |line| {
                 match parse_line(line) {
                     LineEvent::Downloading(id) => current = Some(id),
                     LineEvent::Success(id, path, bytes) => {
@@ -162,7 +168,7 @@ impl SteamCmd {
 
     /// Spawn SteamCMD, stream its lines (stdout, stderr and — on Windows — the console log),
     /// and kill it if it goes quiet for `stall`.
-    async fn run_raw(&self, args: &[String], stall: Duration, on_line: &mut (dyn FnMut(&str) + Send)) -> Result<RawOutcome> {
+    async fn run_raw(&self, args: &[String], stall: Duration, abort: &std::sync::atomic::AtomicBool, on_line: &mut (dyn FnMut(&str) + Send)) -> Result<RawOutcome> {
         let exe = self.exe();
         if !exe.is_file() {
             return Err(Error::Other("SteamCMD is not installed yet".into()));
@@ -220,6 +226,7 @@ impl SteamCmd {
         }
         drop(tx);
         let mut stalled = false;
+        let mut aborted = false;
         let mut exit_code = None;
         let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         loop {
@@ -253,10 +260,20 @@ impl SteamCmd {
                     let _ = child.kill().await;
                     break;
                 }
+                // Polled rather than awaited on a notifier, because the flag can be set while
+                // this loop is busy reading a line and a missed notification is a Skip button
+                // that does nothing. A quarter second is below what anybody calls unresponsive
+                // and costs nothing against a download.
+                _ = tokio::time::sleep(Duration::from_millis(250)), if abort.load(std::sync::atomic::Ordering::Relaxed) => {
+                    aborted = true;
+                    on_line("Skipped. Stopping SteamCMD and going on to the rest");
+                    let _ = child.kill().await;
+                    break;
+                }
             }
         }
         tail_stop.store(true, std::sync::atomic::Ordering::Relaxed);
-        Ok(RawOutcome { stalled, exit_code })
+        Ok(RawOutcome { stalled, aborted, exit_code })
     }
 
     /// Move a finished download into the Mods folder as `<id>` and mark it as a SteamCMD mod.
@@ -487,6 +504,8 @@ fn copy_dir(src: &Path, dest: &Path) -> Result<()> {
 
 pub struct RawOutcome {
     pub stalled: bool,
+    /// The queue asked for this run to stop: a skip, not a failure.
+    pub aborted: bool,
     pub exit_code: Option<i32>,
 }
 

@@ -254,6 +254,7 @@ pub fn run() {
             commands::set_window_frame,
             commands::set_maximise_rect,
             commands::downloads_add_text,
+            commands::downloads_skip,
             commands::downloads_remove,
             commands::downloads_retry_failed,
             commands::downloads_clear_finished,

@@ -6,6 +6,7 @@ use circinus_core::steam::steamcmd::{Dest, ItemStatus, QueueState, SteamCmd, BAT
 use circinus_core::steam::webapi;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Notify;
@@ -13,6 +14,10 @@ use tokio::sync::Notify;
 const QUEUE_KEY: &str = "download_queue";
 
 pub struct Downloads {
+    /// Set by Skip, read by the batch runner. SteamCMD cannot abandon one item of a script,
+    /// so a skip stops the whole run; the queue then starts the next batch without the item
+    /// that was skipped, which is already marked Cancelled by the time the run ends.
+    skip: Arc<AtomicBool>,
     pub state: Mutex<QueueState>,
     notify: Notify,
     handle: AppHandle,
@@ -61,7 +66,7 @@ impl Downloads {
         state.current_batch.clear();
         state.current_item = None;
         let client = reqwest::Client::builder().user_agent(circinus_core::weight::USER_AGENT).build().unwrap_or_default();
-        let dl = Arc::new(Downloads { state: Mutex::new(state), notify: Notify::new(), handle, app, client });
+        let dl = Arc::new(Downloads { skip: Arc::new(AtomicBool::new(false)), state: Mutex::new(state), notify: Notify::new(), handle, app, client });
         dl.refresh_installed();
         let runner = dl.clone();
         tauri::async_runtime::spawn(async move { runner.run().await });
@@ -153,6 +158,35 @@ impl Downloads {
         self.emit();
         self.wake();
         AddResult { added, skipped }
+    }
+
+    /// Give up on the item SteamCMD is working on and carry on with the rest.
+    ///
+    /// Reported as: a large download that stalls takes the whole queue with it, and Pause
+    /// does not help because the run in flight keeps going. SteamCMD has no way to abandon
+    /// one item of a script, so this marks the item Cancelled and stops the run; the loop
+    /// then starts the next batch, which no longer contains it.
+    ///
+    /// Returns false when there is nothing in flight, so the window can say so rather than
+    /// appearing to do nothing.
+    pub fn skip_current(&self) -> bool {
+        let skipped = {
+            let mut s = self.state.lock().unwrap();
+            let Some(id) = s.current_item.or_else(|| s.current_batch.first().copied()) else { return false };
+            if let Some(item) = s.items.iter_mut().find(|i| i.id == id) {
+                item.status = ItemStatus::Cancelled;
+                item.error = Some("Skipped".into());
+                item.finished_at = Some(now());
+            }
+            s.push_log(&format!("Skipping {id}"));
+            true
+        };
+        if skipped {
+            self.skip.store(true, Ordering::SeqCst);
+            self.persist();
+            self.emit();
+        }
+        skipped
     }
 
     pub fn remove(&self, ids: &[u64]) {
@@ -303,6 +337,29 @@ impl Downloads {
                 }
                 continue;
             }
+            // **Nowhere to put it is a reason not to start, not a reason to fail at the end.**
+            //
+            // Reported with a screenshot: a whole collection downloaded, thirteen minutes of
+            // it, and every item then failed with "Downloaded but could not be moved into
+            // Mods: no local Mods folder is configured". The check was real and in the right
+            // place for correctness and the worst possible place for a person -- after the
+            // bytes were on disk, once per item, by which time the only thing left to do is
+            // say so fourteen times.
+            //
+            // `local_mods_dir` is derived from the game folder whenever it is not set by
+            // hand, so it is missing only when Circinus cannot find RimWorld at all. That is
+            // worth stopping for, and worth saying once.
+            if self.app.lock().map(|a| a.locations.local_mods_dir.is_none()).unwrap_or(false) {
+                let mut s = self.state.lock().unwrap();
+                if !s.paused {
+                    s.paused = true;
+                    s.push_log("Paused: Circinus has not found the game's Mods folder, so a download would have nowhere to go. Settings, Where RimWorld lives, will set it.");
+                }
+                drop(s);
+                self.persist();
+                self.emit();
+                continue;
+            }
             let batch = {
                 let mut s = self.state.lock().unwrap();
                 let batch = s.next_batch();
@@ -346,7 +403,16 @@ impl Downloads {
                     last_emit = std::time::Instant::now();
                 }
             };
-            let outcome = cmd.run_batch(&batch, STALL_TIMEOUT, &mut on_line).await;
+            let outcome = cmd.run_batch(&batch, STALL_TIMEOUT, &self.skip, &mut on_line).await;
+            // Cleared whatever happened, so a skip stops one run rather than every run after
+            // it. Anything still Downloading when the run was cut goes back in the queue: the
+            // item that was skipped is already Cancelled and `next_batch` will not pick it up.
+            if self.skip.swap(false, Ordering::SeqCst) {
+                let mut s = self.state.lock().unwrap();
+                for item in s.items.iter_mut().filter(|i| i.status == ItemStatus::Downloading) {
+                    item.status = ItemStatus::Queued;
+                }
+            }
             // Where each finished item goes is decided by where the copy being updated already
             // lives, which is read once here rather than per item.
             let (mods_dir, workshop_dir, subscribed) = self

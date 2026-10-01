@@ -111,7 +111,19 @@ export function noticesFor(a: NoticeInput): { shown: Notice[]; hidden: Notice[] 
     out.push({
       kind: "changed",
       text: `Changed since you last opened Circinus: ${a.describeChange(a.change)}`,
-      dismissKey: dismissKey(pkg, "changed", a.change.when ?? 0)
+      // Keyed on *what* changed, not on when.
+      //
+      // `change.when` is `ModInfo.modified`, and that figure grows during start-up: the quick
+      // pass sets it from the folder and About.xml mtimes, then the folder walk raises it to
+      // the newest mtime anywhere in the tree a few seconds later. A dismissal taken in that
+      // window was stored against the first value and came undone when the second landed --
+      // the mark reappearing on its own, for no reason the player could see.
+      //
+      // The reasons are settled by the time there is anything to dismiss and say the thing
+      // worth keying on anyway: "I have seen that this mod's files changed" survives the
+      // second pass, and a later, different change still raises a new mark because the
+      // baseline moves and the notice is rebuilt from it.
+      dismissKey: dismissKey(pkg, "changed", [...(a.change.reasons ?? [])].sort().join(",") || "changed")
     });
   } else if (a.isNew) {
     out.push({ kind: "new", text: a.arrived ? `New: first seen ${a.arrived}` : "New", dismissKey: dismissKey(pkg, "new") });
