@@ -1441,6 +1441,9 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
       const q = structuredClone(queue) as unknown as QueueState;
       return (bare ? { ...q, items: [], running: false, currentBatch: [], currentItem: null, steamcmdInstalled: false, log: [] } : q) as T;
     }
+    case "set_window_frame":
+    case "set_maximise_rect":
+      return undefined as T;
     case "downloads_add":
     case "downloads_add_for":
     case "downloads_add_text":

@@ -5,6 +5,7 @@
   import { actions, chord, matches } from "$lib/keys.svelte";
   import Rail from "./components/Rail.svelte";
   import SearchLine from "./components/SearchLine.svelte";
+  import TitleBar from "./components/TitleBar.svelte";
   import Stats from "./components/Stats.svelte";
   import Banner from "./components/Banner.svelte";
   import Toolbar from "./components/Toolbar.svelte";
@@ -116,10 +117,13 @@
 <svelte:window onkeydown={onKey} onfocus={onFocus} />
 
 <div class="app">
+  <!-- The caption bar, when the window is drawing its own. It is the only thing above the
+       three columns, it is absent entirely with the system frame on, and the grid row it
+       takes is `auto` so its absence costs nothing rather than leaving a 0px track. -->
+  <TitleBar />
   <!-- The Directory layout: one fixed column is the whole navigation -- instance, views, groups,
-       collections, and the two committed actions at its foot -- and there is no title bar above
-       it. The column is outside the view switch because it is the constant; only what sits
-       beside it changes. -->
+       collections, and the two committed actions at its foot. The column is outside the view
+       switch because it is the constant; only what sits beside it changes. -->
   <div class="frame" class:two={store.view !== "order"}>
     <Panel name="Sidebar"><Rail /></Panel>
     <main class="center" bind:clientWidth={centre}>
@@ -224,7 +228,7 @@
   /* No title bar row: the directory column runs the full height of the window, and its width is
      the site's own --dirw. Panels are separated by rules, not by gaps, so the gap is gone too --
      a gap between flat squares reads as a mistake, where between shadowed cards it read as depth. */
-  .app { height: 100vh; display: grid; grid-template-rows: minmax(0, 1fr); overflow: hidden; }
+  .app { height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
   .frame { display: grid; grid-template-columns: 266px minmax(0, 1fr) 340px; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; }
   .frame.two { grid-template-columns: 266px minmax(0, 1fr); }
   .frame > :global(.rail), .frame > :global(*:first-child) { border-right: 1px solid var(--surface-3); }

@@ -5,6 +5,7 @@ import { api } from "./lib/api";
 import { layouts } from "./lib/layout.svelte";
 import { theme } from "./lib/theme.svelte";
 import { palette } from "./lib/palette.svelte";
+import { chrome } from "./lib/chrome.svelte";
 
 // Before the first mount, so the window never paints one paper and then swaps to the other.
 // The palette follows the paper, so it is wired in before the first `apply()` and started
@@ -13,6 +14,10 @@ theme.onPaperChange = () => palette.load();
 theme.start();
 palette.start();
 layouts.start();
+// Async, and deliberately not awaited: it talks to the window, and the first paint must not
+// wait on an IPC round trip. Until it answers, the system frame is showing, which is the
+// correct thing to be showing.
+void chrome.start();
 
 // Anything that escapes goes into the same log as the rest of the app. A message that only ever
 // reaches a console nobody opens is a message nobody has: the window went black for a user and

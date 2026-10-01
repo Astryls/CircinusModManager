@@ -5,6 +5,7 @@
   import { I } from "$lib/icons";
   import { theme } from "$lib/theme.svelte";
   import { palette, GROUPS, contrast } from "$lib/palette.svelte";
+  import { chrome } from "$lib/chrome.svelte";
   import { SORTS, sortLabel, VIEWS, type SortKey, type View } from "$lib/store.svelte";
 
   /** The optional list columns, in the order they appear in the list. Typical and Yours are
@@ -343,6 +344,14 @@
         over black.
       </p>
       <p class="hint">This applies to the dark paper only, and takes effect the moment you switch back to it. The theme is remembered on this machine and never travels with a mod list.</p>
+      {#if chrome.available}
+        <label class="switch"><input type="checkbox" checked={chrome.on} onchange={(e) => chrome.set(e.currentTarget.checked)} />Draw the window buttons in the window</label>
+        <p class="hint">
+          Puts minimise, maximise and close at the end of the search line, in these colours, instead of Windows drawing a caption bar above them in its own. Dragging,
+          snapping and Win+Arrow all still work. <b>Snap Layouts do not</b> &mdash; the flyout when you hover the maximise button needs the system frame, so leave this off if
+          you use it. The change happens the moment you click, both ways, so nothing here can leave you stuck with a window you cannot work.
+        </p>
+      {/if}
     </section>
 
     <!-- Every colour, for anyone who wants different ones.

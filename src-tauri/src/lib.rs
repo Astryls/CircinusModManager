@@ -8,6 +8,8 @@ pub mod outbox;
 pub mod packs;
 pub mod patches;
 pub mod sharing;
+/// Snap Layouts for the in-window caption bar. Windows only; an empty module elsewhere.
+pub mod snap;
 pub mod state;
 pub mod subscribe;
 pub mod textures;
@@ -249,6 +251,8 @@ pub fn run() {
             commands::downloads_state,
             commands::downloads_add,
             commands::downloads_add_for,
+            commands::set_window_frame,
+            commands::set_maximise_rect,
             commands::downloads_add_text,
             commands::downloads_remove,
             commands::downloads_retry_failed,

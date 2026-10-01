@@ -2,7 +2,9 @@
   "$schema": "https://schema.tauri.app/config/capabilities/2",
   "identifier": "default",
   "description": "Main window capabilities",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-set-title",
@@ -10,10 +12,30 @@
     "opener:default",
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "https://*" }, { "url": "http://*" }, { "url": "steam://*" }, { "url": "mailto:*" }]
+      "allow": [
+        {
+          "url": "https://*"
+        },
+        {
+          "url": "http://*"
+        },
+        {
+          "url": "steam://*"
+        },
+        {
+          "url": "mailto:*"
+        }
+      ]
     },
     "opener:allow-reveal-item-in-dir",
     "updater:default",
-    "process:default"
+    "process:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-start-resize-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-is-maximized",
+    "core:window:allow-set-decorations"
   ]
 }

@@ -1325,3 +1325,39 @@ mod open_folder_tests {
         assert!(err.contains("unsubscribed"), "{err}");
     }
 }
+
+/// Tell the window whether it is drawing its own caption bar.
+///
+/// The decorations themselves are changed from the window, which can do it directly; what
+/// this adds is the Windows subclass behind Snap Layouts, which cannot be reached from
+/// JavaScript. Installing it is conditional on the frame being on, because while the system
+/// caption bar is showing it owns the whole non-client area and a hit test claiming part of
+/// it would fight the shell for the real maximize button.
+#[tauri::command]
+pub fn set_window_frame(app_handle: AppHandle, custom: bool) {
+    #[cfg(target_os = "windows")]
+    {
+        if custom {
+            crate::snap::install(&app_handle);
+        } else {
+            crate::snap::remove(&app_handle);
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (&app_handle, custom);
+    }
+}
+
+/// Where the maximize button is, in physical pixels relative to the client area.
+///
+/// Only the window knows: it moves with the window's width, with the display scale, and with
+/// whether the bar is drawn at all. A zero width means there is no button, which is what the
+/// hit test needs to hear when the custom frame goes away.
+#[tauri::command]
+pub fn set_maximise_rect(x: i32, y: i32, w: i32, h: i32) {
+    #[cfg(target_os = "windows")]
+    crate::snap::set_rect(x, y, w, h);
+    #[cfg(not(target_os = "windows"))]
+    let _ = (x, y, w, h);
+}

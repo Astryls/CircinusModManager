@@ -13,6 +13,7 @@
   // invite after the others were updated -- on the one page somebody only ever reads because
   // something has already gone wrong.
   import { DISCORD } from "./lib/types";
+  import ResizeGrips from "./components/ResizeGrips.svelte";
 
   let copied = $state(false);
   let copyFailed = $state<string | null>(null);
@@ -39,6 +40,9 @@
   }}
 >
   <App />
+  <!-- Outside App and above every dialog: an undecorated window has no system resize border,
+       and a modal must not be able to make a window un-resizable. -->
+  <ResizeGrips />
 
   {#snippet failed(error, reset)}
     <div class="crashed">

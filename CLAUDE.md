@@ -452,7 +452,39 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   measures the **content** box, 28px narrower than the card at this padding, so thresholds read
   as card widths fire about 30px early; that is what once clamped the caption at a width where
   two lines cost nothing.
-- **The Directory layout, and the three papers.** There is no title bar. One fixed 266px column —
+- **The window draws its own caption bar on Windows**, because the OS one is a different
+  grey sitting on a window drawn to one palette. `lib/chrome.svelte.ts` owns it,
+  `TitleBar.svelte` is the bar and `ResizeGrips.svelte` the eight edges an undecorated window
+  has to grow its own -- without them it can be dragged and maximised and never resized
+  again.
+  **It is switched at runtime, never baked into the build.** `decorations: false` in
+  `tauri.conf.json` would make it a property of the binary, with no way back from a machine
+  where it misbehaves; `setDecorations(true)` puts the real caption bar back instantly, so
+  the switch in Settings is an escape hatch rather than a preference. Windows only: macOS
+  puts the traffic lights where a user expects them, and each Linux desktop has its own
+  caption and its own idea of where the buttons go.
+  **It is a full-width bar and the 34px was argued over.** The first version put the three
+  buttons at the right-hand end of the search line, to avoid spending any height at all --
+  and the search line is the top of the *content column*, so with the inspector open the
+  buttons sat 340px short of the window's corner. A caption button that is not in the corner
+  is one people miss. Nothing about that looked wrong in a screenshot, which is why
+  `frame.cjs` measures against the window rather than against the row.
+  **Snap Layouts needed native code.** The flyout opens when the window answers
+  `WM_NCHITTEST` with `HTMAXBUTTON`, which a webview never sees, so a custom caption bar
+  silently loses it -- the usual reason people turn one back off. `src-tauri/src/snap.rs`
+  subclasses the window and answers four messages: the hit test, the non-client move and
+  leave (the webview stops getting hover for a rectangle the shell has taken into the
+  caption, so Rust forwards it and the button draws its own highlight), and the click, which
+  must be swallowed on the way down or the shell starts a caption drag. Everything else is
+  passed straight through, and the subclass is only installed while the custom frame is on.
+  Two things in there are not obvious: the button rectangle comes *from the window*
+  (`set_maximise_rect`, in physical pixels -- at 150% scale, an ordinary Windows setting,
+  forgetting `devicePixelRatio` puts the hit area two-thirds of the way to the button); and
+  the `HWND` is taken as a raw pointer rather than as Tauri's typed handle, because Tauri
+  depends on its own version of the `windows` crate and two versions of `HWND` are two types
+  that will not unify.
+- **The Directory layout, and the three papers.** There was no title bar until the entry
+  above; the rest of this still holds. One fixed 266px column —
   the site's own `--dirw` — is the whole navigation: wordmark, instance, views, groups,
   collections, then the status marks and Save/Play/theme at its foot. It lives outside the view
   switch in `App.svelte` because it is the constant; only what sits beside it changes. Search is
