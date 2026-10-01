@@ -126,10 +126,16 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   And Load sat next to **Cost**, a genuine pooled frame share, in the same unit and the same
   mono digits, so the invented percentage and the measured one read as a pair — Combat Extended
   showed Cost 0.1 % beside Load 9.8 % in red, and the alarming one was the invented one.
-  The folder model is still there and still earns its place: HALO ranks with it and the Stats
-  card falls back to it *with a caption that says so*. It is simply never again printed in a
-  column, because a model and a reading set in the same digits cannot be told apart by a
-  reader, and the hedge that was supposed to do it lived in a tooltip nobody opens.
+  **The folder model is never printed as a time anywhere**, and it took three passes to mean
+  that. The column went first, then the Stats card, and the Inspector's Loading time panel
+  went on saying "412 ms of an estimated 6.0 min" under a heading reading "estimated from the
+  folder" -- honest wording wrapped around a figure nobody observed, in the one panel people
+  open precisely to find out what a number is, beside a Performance block whose figures are
+  real. The model still earns its keep: HALO ranks with it, and `explainLoad` survives in the
+  Inspector as *what the folder holds* ("6 assemblies (5.6 MB)" is a fact about the mod; "412
+  ms" was not). It is simply never again set in digits next to a unit of time, because a model
+  and a reading in the same mono figures cannot be told apart, and the hedge that was supposed
+  to do it lived in a tooltip nobody opens.
   **`read_local_runs` reads one documented array and nothing else**, and the reason is a
   lesson about flexible parsers. It used to walk the whole run document for any object with a
   `packageId` and ask a fuzzy helper for a share. On a real install that matched the `mods[]`

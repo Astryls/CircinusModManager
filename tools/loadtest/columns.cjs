@@ -188,6 +188,35 @@ const find = async (p, needle) => {
   const top = await readRows(page);
   ok('a mod nobody timed does not sort to the top of Start-up', /\d/.test(top[0]?.startup ?? ''), JSON.stringify(top.slice(0, 2)));
 
+  // ---- and the Inspector, which was the third place the model leaked out ------------------
+  // The column and the summary card were fixed first; this panel went on printing
+  // "412 ms of an estimated 6.0 min" under a heading that said "estimated from the folder".
+  // Honest wording around a figure nobody observed is still a figure nobody observed, and a
+  // detail panel is exactly where somebody goes to find out what a number really is.
+  const inspect = async (needle) => {
+    await page.fill('#search', needle);
+    await page.waitForTimeout(500);
+    await page.evaluate(() => document.querySelector('.list .row')?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await page.waitForTimeout(600);
+    const out = await page.evaluate(() => {
+      const c = [...document.querySelectorAll('.inspector .card, .card')].find((x) => /^\s*Loading time/.test(x.querySelector('h3')?.textContent ?? ''));
+      return c ? { aside: c.querySelector('.aside')?.textContent.trim(), text: c.textContent.replace(/\s+/g, ' ').trim() } : null;
+    });
+    await page.fill('#search', '');
+    await page.waitForTimeout(400);
+    return out;
+  };
+  const timed = await inspect('prepatcher');
+  ok('the Inspector has a loading-time panel', !!timed, JSON.stringify(timed));
+  ok('and for a measured mod it credits Loading Progress', /Loading Progress/.test(timed?.text ?? '') && /measured by/i.test(timed?.aside ?? ''), `${timed?.aside} | ${timed?.text?.slice(0, 70)}`);
+  ok('and never calls that measurement an estimate', !/estimated/i.test(timed?.text ?? ''), timed?.text?.slice(0, 120));
+
+  // A mod Loading Progress never timed: the panel must say so rather than model one.
+  const untimed = await inspect('visual exceptions');
+  ok('an untimed mod says it was not measured', /not measured/i.test(untimed?.aside ?? ''), `${untimed?.aside}`);
+  ok('and offers no milliseconds at all', !/\d+\s*ms|\d+(\.\d+)?\s*s\b|\d+(\.\d+)?\s*min/.test(untimed?.text ?? ''), untimed?.text?.slice(0, 140));
+  ok('while still saying what is in the folder', /What is in it|has not timed/i.test(untimed?.text ?? ''), untimed?.text?.slice(0, 110));
+
   await page.screenshot({ path: `${OUT}/columns.png` });
 
   console.log('errors:', errors.length ? errors.join('\n') : 'none');

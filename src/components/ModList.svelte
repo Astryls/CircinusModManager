@@ -416,9 +416,12 @@
     store.noticePopover = { uid, x: e.clientX, y: e.clientY };
   }
 
-  /** An estimate in milliseconds, said in seconds at a precision the estimate can support.
-   *  Three decimal places on a number that came from counting XML nodes would be a lie about
-   *  how well it is known; "under 0.05 s" is the honest floor. */
+  /** Milliseconds, said in seconds at a precision the measurement can support.
+   *
+   *  It used to format the folder model as well, and the comment here said so; the column now
+   *  only ever holds a Loading Progress reading. The floor stays: a stopwatch started and
+   *  stopped around a few milliseconds of work is not known to three decimal places either,
+   *  and "under 0.05 s" is the honest way to say "too small to time". */
   function secs(ms: number): string {
     if (ms >= 9950) return `${(ms / 1000).toFixed(0)} s`;
     if (ms >= 950) return `${(ms / 1000).toFixed(1)} s`;

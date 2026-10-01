@@ -51,28 +51,29 @@
 
   // ---- how long the game takes to start ----
   //
-  // The other four cards state facts. This one states either a measurement somebody else's mod
-  // took, or a model made of nine hand-rounded coefficients -- so unlike the others it has to say
-  // which, in the caption, where the eye lands after the number. A guess set in 17px bold with
-  // the hedge hidden in a tooltip is a guess people will quote back as a fact.
+  // The other four cards state facts, and so does this one now. It used to state either a
+  // measurement or a model made of nine hand-rounded coefficients, and lean on the caption to
+  // say which -- which is a guess set in 17px bold with the hedge underneath it, and people
+  // quote the number.
+  //
+  // So the model is gone from here entirely. One source: what the Loading Progress mod, by
+  // ilyvion, recorded. On a 1,078-mod install the old fallback read "6m 39s" and nothing had
+  // ever observed it. There is no figure to show without a measurement, so the card shows no
+  // figure, and says what to install.
+  //
+  // `loadRun` -- the total scraped out of the game's own log -- is deliberately not a fallback
+  // either. It is a real measurement of a real start-up, but it is not per mod and it is not
+  // what this card is for; it lives on the Load times page. A card whose whole rule is that it
+  // holds one kind of number cannot have a second kind for when the first is missing.
+  //
+  // Nothing here comes from circinus.sh and nothing should. Pooled medians are other people's
+  // machines: useful for ranking one mod against another on its own page, worthless as a claim
+  // about how long YOUR game takes to start, and putting them in a card headed with this
+  // machine's name would be passing somebody else's measurement off as yours.
   const run = $derived(store.loadRun);
   const impact = $derived(store.startupImpact);
-  /* Which of the four kinds of number this card is showing.
-   *
-   * **A measurement beats an estimate even when the list has moved on.** This card used to
-   * fall back to the calibrated model the moment one mod was added or removed since the last
-   * start-up -- so a player who had measured a real 7m 43s was shown a number nobody had ever
-   * observed, built out of thirty measurements and fourteen guesses, because the list was off
-   * by one. That is the wrong way round. Loading Progress recorded how long the game actually
-   * took to start; the honest thing is to show that figure and say which list it was.
-   *
-   * So `impact` wins whenever it exists, and the only question left is whether it describes
-   * the list on screen. The estimate is what is left for somebody who has never measured.
-   *
-   * None of these numbers comes from circinus.sh, and none should. Pooled medians are other
-   * people's machines: useful for ranking one mod against another on its own page, worthless
-   * as a claim about how long YOUR game takes to start, and putting them in a card headed with
-   * this machine's name would be passing somebody else's measurement off as yours. */
+  /* Which of the three states this card is in: measured and current, measured but the list
+   * has moved on since, or nothing measured at all. */
   const kind = $derived.by<"measured" | "lastrun" | "none">(() => {
     if (!impact) return "none";
     return store.loadRunMatchesList ? "measured" : "lastrun";

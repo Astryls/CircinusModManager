@@ -209,20 +209,41 @@
       </section>
     {/if}
 
-    {#if m.contents.load}
-      {@const ld = store.loadOf(m.uid)}
+    <!-- Measured, or nothing. This panel was the third place the folder model was printed as
+         a time -- after the Start-up column and the summary card, both already fixed -- and
+         it was the worst of the three, because a detail panel is where somebody goes to find
+         out what a number really is. It said "412 ms of an estimated 6.0 min" under a heading
+         that read "estimated from the folder", which is honest wording wrapped around a
+         figure nobody observed, next to a Performance block whose figures are real.
+
+         What survives from the model is `explainLoad`, and only as a description of what the
+         folder holds. "6 assemblies (5.6 MB)" is a fact about the mod; "412 ms" was not. -->
+    {#if m.contents.load || store.measuredMsOf(m.uid) != null}
+      {@const measured = store.measuredMsOf(m.uid)}
       <section class="card">
-        <h3>Loading time <span class="aside">estimated from the folder</span></h3>
-        <dl class="kv wkv">
-          {#if ld && store.activeSet.has(m.uid)}
-            <dt>Share of the list</dt><dd class="num"><b>{ld.share >= 0.0005 ? `${(ld.share * 100).toFixed(ld.share < 0.01 ? 2 : 1)} %` : "under 0.05 %"}</b> <span class="band {ld.band}">{LOAD_BAND_LABEL[ld.band]}</span></dd>
-            <dt>About</dt><dd class="num">{ld.ms >= 1000 ? `${(ld.ms / 1000).toFixed(1)} s` : `${ld.ms} ms`} of an estimated {store.loadTotalSeconds >= 60 ? `${(store.loadTotalSeconds / 60).toFixed(1)} min` : `${store.loadTotalSeconds.toFixed(0)} s`}</dd>
-          {:else}
-            <dt>About</dt><dd class="num">{m.contents.load.scoreMs >= 1000 ? `${(m.contents.load.scoreMs / 1000).toFixed(1)} s` : `${m.contents.load.scoreMs} ms`} if it were active</dd>
+        <h3>Loading time <span class="aside">{measured != null ? "measured by Loading Progress" : "not measured"}</span></h3>
+        {#if measured != null}
+          <dl class="kv wkv">
+            <dt>Added</dt><dd class="num"><b>{measured >= 1000 ? `${(measured / 1000).toFixed(1)} s` : `${Math.round(measured)} ms`}</b></dd>
+            {#if store.measuredTotalSeconds > 0}
+              {@const share = measured / 1000 / store.measuredTotalSeconds}
+              <dt>Share of the start-up</dt><dd class="num">{share >= 0.0005 ? `${(share * 100).toFixed(share < 0.01 ? 2 : 1)} %` : "under 0.05 %"} of the {store.measuredTotalSeconds >= 60 ? `${(store.measuredTotalSeconds / 60).toFixed(1)} min` : `${store.measuredTotalSeconds.toFixed(0)} s`} it measured across this list</dd>
+            {/if}
+            {#if m.contents.load}<dt>What is in it</dt><dd>{explainLoad(m).join(" · ") || "nothing that costs time"}</dd>{/if}
+          </dl>
+          <div class="wmeta">Timed by the Loading Progress mod, by ilyvion, as the game started. Circinus reads the figures it writes and times nothing itself.</div>
+        {:else}
+          {#if m.contents.load}
+            <dl class="kv wkv">
+              <dt>What is in it</dt><dd>{explainLoad(m).join(" · ") || "nothing that costs time"}</dd>
+            </dl>
           {/if}
-          <dt>From</dt><dd>{explainLoad(m).join(" · ") || "nothing that costs time"}</dd>
-        </dl>
-        <div class="wmeta">A ranking, not a stopwatch: Defs XML, patch operations (those that search the whole document cost far more), PNG textures without DDS, assemblies. Converting textures to DDS takes most of the texture part away.</div>
+          <div class="wmeta">
+            Loading Progress has not timed this mod. Circinus will not put a figure here without one: what a folder holds says which mods are worth looking at, and nothing about
+            seconds. Install Loading Progress by ilyvion and switch on both &ldquo;Track startup loading impact&rdquo; and &ldquo;Auto-save startup impact report&rdquo; in its settings, then start
+            the game once.
+          </div>
+        {/if}
       </section>
     {/if}
 
