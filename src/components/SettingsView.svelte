@@ -188,7 +188,7 @@
           {#if c}
             <div class="chk" class:warn={c.state === "warn"} class:bad={c.state === "error"}>
               {#if c.state !== "ok"}<span class="m">{@html c.state === "error" ? I.error : I.warn}</span>{/if}
-              <span class="ct"><span class="src">{c.custom ? "Set by you" : "Found automatically"}</span> &middot; {c.found}{#if c.wanted}&nbsp;<span class="want">{c.wanted}</span>{/if}</span>
+              <span class="ct"><span class="who">{c.custom ? "Set by you" : "Found automatically"}</span> &middot; {c.found}{#if c.wanted}&nbsp;<span class="want">{c.wanted}</span>{/if}</span>
             </div>
           {/if}
         </div>
@@ -634,7 +634,7 @@
   .chk .m { flex: none; margin-top: 1px; }
   .chk .m :global(svg) { width: 13px; height: 13px; }
   .chk .ct { min-width: 0; overflow-wrap: anywhere; }
-  .chk .src { color: var(--text-4); }
+  .chk .who { color: var(--text-4); }
   .chk.warn { color: var(--text-2); }
   .chk.warn .m { color: var(--amber); }
   .chk.bad { color: var(--text-2); }

@@ -805,8 +805,9 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   from mods Circinus may not have found.
   Auto is drawn from the check's own `custom` flag rather than from `settings.locations`, so the
   button and the sentence under it cannot disagree about whether somebody set that folder.
-  `folders.cjs` asserts the wording and the reach rather than the geometry -- a check that only
-  confirmed a path string was printed would have passed on every version of this card.
+  `folders.cjs` asserts the wording and the reach -- a check that only confirmed a path string
+  was printed would have passed on every version of this card -- **and the geometry**, which is
+  the part that shipped broken. See the entry below.
 - **Nowhere to put a download is a reason not to start it.** A whole collection downloaded,
   thirteen minutes of it, and then failed per item with "no local Mods folder is configured".
   The check was correct and in the worst possible place: after the bytes were on disk. The
@@ -906,6 +907,27 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
 - `clr`: reads .NET assemblies (PE, ECMA-335 metadata, custom attribute blobs, IL) without a
   .NET runtime and without ever loading a mod's code. `harmony` caches those readings and groups
   them into what one mod patches and who else patches the same method.
+
+- **`app.css` owns a vocabulary of bare class names, and a component that reuses one inherits
+  it.** Svelte scoping limits where a *component's own* rules apply; it does nothing about the
+  global sheet's. So a span named `.src` in `SettingsView` picked up `app.css`'s mod-source
+  badge -- `width: 22px; height: 22px; display: inline-grid` -- and "Found automatically"
+  rendered one character per line, running down the page over the row beneath it. The
+  vocabulary is 31 names and it is short and generic enough to collide by accident: `att band
+  btn c-* card chip chips dot empty field flag input label meter mono neg num pill pos seg src
+  switch vers`. Check a new class name against it; prefer a name that could not be a utility.
+  There is no static gate for this and the attempt is written down so nobody repeats it: 44
+  places legitimately style a global under a scope (`.loc .btn`, `.row .chip`), which is a
+  component adjusting a thing that genuinely *is* a button or a chip, and nothing in the source
+  distinguishes that from an accident. A ledger of 44 correct usages that can never shrink is
+  the wrong shape, and a gate with false positives is worse than none.
+  **What catches it is measuring, and the first version of `folders.cjs` talked itself out of
+  measuring.** It said in a comment that "geometry is not the point here; wording is", and every
+  wording assertion passed while the card was visibly broken on screen. The house rule at the
+  foot of this file is not a preference. Every assertion about what a thing *says* is paired
+  with one about the box it says it in: the sentence spans its row, stays inside it, is one or
+  two lines rather than a column of letters, no text span is narrower than the words in it, and
+  no two rows overlap. Putting `.src` back fails two of those by name.
 
 ## Words a player reads
 

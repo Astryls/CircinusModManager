@@ -13,8 +13,17 @@
 // than waiting to be found most of the way down Settings.
 //
 // What this asserts is that the two states are *distinguishable* and that the bad one is
-// reachable without going looking. Geometry is not the point here; wording is. A check that
-// only confirmed a path string was printed would have passed on every version of this card.
+// reachable without going looking -- a check that only confirmed a path string was printed
+// would have passed on every version of this card.
+//
+// It also measures the card, and that part was learned the hard way. The first version of this
+// file said in as many words that "geometry is not the point here; wording is", and shipped a
+// row whose first span was 22 pixels wide with its text running down the page over the next
+// row. The cause is the house rule about global names: `app.css` defines `.src` as a 22x22
+// `inline-grid` badge for a mod's source, and a component that names a span `.src` gets that
+// whether it meant to or not -- Svelte scopes a component's own rules, it does not shield its
+// elements from the global sheet. So every wording assertion here is paired with one about the
+// box the words are in, which is the only kind that would have caught it.
 //
 //   npm run build && npx vite preview --port 4173 --strictPort
 //   node tools/loadtest/folders.cjs [outdir]
@@ -51,6 +60,50 @@ const rows = (page) =>
         colored: chk ? getComputedStyle(chk.querySelector('.m') ?? chk).color : ''
       };
     });
+  });
+
+/** The card's geometry: does any of this sit where it was meant to sit.
+ *
+ *  Three questions, and the one that matters is the third. A span that picks up a global
+ *  `width` renders its text one character per line and runs out of its own row -- which is
+ *  invisible to any assertion about what the text says, and obvious the moment anything
+ *  measures it. */
+const geometry = (page) =>
+  page.evaluate(() => {
+    const card = [...document.querySelectorAll('.settings .card')].find((c) => /Where RimWorld lives/.test(c.textContent));
+    const rows = [...card.querySelectorAll('.loc')];
+    const out = [];
+    for (const r of rows) {
+      const rb = r.getBoundingClientRect();
+      const chk = r.querySelector('.chk');
+      if (!chk) continue;
+      const cb = chk.getBoundingClientRect();
+      // Text-bearing spans only. The mark is an empty 13px wrapper around an icon and is
+      // *supposed* to be that small, so measuring it against a text rule would make the rule
+      // untrue and therefore unenforceable.
+      const spans = [...chk.querySelectorAll('span')]
+        .filter((e) => e.textContent.trim().length > 0)
+        .map((e) => {
+          const b = e.getBoundingClientRect();
+          return { cls: e.className.split(' ')[0], text: e.textContent.trim().slice(0, 24), w: Math.round(b.width), h: Math.round(b.height), over: e.scrollWidth > e.clientWidth + 1 || e.scrollHeight > e.clientHeight + 1 };
+        });
+      out.push({
+        label: r.querySelector('.lt b')?.textContent.trim() ?? '',
+        // The sentence spans both columns of the row's grid, so it wraps under the whole row
+        // rather than inside the 170px label column.
+        full: cb.width > rb.width - 4,
+        // Nothing may leave the row it belongs to, in either direction.
+        inside: cb.top >= rb.top - 1 && cb.bottom <= rb.bottom + 1,
+        // One line of 11.5px type is about 17px. Four lines of it is a span that has been
+        // given a width it did not ask for.
+        tall: Math.round(cb.height) > 70,
+        spans
+      });
+    }
+    // And the rows themselves must not overlap, which is what a row that overflows causes.
+    const boxes = rows.map((r) => r.getBoundingClientRect());
+    const overlap = boxes.some((a, i) => boxes.slice(i + 1).some((b) => a.bottom > b.top + 1 && a.top < b.bottom - 1));
+    return { rows: out, overlap };
   });
 
 const toSettings = async (page) => {
@@ -90,6 +143,25 @@ const toSettings = async (page) => {
   const cfg = r.find((x) => /Config folder/.test(x.label));
   ok('the config folder says how many mods the file lists', /ModsConfig\.xml/.test(cfg?.says ?? ''), cfg?.says);
   ok('and nothing is shouting on a healthy install', await page.evaluate(() => !document.querySelector('.banner.error')));
+
+  /* ---- and the sentence is in the shape of a sentence --------------------------------------
+   *
+   * `app.css` owns a vocabulary of bare class names -- `.src` is a 22x22 badge for a mod's
+   * source -- and a component that reaches for one of those names on a new element inherits it
+   * silently. That is what happened here: "Found automatically" rendered one character per
+   * line in a 22px box and ran down over the row beneath it. Svelte scoping does not help,
+   * because it limits where a *component's* rules apply and says nothing about the global
+   * sheet's. Measuring is the only way this is ever caught. */
+  let g = await geometry(page);
+  ok('every row has its sentence measured', g.rows.length === 4, `${g.rows.length} rows`);
+  ok('the sentence spans the whole row, not the label column', g.rows.every((x) => x.full), g.rows.filter((x) => !x.full).map((x) => x.label).join(', '));
+  ok('and stays inside the row it belongs to', g.rows.every((x) => x.inside), g.rows.filter((x) => !x.inside).map((x) => x.label).join(', '));
+  ok('and is one or two lines, not a column of letters', g.rows.every((x) => !x.tall), g.rows.filter((x) => x.tall).map((x) => x.label).join(', '));
+  // Width against the words in it: "Found automatically" cannot fit in a 22px box, so a span
+  // narrower than the text it holds is a span wearing somebody else's rule.
+  const squeezed = (x) => x.spans.filter((sp) => sp.over || sp.w < Math.min(40, sp.text.length * 4));
+  ok('no span inside it has been squeezed by a global class', g.rows.every((x) => !squeezed(x).length), JSON.stringify(g.rows.flatMap(squeezed)));
+  ok('and the rows do not sit on top of one another', g.overlap === false);
   await page.locator('.settings .card').first().screenshot({ path: `${OUT}/folders-ok.png` });
 
   // ---- present and wrong -------------------------------------------------------------------
@@ -156,6 +228,14 @@ const toSettings = async (page) => {
   /* And the folder that is fine stays quiet while two beside it are not. A card that goes amber
    * all over the moment anything is wrong is a card nobody can read for the one bad row. */
   ok('a folder that is fine carries no mark even next to two that are not', ws?.mark === false && !ws?.bad && !ws?.warn, ws?.says);
+
+  // The same measurements with the longer sentences an unusable folder produces, since those
+  // are the rows most likely to be the ones that break out of their box.
+  g = await geometry(page);
+  ok('a long explanation still spans the row', g.rows.every((x) => x.full), g.rows.filter((x) => !x.full).map((x) => x.label).join(', '));
+  ok('and still stays inside it', g.rows.every((x) => x.inside), g.rows.filter((x) => !x.inside).map((x) => x.label).join(', '));
+  ok('and no span in it is squeezed', g.rows.every((x) => !squeezed(x).length), JSON.stringify(g.rows.flatMap(squeezed)));
+  ok('and the rows still do not overlap', g.overlap === false);
   await page.locator('.settings .card').first().screenshot({ path: `${OUT}/folders-bad.png` });
 
   console.log('errors:', errors.length ? errors.join('\n') : 'none');
