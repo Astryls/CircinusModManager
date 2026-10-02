@@ -120,6 +120,11 @@
     { key: "localModsDir", label: "Local mods folder", hint: "Usually RimWorld/Mods. SteamCMD downloads go here" },
     { key: "workshopDir", label: "Workshop folder", hint: "steamapps/workshop/content/294100" }
   ];
+  /* What Circinus found in each folder, keyed so a row can ask about itself. The backend
+   * recomputes these with every snapshot: the player can unplug a drive or run the game and
+   * create the config folder while this page is open, and a cached answer would be a confident
+   * wrong one. An older backend that sends nothing leaves every row saying what it used to. */
+  const checks = $derived(new Map((store.snap?.folders ?? []).map((f) => [f.key, f])));
   async function choose(key: Key) {
     const p = await pickFolder(fields.find((f) => f.key === key)?.label);
     if (!p || !s) return;
@@ -165,13 +170,27 @@
       <h3>Where RimWorld lives <span class="aside">{store.instance?.name ?? ""}</span></h3>
       <p class="hint">These are the folders of the instance you have open{store.instance ? `, ${store.instance.name}` : ""}. Changing one changes that instance, not the others. <button class="lnk" onclick={() => (store.showInstances = true)}>All instances…</button></p>
       {#each fields as f}
+        {@const c = checks.get(f.key)}
         <div class="loc">
           <div class="lt"><b>{f.label}</b><span>{f.hint}</span></div>
           <div class="lv">
-            <span class="path mono" title={loc?.[f.key] ?? ""}>{loc?.[f.key] ?? "not found"}</span>
+            <span class="path mono" class:bad={c?.state === "error"} title={loc?.[f.key] ?? ""}>{loc?.[f.key] ?? "not found"}</span>
             <button class="btn sm" disabled={!inTauri} onclick={() => choose(f.key)}>Choose…</button>
-            {#if s?.locations[f.key]}<button class="btn sm" onclick={() => clear(f.key)}>Auto</button>{/if}
+            <!-- Auto only where there is something to undo. `custom` is the backend's own
+                 answer to "did somebody set this", so the button and the sentence under it
+                 cannot disagree; the settings object is the fallback for a build that sends
+                 no checks. -->
+            {#if c ? c.custom : !!s?.locations[f.key]}<button class="btn sm" title="Go back to the folder Circinus finds on its own" onclick={() => clear(f.key)}>Auto</button>{/if}
           </div>
+          <!-- What is actually in there, which is the only thing that can tell a path that is
+               right from a path that merely exists. It spans both columns so a long sentence
+               wraps under the whole row rather than inside the 170px label column. -->
+          {#if c}
+            <div class="chk" class:warn={c.state === "warn"} class:bad={c.state === "error"}>
+              {#if c.state !== "ok"}<span class="m">{@html c.state === "error" ? I.error : I.warn}</span>{/if}
+              <span class="ct"><span class="src">{c.custom ? "Set by you" : "Found automatically"}</span> &middot; {c.found}{#if c.wanted}&nbsp;<span class="want">{c.wanted}</span>{/if}</span>
+            </div>
+          {/if}
         </div>
       {/each}
       <div class="row">
@@ -607,6 +626,20 @@
   .sample summary { cursor: pointer; font-weight: 600; }
   .sample pre { margin: 6px 0 0; max-height: 240px; overflow: hidden auto; background: var(--surface-2); border-radius: 0; padding: 8px 10px; font-size: 11px; line-height: 1.4; user-select: text; white-space: pre-wrap; word-break: break-all; }
   .path.bad { color: var(--red); }
+  /* The found/wanted line. Second row of the same grid, spanning both columns: the sentence is
+     long on purpose and has to wrap under the label rather than beside it. In ink by default --
+     "RimWorld 1.6.4518, Core and 4 other official folders" is the good news, and good news that
+     carries a colour spends attention saying nothing happened. */
+  .chk { grid-column: 1 / -1; display: flex; gap: 6px; align-items: flex-start; font-size: 11.5px; color: var(--text-3); line-height: 1.45; }
+  .chk .m { flex: none; margin-top: 1px; }
+  .chk .m :global(svg) { width: 13px; height: 13px; }
+  .chk .ct { min-width: 0; overflow-wrap: anywhere; }
+  .chk .src { color: var(--text-4); }
+  .chk.warn { color: var(--text-2); }
+  .chk.warn .m { color: var(--amber); }
+  .chk.bad { color: var(--text-2); }
+  .chk.bad .m { color: var(--red); }
+  .chk .want { color: var(--text-4); }
   .opt { display: flex; align-items: center; gap: 10px; margin: 6px 0 10px; font-size: 13px; }
   .opt .l { width: 100px; color: var(--text-2); }
   .opt .hint { margin: 0; }

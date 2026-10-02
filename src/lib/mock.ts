@@ -1,7 +1,7 @@
 // Browser-only stand-in for the Rust backend: lets `npm run dev` show the UI with example data.
 // Nothing here ships in the Tauri build path (api.ts only imports it outside Tauri).
 
-import type { Announcement, BuiltinRule, Chain, ChainStep, Instance, Issue, LaunchSettings, Locations, ModChange, ModInfo, ModPatchDetail, ModPatches, Patcher, PatchJob, PatchReport, PatchSummary, PatchTarget, Phase, Placement, QueueState, Rule, Settings, Snapshot, SortResult, Source, TargetGroup, TexState, UserData, Weight } from "./types";
+import type { Announcement, BuiltinRule, Chain, ChainStep, FolderCheck, Instance, Issue, LaunchSettings, Locations, ModChange, ModInfo, ModPatchDetail, ModPatches, Patcher, PatchJob, PatchReport, PatchSummary, PatchTarget, Phase, Placement, QueueState, Rule, Settings, Snapshot, SortResult, Source, TargetGroup, TexState, UserData, Weight } from "./types";
 import { patchTargetName, PHASES } from "./types";
 
 type Seed = [name: string, author: string, pkg: string, pfid: string | null, src: Source, phase: Phase, group: string, ver: string[], size: number, flags?: string];
@@ -438,6 +438,32 @@ function issues(order: string[]): Issue[] {
   newUids.sort((a, b) => firstSeen[b] - firstSeen[a]);
 }
 
+/** What Rust's `paths::check_*` would say about the four folders.
+ *
+ *  `?badpaths` is the state the whole check exists for and the one no screenshot ever showed:
+ *  a game folder that is present and wrong (the Steam library root, which is what a folder
+ *  picker lands on) and a config folder on a drive that is no longer plugged in. Everything
+ *  downstream looks the same as a healthy install -- an empty list, a save that does nothing --
+ *  so the only way to see the difference is here. */
+function folderChecks(): FolderCheck[] {
+  const bad = new URLSearchParams(location.search).has("badpaths");
+  const L = settings.locations;
+  if (bad) {
+    return [
+      { key: "gameDir", path: `${STEAM}\\common`, custom: true, state: "error", found: "No Version.txt here, so this is not the game folder.", wanted: "A folder with Version.txt and Data in it. On macOS, the folder RimWorldMac.app sits in." },
+      { key: "configDir", path: "E:\\OldDrive\\Config", custom: true, state: "error", found: "That folder is not there.", wanted: "The folder holding ModsConfig.xml. RimWorld writes it the first time it runs." },
+      { key: "localModsDir", path: null, custom: false, state: "warn", found: "Not set, so downloads have nowhere to go and local mods are not read.", wanted: "Usually RimWorld/Mods. Downloads land here and the game reads it." },
+      { key: "workshopDir", path: L.workshopDir, custom: false, state: "ok", found: "18 subscribed mods here.", wanted: "" }
+    ];
+  }
+  return [
+    { key: "gameDir", path: L.gameDir, custom: false, state: "ok", found: "RimWorld 1.6.4530 rev1235, Core and 4 other official folders.", wanted: "" },
+    { key: "configDir", path: L.configDir, custom: false, state: "ok", found: `ModsConfig.xml, listing ${active.length} mods.`, wanted: "" },
+    { key: "localModsDir", path: L.localModsDir, custom: false, state: "ok", found: "6 mods here.", wanted: "" },
+    { key: "workshopDir", path: L.workshopDir, custom: false, state: "ok", found: "18 subscribed mods here.", wanted: "" }
+  ];
+}
+
 function snapshot(): Snapshot {
   return {
     locations: settings.locations,
@@ -494,6 +520,7 @@ function snapshot(): Snapshot {
     // fresh install of it and is not something the card could previously tell apart from "not
     // installed". `lpTracking` is mutable so pressing the button changes what the next snapshot
     // says, which is the whole of what the button is claimed to do.
+    folders: folderChecks(),
     loadingProgress: { installed: lpInstalled, active: lpInstalled, track: lpInstalled && lpTracking, autosave: lpInstalled && lpTracking, settingsPath: "C:/Users/you/AppData/LocalLow/Ludeon Studios/RimWorld by Ludeon Studios/Config/Mod_3535481557_LoadingProgressMod.xml" },
     // Only what is switched on, the way the backend now reports it: a source that is off is not
     // read and does not claim to be loaded. The mock said both were loaded whatever the switches

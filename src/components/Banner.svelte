@@ -35,8 +35,35 @@
     return t ? new Date(t * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
   });
 
+  /* The folders Circinus is looking in, when one of them is wrong.
+   *
+   * These are the only four paths everything else depends on, and the one place they could be
+   * read was a card most of the way down Settings. A game folder pointing at a Steam library
+   * root, or a config folder left behind by last month's reinstall, shows up everywhere except
+   * where it can be fixed: an empty mod list, a load order that will not save, downloads that
+   * fail at the end. The check lives in Rust (`paths::check_*`) and the window only has to say
+   * so, at the top, where somebody is already looking at the empty list. */
+  const FOLDER_NAMES: Record<string, string> = { gameDir: "RimWorld folder", configDir: "Config folder", localModsDir: "Local mods folder", workshopDir: "Workshop folder" };
+  const badFolders = $derived((store.snap?.folders ?? []).filter((f) => f.state === "error"));
+
   const notices = $derived.by((): Notice[] => {
     const out: Notice[] = [];
+    if (badFolders.length) {
+      out.push({
+        id: "folders",
+        // Which folders, and where they point. A different wrong folder is a new thing to say.
+        token: stamp(badFolders.map((f) => `${f.key}:${f.path ?? ""}`)),
+        kind: "error",
+        title: badFolders.length === 1 ? `Circinus cannot use your ${FOLDER_NAMES[badFolders[0].key] ?? "folders"}` : `${badFolders.length} of the folders Circinus reads are wrong`,
+        detail: badFolders.map((f) => `${FOLDER_NAMES[f.key] ?? f.key}: ${f.found}`).join(" · "),
+        action: "Set the folders",
+        run: () => (store.view = "settings"),
+        // Nothing works without these, so there is nothing to put this down in favour of. Every
+        // other banner describes something you can decide to live with; this one describes an
+        // application that is not reading your game.
+        dismissable: false
+      });
+    }
     const reset = store.snap?.listReset ?? null;
     if (reset) {
       const from = reset.restoreFrom;
@@ -131,8 +158,10 @@
         notice.close = () => (store.selected = []);
         notice.closeTitle = "Stop reviewing";
       }
-      // Something that will make the game reset the list outranks housekeeping notices.
-      if (head.kind === "error") out.splice(reset ? 1 : 0, 0, notice);
+      // Something that will make the game reset the list outranks housekeeping notices -- but
+      // not a folder Circinus cannot read, which is above everything because every other
+      // notice is computed from mods it may not have found.
+      if (head.kind === "error") out.splice((badFolders.length ? 1 : 0) + (reset ? 1 : 0), 0, notice);
       else out.push(notice);
     }
     return out.filter((n) => !store.dismissed.includes(n.id) && !store.bannerDown(n.id, n.token));

@@ -773,6 +773,40 @@ runs the real installer over the machine being developed on. `tauri::is_dev()` i
   and was landing at #212 of 230. Neither can ever be caught by the name check, because that
   one only fires on a mod with no Defs at all and both ship a key binding and a main-tab
   button -- which is the whole reason the id list exists.
+- **All four folders have always been selectable; what they could not do was say they were
+  wrong.** `settings.locations` overrides autodetection per instance (`resolve_locations`
+  applies the override on top of `Locations::detect`), and Settings has Choose… and Auto for
+  each. The row printed the resolved path, or "not found", and that is enough to notice a blank
+  and nothing else -- a path that is *present and wrong* read identically to one that was right.
+  A game folder pointing at the Steam library root is the common one, because that is exactly
+  where a folder picker lands; a config folder left behind by a reinstall and a Mods folder on
+  an unplugged drive are the others. The symptom is always downstream and never says what it is:
+  an empty mod list, a load order that will not save, a download that fails at the end.
+  So `paths::check_game_dir` and its three siblings say **what is in there**, in a sentence
+  somebody can check against what they believe: "RimWorld 1.6.4518, Core and 4 other official
+  folders", "ModsConfig.xml, listing 214 mods", "No Version.txt here, so this is not the game
+  folder". A `found` line is always printed, including for a folder that is right -- a mark that
+  only appears when something is broken cannot be told from a check that is not running.
+  Severity is about what each folder costs when it is missing, not about tidiness. The game and
+  config folders are **errors**: nothing works. A missing Mods folder is a **warning** that
+  names the thing it actually breaks, which is report #3 written down -- downloads have nowhere
+  to go. A missing Workshop folder is **fine** when nothing is installed from the Workshop,
+  because a GOG player can do nothing about it and a standing warning they must ignore is how
+  people learn to ignore warnings.
+  `Snapshot.folders` carries them, recomputed every snapshot rather than cached, for the same
+  reason `loading_progress` is: a drive can be unplugged and the game can create the config
+  folder while the window is open, and a cached answer would be a confident wrong one. It is a
+  handful of `is_file` calls and two `read_dir`s over folders the scan has already walked.
+  An error also raises a **banner, above everything else**, because the one place these could
+  be read was a card most of the way down Settings and the whole problem is that nothing points
+  there. It is the only banner in the window that cannot be dismissed: every other one describes
+  something you can decide to live with, and this one describes an application that is not
+  reading your game. It sorts above the list-reset notice because every other notice is computed
+  from mods Circinus may not have found.
+  Auto is drawn from the check's own `custom` flag rather than from `settings.locations`, so the
+  button and the sentence under it cannot disagree about whether somebody set that folder.
+  `folders.cjs` asserts the wording and the reach rather than the geometry -- a check that only
+  confirmed a path string was printed would have passed on every version of this card.
 - **Nowhere to put a download is a reason not to start it.** A whole collection downloaded,
   thirteen minutes of it, and then failed per item with "no local Mods folder is configured".
   The check was correct and in the worst possible place: after the bytes were on disk. The

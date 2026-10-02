@@ -405,6 +405,29 @@ export interface Snapshot {
   startupHistory?: PastRun[];
   /** Whether anything is measuring start-up at all, and why not when nothing is. */
   loadingProgress?: LoadingProgressState;
+  /** What is in each of the four folders, and whether that is the right thing. */
+  folders?: FolderCheck[];
+}
+
+/** One of the four folders, and what Circinus found where it is looking.
+ *
+ *  The window used to print the resolved path and, failing that, "not found" -- enough to
+ *  notice a blank and nothing else. A path that is *present and wrong* (the Steam library root
+ *  rather than the game folder, last playthrough's config folder, a drive that is no longer
+ *  plugged in) looked exactly like one that was right, and the only symptom was everything
+ *  downstream being empty. `found` is the sentence somebody can check against what they
+ *  believe is in there. */
+export interface FolderCheck {
+  /** The settings key: gameDir, configDir, localModsDir, workshopDir. */
+  key: keyof Locations;
+  path?: string | null;
+  /** Chosen by hand rather than found. "Auto" only makes sense against one that was. */
+  custom: boolean;
+  state: "ok" | "warn" | "error";
+  /** What is in there, in plain words. Always said, including when the answer is "nothing". */
+  found: string;
+  /** What would have to be there instead. Empty when the folder is right. */
+  wanted: string;
 }
 
 /** What `ilyvion.LoadingProgress` is doing, which decides whether a start-up can be measured.

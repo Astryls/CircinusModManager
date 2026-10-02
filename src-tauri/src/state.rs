@@ -554,6 +554,9 @@ pub struct Snapshot {
     /// Whether anything is measuring start-up at all, and why not when nothing is.
     #[serde(default)]
     pub loading_progress: LoadingProgress,
+    /// What is in each of the four folders, and whether that is the right thing.
+    #[serde(default)]
+    pub folders: Vec<circinus_core::paths::FolderCheck>,
     /// What the curators of the followed packs have said, newest first, muted packs left out.
     #[serde(default)]
     pub announcements: Vec<Announcement>,
@@ -1058,6 +1061,30 @@ impl App {
         self.data_dir.join("startup").join(&self.instance.id)
     }
 
+    /// What is actually in each of the four folders, and whether that is the right thing.
+    ///
+    /// Recomputed with every snapshot rather than cached, for the same reason
+    /// `loading_progress` is: the player can unplug a drive, move an install or run the game
+    /// and create the config folder while Circinus is open, and a cached answer would be a
+    /// confident wrong one. It is a handful of `is_file` calls and two `read_dir`s against
+    /// folders the scan has already walked.
+    pub fn folders(&self) -> Vec<circinus_core::paths::FolderCheck> {
+        use circinus_core::paths as pp;
+        let o = &self.settings.locations;
+        let l = &self.locations;
+        let under = |dir: &Option<std::path::PathBuf>| -> usize {
+            let Some(d) = dir else { return 0 };
+            self.mods.iter().filter(|m| m.path.starts_with(d)).count()
+        };
+        let any_workshop = self.mods.iter().any(|m| m.source == circinus_core::Source::Workshop);
+        vec![
+            pp::check_game_dir(l.game_dir.as_deref(), o.game_dir.is_some(), Some(self.game_version.full.as_str())),
+            pp::check_config_dir(l.config_dir.as_deref(), o.config_dir.is_some(), self.file_active.len()),
+            pp::check_local_mods_dir(l.local_mods_dir.as_deref(), o.local_mods_dir.is_some(), under(&l.local_mods_dir)),
+            pp::check_workshop_dir(l.workshop_dir.as_deref(), o.workshop_dir.is_some(), under(&l.workshop_dir), any_workshop),
+        ]
+    }
+
     /// Whether anything is measuring start-up, and whether Circinus could switch it on.
     ///
     /// Cheap enough to recompute with every snapshot: a scan of the mod list already in memory,
@@ -1276,6 +1303,7 @@ impl App {
             startup_impact_at: self.startup_impact_at,
             startup_history: circinus_core::startupimpact::past_runs(&self.startup_history_dir()),
             loading_progress: self.loading_progress(),
+            folders: self.folders(),
         }
     }
 

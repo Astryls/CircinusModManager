@@ -536,3 +536,222 @@ pub fn home_dir() -> Option<PathBuf> {
 pub fn app_data_dir() -> PathBuf {
     dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("Circinus")
 }
+
+/// What Circinus found where it is looking, and whether that is the right thing.
+///
+/// Four folders decide whether anything in this application works, and the window used to say
+/// one word about each of them: the resolved path, or "not found". That is enough to notice a
+/// blank and nothing else. A path that is *present and wrong* -- the Steam library root rather
+/// than the game folder, last playthrough's config folder, a Mods folder on a drive that is no
+/// longer plugged in -- looked exactly like a path that was right, and the only symptom was
+/// everything downstream being empty or stale.
+///
+/// So each folder now says what is in it. "RimWorld 1.6.4518, Core and 4 DLC" is a sentence
+/// somebody can check against what they believe; so is "no Version.txt here". The check is
+/// deliberately a handful of `is_file` and `read_dir` calls against folders the scan has
+/// already walked, because it runs with every snapshot and must not cost anything.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderCheck {
+    /// The settings key, so the window can line this up with its own field list.
+    pub key: String,
+    /// Where Circinus is actually looking. None when nothing was detected and nothing was set.
+    pub path: Option<String>,
+    /// Chosen by hand rather than found. "Auto" only makes sense against one that was.
+    pub custom: bool,
+    /// `ok`, `warn` or `error`. An error means something that obviously matters is broken;
+    /// a warning means something that matters in one place is. Nothing else carries colour.
+    pub state: FolderState,
+    /// What is in there, in plain words. Always said, including when the answer is "nothing".
+    pub found: String,
+    /// What would have to be in there instead. Empty when the folder is right.
+    pub wanted: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FolderState {
+    Ok,
+    Warn,
+    Error,
+}
+
+impl FolderCheck {
+    fn new(key: &str, path: Option<&Path>, custom: bool, state: FolderState, found: impl Into<String>, wanted: impl Into<String>) -> FolderCheck {
+        FolderCheck { key: key.to_string(), path: path.map(|p| p.display().to_string()), custom, state, found: found.into(), wanted: wanted.into() }
+    }
+}
+
+/// How many entries a folder holds, counting only directories. `None` when it cannot be read.
+fn dir_count(path: &Path) -> Option<usize> {
+    Some(std::fs::read_dir(path).ok()?.filter_map(|e| e.ok()).filter(|e| e.file_type().map(|t| t.is_dir() || t.is_symlink()).unwrap_or(false)).count())
+}
+
+/// Check the game folder. `version` is what was read out of Version.txt, when anything was.
+pub fn check_game_dir(path: Option<&Path>, custom: bool, version: Option<&str>) -> FolderCheck {
+    let wanted = "A folder with Version.txt and Data in it. On macOS, the folder RimWorldMac.app sits in.";
+    let Some(p) = path else {
+        return FolderCheck::new("gameDir", None, custom, FolderState::Error, "Nothing found, and nothing set. Almost everything needs this one.", wanted);
+    };
+    let root = game_root(p);
+    if !root.is_dir() {
+        return FolderCheck::new("gameDir", Some(p), custom, FolderState::Error, "That folder is not there. An unplugged drive or a moved install does this.", wanted);
+    }
+    if !root.join("Version.txt").is_file() {
+        return FolderCheck::new("gameDir", Some(p), custom, FolderState::Error, "No Version.txt here, so this is not the game folder.", wanted);
+    }
+    let data = data_dir_for_game(&root);
+    let official = dir_count(&data).unwrap_or(0);
+    let v = version.unwrap_or("an unreadable version");
+    let found = match official {
+        0 => format!("RimWorld {v}, but Data holds no Core -- the game itself will not start from here."),
+        1 => format!("RimWorld {v}, Core and no DLC."),
+        n => format!("RimWorld {v}, Core and {} other official folders.", n - 1),
+    };
+    let state = if official == 0 { FolderState::Error } else { FolderState::Ok };
+    FolderCheck::new("gameDir", Some(&root), custom, state, found, if official == 0 { wanted } else { "" })
+}
+
+/// Check the config folder. `active` is how many mods ModsConfig.xml currently lists.
+pub fn check_config_dir(path: Option<&Path>, custom: bool, active: usize) -> FolderCheck {
+    let wanted = "The folder holding ModsConfig.xml. RimWorld writes it the first time it runs.";
+    let Some(p) = path else {
+        return FolderCheck::new("configDir", None, custom, FolderState::Error, "Nothing found, and nothing set. Your load order lives here.", wanted);
+    };
+    if !p.is_dir() {
+        return FolderCheck::new("configDir", Some(p), custom, FolderState::Error, "That folder is not there.", wanted);
+    }
+    if !p.join("ModsConfig.xml").is_file() {
+        return FolderCheck::new("configDir", Some(p), custom, FolderState::Error, "No ModsConfig.xml here. Run the game once, or point this at the folder that has one.", wanted);
+    }
+    FolderCheck::new("configDir", Some(p), custom, FolderState::Ok, format!("ModsConfig.xml, listing {active} mods."), "")
+}
+
+/// Check the local Mods folder. `here` is how many installed mods were read out of it.
+///
+/// A warning rather than an error when it is missing, and the warning says what it costs:
+/// SteamCMD downloads have nowhere to land, which is the whole of report #3 -- thirteen minutes
+/// of downloading that failed at the end because this was unset and nothing had said so.
+pub fn check_local_mods_dir(path: Option<&Path>, custom: bool, here: usize) -> FolderCheck {
+    let wanted = "Usually RimWorld/Mods. Downloads land here and the game reads it.";
+    let Some(p) = path else {
+        return FolderCheck::new("localModsDir", None, custom, FolderState::Warn, "Not set, so downloads have nowhere to go and local mods are not read.", wanted);
+    };
+    if !p.is_dir() {
+        return FolderCheck::new("localModsDir", Some(p), custom, FolderState::Warn, "That folder is not there, so downloads have nowhere to go.", wanted);
+    }
+    let found = match here {
+        0 => "Empty, which is fine. Downloads will land here.".to_string(),
+        1 => "1 mod here.".to_string(),
+        n => format!("{n} mods here."),
+    };
+    FolderCheck::new("localModsDir", Some(p), custom, FolderState::Ok, found, "")
+}
+
+/// Check the Workshop content folder. `here` is how many subscribed mods were read out of it.
+///
+/// Missing is only a problem for somebody who has Steam mods, so the state depends on whether
+/// any were found anywhere. A player with a GOG copy and a Mods folder is told this is fine
+/// rather than being shown a warning they can do nothing about and should ignore.
+pub fn check_workshop_dir(path: Option<&Path>, custom: bool, here: usize, any_workshop_mods: bool) -> FolderCheck {
+    let wanted = "steamapps/workshop/content/294100, in whichever Steam library holds RimWorld.";
+    let idle = "Not found. Nothing is installed through the Steam Workshop, so nothing needs it.";
+    let Some(p) = path else {
+        return if any_workshop_mods {
+            FolderCheck::new("workshopDir", None, custom, FolderState::Warn, "Not found, although subscribed mods are installed. Steam updates will not be noticed.", wanted)
+        } else {
+            FolderCheck::new("workshopDir", None, custom, FolderState::Ok, idle, "")
+        };
+    };
+    if !p.is_dir() {
+        return if any_workshop_mods {
+            FolderCheck::new("workshopDir", Some(p), custom, FolderState::Warn, "That folder is not there, although subscribed mods are installed.", wanted)
+        } else {
+            FolderCheck::new("workshopDir", Some(p), custom, FolderState::Ok, idle, "")
+        };
+    }
+    let found = match here {
+        0 => "No subscribed mods in it yet.".to_string(),
+        1 => "1 subscribed mod here.".to_string(),
+        n => format!("{n} subscribed mods here."),
+    };
+    FolderCheck::new("workshopDir", Some(p), custom, FolderState::Ok, found, "")
+}
+
+#[cfg(test)]
+mod folder_tests {
+    use super::*;
+
+    #[test]
+    fn a_folder_that_is_present_and_wrong_is_not_a_folder_that_is_right() {
+        // The failure this whole check exists for: the path is set, the path exists, and the
+        // window used to print it with no more comment than a path that was correct.
+        let dir = tempfile::tempdir().unwrap();
+        let empty = dir.path().join("SteamLibrary");
+        std::fs::create_dir_all(&empty).unwrap();
+        let wrong = check_game_dir(Some(&empty), true, Some("1.6.4518"));
+        assert_eq!(wrong.state, FolderState::Error);
+        assert!(wrong.found.contains("Version.txt"), "{}", wrong.found);
+        assert!(!wrong.wanted.is_empty(), "an error says what should be there instead");
+
+        let game = dir.path().join("RimWorld");
+        std::fs::create_dir_all(game.join("Data").join("Core")).unwrap();
+        std::fs::create_dir_all(game.join("Data").join("Royalty")).unwrap();
+        std::fs::write(game.join("Version.txt"), "1.6.4518 rev123").unwrap();
+        let right = check_game_dir(Some(&game), true, Some("1.6.4518"));
+        assert_eq!(right.state, FolderState::Ok);
+        // What is in there, checkable against what the player believes is in there.
+        assert!(right.found.contains("1.6.4518") && right.found.contains('1'), "{}", right.found);
+        assert!(right.wanted.is_empty(), "nothing is wanted of a folder that is right");
+    }
+
+    #[test]
+    fn a_game_folder_with_no_core_is_an_error_even_with_a_version_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let game = dir.path().join("RimWorld");
+        std::fs::create_dir_all(&game).unwrap();
+        std::fs::write(game.join("Version.txt"), "1.6.4518").unwrap();
+        let c = check_game_dir(Some(&game), false, Some("1.6.4518"));
+        assert_eq!(c.state, FolderState::Error, "{}", c.found);
+    }
+
+    #[test]
+    fn the_config_folder_says_how_many_mods_the_file_lists() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("Config");
+        std::fs::create_dir_all(&cfg).unwrap();
+        let none = check_config_dir(Some(&cfg), false, 0);
+        assert_eq!(none.state, FolderState::Error);
+        assert!(none.found.contains("ModsConfig.xml"), "{}", none.found);
+        std::fs::write(cfg.join("ModsConfig.xml"), "<ModsConfigData />").unwrap();
+        let some = check_config_dir(Some(&cfg), false, 214);
+        assert_eq!(some.state, FolderState::Ok);
+        assert!(some.found.contains("214"), "{}", some.found);
+    }
+
+    #[test]
+    fn no_mods_folder_warns_about_the_thing_it_actually_breaks() {
+        // Report #3: a collection downloaded for thirteen minutes and then failed per item,
+        // because there was nowhere to put it and nothing had ever said so.
+        let c = check_local_mods_dir(None, false, 0);
+        assert_eq!(c.state, FolderState::Warn);
+        assert!(c.found.contains("downloads"), "{}", c.found);
+        // Empty is a state, not a fault: a fresh install has nothing in Mods.
+        let dir = tempfile::tempdir().unwrap();
+        let empty = check_local_mods_dir(Some(dir.path()), false, 0);
+        assert_eq!(empty.state, FolderState::Ok);
+        assert!(empty.found.contains("fine"), "{}", empty.found);
+    }
+
+    #[test]
+    fn a_missing_workshop_folder_is_only_a_problem_for_somebody_with_workshop_mods() {
+        // A GOG copy has no Steam library and can do nothing about it, so a standing warning
+        // there is a warning that teaches people to ignore warnings.
+        let idle = check_workshop_dir(None, false, 0, false);
+        assert_eq!(idle.state, FolderState::Ok);
+        assert!(idle.wanted.is_empty());
+        let broken = check_workshop_dir(None, false, 0, true);
+        assert_eq!(broken.state, FolderState::Warn);
+        assert!(!broken.wanted.is_empty());
+    }
+}
